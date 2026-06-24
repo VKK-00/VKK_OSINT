@@ -45,10 +45,12 @@ python -m osint_toolkit scan telegram "@durov"
 python -m osint_toolkit scan ru-ua all --region ua
 python -m osint_toolkit scan url https://example.com --live
 python -m osint_toolkit adapters
+python -m osint_toolkit adapter-profiles
 python -m osint_toolkit adapter-setup sherlock-project/sherlock
 python -m osint_toolkit doctor
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
 python -m osint_toolkit investigate --username example_user --domain example.com --telegram "@durov" --include-adapters
+python -m osint_toolkit investigate --username example_user --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter soxoj/maigret
 python -m osint_toolkit investigate --username example_user --include-adapters --execute-adapters --adapter-limit 1
 python -m osint_toolkit investigate --title "case one" --email person@example.com --case-db cases.sqlite --case-id case-one
@@ -149,6 +151,17 @@ python -m osint_toolkit adapter-setup --format json
 
 Команда не устанавливает внешние инструменты сама. Она даёт проверяемый setup plan, а фактическая установка upstream CLI остаётся отдельным операторским действием.
 
+### `adapter-profiles`
+
+Показывает готовые группы adapters для расследований.
+
+```powershell
+python -m osint_toolkit adapter-profiles
+python -m osint_toolkit adapter-profiles --format json
+```
+
+Текущие профили включают `username-full`, `username-ru-ua`, `email-safe`, `phone-safe` и `url-archive`.
+
 ### `run-adapter`
 
 Dry-run или явный запуск настроенного upstream CLI adapter. По умолчанию команда не запускается, а только показывается.
@@ -179,6 +192,7 @@ python -m osint_toolkit doctor --status planned --format markdown
 ```powershell
 python -m osint_toolkit investigate --title "example case" --username example_user --email person@example.com --domain example.com
 python -m osint_toolkit investigate --username example_user --telegram "@durov" --ru-ua all --region ua --include-adapters --out reports/example_case.md
+python -m osint_toolkit investigate --username example_user --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter sherlock-project/sherlock --adapter soxoj/maigret
 python -m osint_toolkit investigate --username example_user --include-adapters --execute-adapters --adapter-limit 1 --out reports/example_user.md
 python -m osint_toolkit investigate --domain example.com --live --format json
@@ -187,7 +201,7 @@ python -m osint_toolkit investigate --title "saved case" --email person@example.
 
 Отчёт содержит `Entity Summary` и `Graph Edges`: нормализованные сущности и связи между ними, например `email -> domain`, `url -> domain`, `telegram -> url`, `phone -> country`.
 
-`--include-adapters` по умолчанию добавляет только dry-run команды. `--adapter <repository>` можно повторять, чтобы ограничить кейс конкретными upstream adapters. `--execute-adapters` явно запускает настроенные upstream CLI из `PATH`, прогоняет поддерживаемый stdout/stderr через parser и добавляет найденные URL/email/phone/key-value сигналы в тот же `Entity Summary`, `Graph Edges` и SQLite case store. Restricted adapters требуют `--allow-restricted-adapters`.
+`--include-adapters` по умолчанию добавляет только dry-run команды. `--adapter-profile <name>` добавляет готовую группу adapters, а `--adapter <repository>` можно повторять, чтобы ограничить кейс конкретными upstream adapters. `--execute-adapters` явно запускает настроенные upstream CLI из `PATH`, прогоняет поддерживаемый stdout/stderr через parser и добавляет найденные URL/email/phone/key-value сигналы в тот же `Entity Summary`, `Graph Edges` и SQLite case store. Restricted adapters требуют `--allow-restricted-adapters`.
 
 Если указан `--case-db`, кейс сохраняется в SQLite: targets, findings, entities и graph edges можно открыть позже через `cases`, `case-show`, `case-graph` и `case-index`.
 

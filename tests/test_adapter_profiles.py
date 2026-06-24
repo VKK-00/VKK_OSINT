@@ -1,0 +1,36 @@
+import unittest
+
+from osint_toolkit.adapters import expand_adapter_repositories, find_adapter_profile, list_adapter_profiles
+
+
+class AdapterProfileTests(unittest.TestCase):
+    def test_list_and_find_adapter_profile(self):
+        profiles = {profile.name: profile for profile in list_adapter_profiles()}
+
+        self.assertIn("username-full", profiles)
+        self.assertIn("email-safe", profiles)
+        self.assertEqual(find_adapter_profile("USERNAME-FULL").name, "username-full")
+        self.assertIn("sherlock-project/sherlock", profiles["username-full"].repositories)
+
+    def test_expand_adapter_repositories_dedupes_profiles_and_explicit_adapters(self):
+        repositories = expand_adapter_repositories(
+            ("username-ru-ua",),
+            ("sherlock-project/sherlock", "soxoj/maigret"),
+        )
+
+        self.assertEqual(
+            repositories,
+            (
+                "snooppr/snoop",
+                "soxoj/maigret",
+                "sherlock-project/sherlock",
+            ),
+        )
+
+    def test_expand_adapter_repositories_rejects_unknown_profile(self):
+        with self.assertRaises(ValueError):
+            expand_adapter_repositories(("unknown-profile",), ())
+
+
+if __name__ == "__main__":
+    unittest.main()

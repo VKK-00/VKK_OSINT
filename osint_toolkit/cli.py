@@ -5,7 +5,7 @@ import sys
 
 from .adapter_runner import run_adapter_findings
 from .adapter_setup import build_adapter_setups
-from .adapters import filter_adapters, find_adapter
+from .adapters import expand_adapter_repositories, filter_adapters, find_adapter, list_adapter_profiles
 from .case_store import CaseStore, CaseStoreError
 from .catalog import Catalog, CatalogError
 from .doctor import inspect_adapters
@@ -19,6 +19,7 @@ from .investigation import (
 )
 from .output import (
     format_adapters,
+    format_adapter_profiles,
     format_adapter_setups,
     format_case_entity_hits,
     format_case_entity_index,
@@ -87,6 +88,10 @@ def build_parser() -> argparse.ArgumentParser:
     adapters.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     adapters.set_defaults(handler=handle_adapters)
 
+    adapter_profiles = subparsers.add_parser("adapter-profiles", help="Show reusable adapter groups for investigations.")
+    adapter_profiles.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
+    adapter_profiles.set_defaults(handler=handle_adapter_profiles)
+
     doctor = subparsers.add_parser("doctor", help="Check local readiness of configured upstream adapters.")
     doctor.add_argument("--status", choices=("partial_native", "planned", "restricted"))
     doctor.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
@@ -137,6 +142,7 @@ def build_parser() -> argparse.ArgumentParser:
     investigate.add_argument("--region", choices=("all", "ru", "ua"), default="all")
     investigate.add_argument("--live", action="store_true", help="Perform live checks for native modules.")
     investigate.add_argument("--include-adapters", action="store_true", help="Add adapter dry-run commands.")
+    investigate.add_argument("--adapter-profile", action="append", default=[], help="Use a reusable adapter profile. Can be repeated.")
     investigate.add_argument("--adapter", action="append", default=[], help="Restrict investigation adapters to this repository. Can be repeated.")
     investigate.add_argument("--execute-adapters", action="store_true", help="Execute configured upstream adapters. Requires --include-adapters.")
     investigate.add_argument("--allow-restricted-adapters", action="store_true", help="Allow restricted adapters during --execute-adapters after scope review.")
@@ -222,6 +228,11 @@ def handle_adapters(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_adapter_profiles(args: argparse.Namespace) -> int:
+    print(format_adapter_profiles(list_adapter_profiles(), output_format=args.format))
+    return 0
+
+
 def handle_doctor(args: argparse.Namespace) -> int:
     print(format_findings(inspect_adapters(args.status), output_format=args.format))
     return 0
@@ -271,6 +282,8 @@ def handle_investigate(args: argparse.Namespace) -> int:
         raise ValueError("At least one investigation seed is required.")
     if args.case_id and not args.case_db:
         raise ValueError("--case-id requires --case-db.")
+    if args.adapter_profile and not args.include_adapters:
+        raise ValueError("--adapter-profile requires --include-adapters.")
     if args.adapter and not args.include_adapters:
         raise ValueError("--adapter requires --include-adapters.")
     if args.execute_adapters and not args.include_adapters:
@@ -287,7 +300,10 @@ def handle_investigate(args: argparse.Namespace) -> int:
         allow_restricted_adapters=args.allow_restricted_adapters,
         adapter_timeout=args.adapter_timeout,
         adapter_limit=args.adapter_limit,
-        adapter_repositories=tuple(args.adapter),
+        adapter_repositories=expand_adapter_repositories(
+            tuple(args.adapter_profile),
+            tuple(args.adapter),
+        ),
     )
     content = (
         render_investigation_json(result)

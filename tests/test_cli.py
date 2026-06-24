@@ -70,6 +70,15 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("sherlock-project/sherlock", result.stdout)
 
+    def test_adapter_profiles_command(self):
+        result = self.run_cli("adapter-profiles", "--format", "json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        profiles = {profile["name"]: profile for profile in payload}
+        self.assertIn("username-full", profiles)
+        self.assertIn("email-safe", profiles)
+        self.assertIn("sherlock-project/sherlock", profiles["username-full"]["repositories"])
+
     def test_run_adapter_dry_run_command(self):
         result = self.run_cli("run-adapter", "sherlock-project/sherlock", "username", "example_user")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -166,6 +175,20 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("--adapter requires --include-adapters", result.stderr)
 
+    def test_investigate_adapter_profile_requires_include_adapters(self):
+        result = self.run_cli(
+            "investigate",
+            "--username",
+            "example_user",
+            "--adapter-profile",
+            "username-full",
+            "--format",
+            "json",
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--adapter-profile requires --include-adapters", result.stderr)
+
     def test_investigate_adapter_allowlist_filters_adapter_findings(self):
         result = self.run_cli(
             "investigate",
@@ -182,6 +205,27 @@ class CliTests(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertEqual([finding["source"] for finding in payload["adapter_findings"]], ["soxoj/maigret"])
         self.assertEqual(payload["adapter_findings"][0]["status"], "planned")
+
+    def test_investigate_adapter_profile_filters_adapter_findings(self):
+        result = self.run_cli(
+            "investigate",
+            "--username",
+            "example_user",
+            "--include-adapters",
+            "--adapter-profile",
+            "username-ru-ua",
+            "--adapter-limit",
+            "2",
+            "--format",
+            "json",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(
+            [finding["source"] for finding in payload["adapter_findings"]],
+            ["snooppr/snoop", "soxoj/maigret"],
+        )
 
     def test_investigate_allow_restricted_adapters_requires_execute_adapters(self):
         result = self.run_cli(

@@ -51,6 +51,26 @@ class AdapterSpec:
         )
 
 
+@dataclass(frozen=True)
+class AdapterProfile:
+    name: str
+    title: str
+    description: str
+    target_kinds: tuple[str, ...]
+    repositories: tuple[str, ...]
+    note: str = ""
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "name": self.name,
+            "title": self.title,
+            "description": self.description,
+            "target_kinds": ", ".join(self.target_kinds),
+            "repositories": ", ".join(self.repositories),
+            "note": self.note,
+        }
+
+
 ADAPTERS: tuple[AdapterSpec, ...] = (
     AdapterSpec(
         "sherlock-project/sherlock",
@@ -262,6 +282,63 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
 )
 
 
+ADAPTER_PROFILES: tuple[AdapterProfile, ...] = (
+    AdapterProfile(
+        name="username-full",
+        title="Username profile discovery",
+        description="Broad username discovery across global and RU/UA-aware upstream CLI adapters.",
+        target_kinds=("username",),
+        repositories=(
+            "sherlock-project/sherlock",
+            "soxoj/maigret",
+            "thewhiteh4t/nexfil",
+            "snooppr/snoop",
+            "instaloader/instaloader",
+        ),
+        note="Dry-run by default. Execute only installed CLI tools after scope review.",
+    ),
+    AdapterProfile(
+        name="username-ru-ua",
+        title="RU/UA username discovery",
+        description="Username discovery biased toward Russian-language and RU/UA-relevant sources.",
+        target_kinds=("username",),
+        repositories=(
+            "snooppr/snoop",
+            "soxoj/maigret",
+            "sherlock-project/sherlock",
+        ),
+        note="Snoop is the primary RU/UA-oriented username adapter in the current manifest.",
+    ),
+    AdapterProfile(
+        name="email-safe",
+        title="Email baseline enrichment",
+        description="Email enrichment adapters that avoid account-recovery enumeration by default.",
+        target_kinds=("email",),
+        repositories=(
+            "alpkeskin/mosint",
+            "thewhiteh4t/pwnedOrNot",
+        ),
+        note="Restricted email-to-account and email-to-phone adapters are intentionally excluded.",
+    ),
+    AdapterProfile(
+        name="phone-safe",
+        title="Phone baseline enrichment",
+        description="Phone number enrichment through non-restricted configured adapters.",
+        target_kinds=("phone",),
+        repositories=("sundowndev/phoneinfoga",),
+        note="Restricted phone-to-account adapters are intentionally excluded.",
+    ),
+    AdapterProfile(
+        name="url-archive",
+        title="URL and media archive",
+        description="URL-oriented archive adapters for public media/channel collection workflows.",
+        target_kinds=("url",),
+        repositories=("Owez/yark",),
+        note="Useful for public YouTube/channel archive style investigations.",
+    ),
+)
+
+
 def filter_adapters(status: str | None = None) -> tuple[AdapterSpec, ...]:
     if not status:
         return ADAPTERS
@@ -274,3 +351,40 @@ def find_adapter(repository: str) -> AdapterSpec:
         if adapter.repository.lower() == normalized:
             return adapter
     raise ValueError(f"Unknown adapter repository: {repository}")
+
+
+def list_adapter_profiles() -> tuple[AdapterProfile, ...]:
+    return ADAPTER_PROFILES
+
+
+def find_adapter_profile(name: str) -> AdapterProfile:
+    normalized = name.strip().lower()
+    for profile in ADAPTER_PROFILES:
+        if profile.name.lower() == normalized:
+            return profile
+    raise ValueError(f"Unknown adapter profile: {name}")
+
+
+def expand_adapter_repositories(
+    profile_names: tuple[str, ...] = (),
+    repositories: tuple[str, ...] = (),
+) -> tuple[str, ...]:
+    expanded: list[str] = []
+    for profile_name in profile_names:
+        profile = find_adapter_profile(profile_name)
+        expanded.extend(profile.repositories)
+    expanded.extend(repositories)
+    return _dedupe_repositories(tuple(expanded))
+
+
+def _dedupe_repositories(repositories: tuple[str, ...]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for repository in repositories:
+        normalized = repository.strip()
+        key = normalized.lower()
+        if normalized and key not in seen:
+            find_adapter(normalized)
+            seen.add(key)
+            deduped.append(normalized)
+    return tuple(deduped)

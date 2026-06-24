@@ -6,7 +6,7 @@ import json
 from typing import Iterable
 
 from .adapter_setup import AdapterSetup
-from .adapters import AdapterSpec
+from .adapters import AdapterProfile, AdapterSpec
 from .case_store import CaseEntityHit, CaseEntityRecord, CaseRecord
 from .engine import Finding
 from .graph import GraphAnalysis
@@ -152,6 +152,47 @@ def format_adapters(adapters: Iterable[AdapterSpec], *, output_format: str = "ta
                 _short(adapter.capability, 46),
             )
             for adapter in adapter_list
+        ]
+        return _format_table(headers, rows)
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
+def format_adapter_profiles(profiles: Iterable[AdapterProfile], *, output_format: str = "table") -> str:
+    profile_list = tuple(profiles)
+    if output_format == "json":
+        return json.dumps([profile.to_dict() for profile in profile_list], ensure_ascii=False, indent=2)
+    if output_format == "markdown":
+        lines = [
+            "| Profile | Targets | Repositories | Description |",
+            "|---|---|---|---|",
+        ]
+        for profile in profile_list:
+            lines.append(
+                f"| {profile.name} | {_escape_md(', '.join(profile.target_kinds))} | "
+                f"{_escape_md(', '.join(profile.repositories))} | {_escape_md(profile.description)} |"
+            )
+        return "\n".join(lines)
+    if output_format == "csv":
+        buffer = io.StringIO()
+        writer = csv.DictWriter(
+            buffer,
+            fieldnames=("name", "title", "description", "target_kinds", "repositories", "note"),
+            lineterminator="\n",
+        )
+        writer.writeheader()
+        for profile in profile_list:
+            writer.writerow(profile.to_dict())
+        return buffer.getvalue().strip()
+    if output_format == "table":
+        headers = ("Profile", "Targets", "Repositories", "Description")
+        rows = [
+            (
+                profile.name,
+                ", ".join(profile.target_kinds),
+                _short(", ".join(profile.repositories), 64),
+                _short(profile.description, 58),
+            )
+            for profile in profile_list
         ]
         return _format_table(headers, rows)
     raise ValueError(f"Unsupported output format: {output_format}")

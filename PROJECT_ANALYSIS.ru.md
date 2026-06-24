@@ -28,6 +28,7 @@ CLI работает в трёх режимах:
 - external adapter dry-run/execute runner для настроенных upstream CLI;
 - adapter stdout parser: извлечение URL, email, phone и key/value сигналов из выполненных upstream CLI;
 - adapter setup/readiness layer: install hints, docs URLs, PATH/env readiness;
+- adapter profiles: готовые группы upstream adapters для типовых расследований;
 - adapter doctor: проверка фактической доступности upstream CLI в `PATH`;
 - investigation runner: один кейс, несколько seed-типов, entity summary, graph edges, единый Markdown/JSON отчёт;
 - executed adapter ingestion inside investigation: явный `--execute-adapters` добавляет parsed upstream CLI findings в entities, graph edges и case store;
@@ -78,6 +79,8 @@ CLI работает в трёх режимах:
   - `WebMetadataModule` — HTTP status/final URL/title.
 - `osint_toolkit/adapters.py`
   - `AdapterSpec` — карта upstream-проектов, лицензий, режима интеграции и текущего статуса.
+  - `AdapterProfile` — reusable группы adapters для `investigate --adapter-profile`.
+  - `expand_adapter_repositories()` — разворачивает профили и ручные repositories в дедуплицированный allowlist.
 - `osint_toolkit/adapter_parsers.py`
   - `parse_adapter_output()` — нормализация stdout/stderr внешних CLI в дополнительные `Finding`.
   - Поддерживает базовые URL/email/phone/key-value patterns для Sherlock/Maigret/Nexfil/Snoop/Mosint/PhoneInfoga-подобного вывода.
@@ -114,7 +117,7 @@ CLI работает в трёх режимах:
 - `osint_toolkit/output.py`
   - форматирование таблиц, Markdown, CSV и JSON.
 - `osint_toolkit/cli.py`
-  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `run-adapter`, `investigate`, `cases`, `case-show`, `case-graph`, `case-index`, `recommend`, `brief`.
+  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `adapters`, `adapter-profiles`, `adapter-setup`, `doctor`, `run-adapter`, `investigate`, `cases`, `case-show`, `case-graph`, `case-index`, `recommend`, `brief`.
 
 ## Как система работает end-to-end
 
@@ -196,7 +199,7 @@ Setup adapters:
 
 Investigation:
 
-`multiple CLI seeds -> ScanTarget[] -> Engine -> Finding[] -> optional filtered adapter dry-runs/executions -> Entity[] -> GraphEdge[] -> Markdown/JSON report`
+`multiple CLI seeds -> ScanTarget[] -> Engine -> Finding[] -> optional adapter profile/allowlist -> adapter dry-runs/executions -> Entity[] -> GraphEdge[] -> Markdown/JSON report`
 
 Сохранённые кейсы:
 
@@ -227,6 +230,7 @@ SQLite используется локально через стандартну
 - `scan --timeout` — HTTP timeout.
 - `scan --region` — фильтр URL-шаблонов или workflow по региону.
 - `investigate --include-adapters` — добавить dry-run команды совместимых upstream adapters.
+- `investigate --adapter-profile` — повторяемая готовая группа adapters.
 - `investigate --adapter` — повторяемый allowlist конкретных upstream repositories для `--include-adapters`.
 - `investigate --execute-adapters` — явно запустить совместимые upstream CLI adapters после `--include-adapters`.
 - `investigate --allow-restricted-adapters` — разрешить restricted adapters только вместе с `--execute-adapters` после scope review.
@@ -259,10 +263,12 @@ python -m osint_toolkit scan telegram "@durov"
 python -m osint_toolkit scan ru-ua all --region ua
 python -m osint_toolkit scan url https://example.com --live
 python -m osint_toolkit adapters
+python -m osint_toolkit adapter-profiles
 python -m osint_toolkit adapter-setup sherlock-project/sherlock
 python -m osint_toolkit doctor
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
 python -m osint_toolkit investigate --username example_user --domain example.com --telegram "@durov" --include-adapters
+python -m osint_toolkit investigate --username example_user --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter soxoj/maigret
 python -m osint_toolkit investigate --username example_user --include-adapters --execute-adapters --adapter-limit 1
 python -m osint_toolkit investigate --email person@example.com --case-db cases.sqlite --case-id case-001
@@ -297,6 +303,7 @@ osint-toolkit stats
 - Adapter parser не считается источником истины: он нормализует stdout уже запущенного upstream CLI, а не заменяет native logic upstream-проекта.
 - Investigation adapter execution является opt-in: `--include-adapters` остаётся dry-run, а запуск внешнего кода требует отдельного `--execute-adapters`.
 - Investigation adapter allowlist выбирается оператором через повторяемый `--adapter`; без allowlist система использует совместимые adapters из `AdapterSpec`.
+- Adapter profiles являются статическим удобным слоем поверх `AdapterSpec`, а не отдельным источником истины.
 - Adapter setup layer не устанавливает внешние инструменты автоматически: он показывает install plan/readiness, чтобы не запускать непроверенный код без решения оператора.
 - `Entity` отделён от `Finding`: finding описывает источник и сигнал, entity описывает нормализованный объект, а `GraphEdge` описывает связь между объектами.
 - SQLite case store отделён от engine: сканирование можно использовать без записи на диск, а сохранение включается явно через `--case-db`.
@@ -325,7 +332,7 @@ osint-toolkit stats
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
 - Adapter parser покрывает только общие URL/email/phone/key-value patterns; сложные JSON/CSV/HTML exports каждого upstream ещё не разобраны.
-- `investigate --adapter` выбирает repositories, но пока нет профилей/групп adapters и per-case persistent adapter policy.
+- Adapter profiles пока статические; нет пользовательских профилей и per-case persistent adapter policy.
 - Graph edges пока покрывают базовые отношения; есть summary/focus-neighbor analytics и cross-case entity index, но нет weighted path finding, cross-case edge graph и визуального UI.
 - SQLite schema сейчас версии 2; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
@@ -336,6 +343,7 @@ osint-toolkit stats
 - При изменении CSV-схемы обновлять `Catalog.load()` и тесты.
 - При добавлении native-модуля обновлять `engine.py`, `cli.py`, README и тесты.
 - При подключении upstream-проекта обновлять `adapters.py`, указать лицензию, режим интеграции и parity gap.
+- При изменении adapter profiles обновлять `adapters.py`, CLI-тесты, README и parity-карту.
 - При изменении install/config требований adapters обновлять `AdapterSpec`, `adapter_setup.py`, tests и README.
 - При добавлении parser для upstream stdout обновлять `adapter_parsers.py`, tests и `UPSTREAM_PARITY.ru.md`.
 - При изменении схемы сущностей обновлять `entities.py`, `investigation.py`, README и тесты JSON/Markdown.
@@ -359,3 +367,4 @@ osint-toolkit stats
 - 2026-06-24: добавлены `case-index`, `list_entity_index()` и `find_cases_by_entity()` для cross-case поиска повторяющихся сущностей.
 - 2026-06-24: добавлен explicit `investigate --execute-adapters`, который запускает configured upstream CLI adapters и включает parsed findings в общий кейс.
 - 2026-06-24: добавлен повторяемый `investigate --adapter` allowlist для выбора конкретных upstream adapters в кейсе.
+- 2026-06-24: добавлены `AdapterProfile`, команда `adapter-profiles` и `investigate --adapter-profile` для готовых групп adapters.
