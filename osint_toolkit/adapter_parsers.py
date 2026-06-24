@@ -12,6 +12,7 @@ from .engine import Finding, ScanTarget
 URL_RE = re.compile(r"https?://[^\s<>\]\)\"']+", re.IGNORECASE)
 EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 PHONE_RE = re.compile(r"\+[1-9]\d{7,14}\b")
+IPV4_RE = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b")
 HOSTNAME_RE = re.compile(r"\b(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,63}\b", re.IGNORECASE)
 KEY_VALUE_RE = re.compile(r"^\s*(?P<key>[A-Za-z][A-Za-z0-9 _./-]{1,40})\s*[:=]\s*(?P<value>.+?)\s*$")
 SOCIAL_LINE_RE = re.compile(r"^\s*(?:\[[+*]\]|\+|FOUND:?)?\s*(?P<label>[A-Za-z0-9_. /-]{2,40})\s*[:|-]\s*(?P<rest>.+)$")
@@ -49,6 +50,7 @@ PARSER_REPOSITORIES = {
     "laramies/theHarvester",
     "blacklanternsecurity/bbot",
     "smicallef/spiderfoot",
+    "jasonxtn/argus",
 }
 
 PHONE_KEYS = {
@@ -108,6 +110,8 @@ def parse_adapter_output(
         return _bbot_findings(repository, target, text)
     if repository == "smicallef/spiderfoot":
         return _spiderfoot_findings(repository, target, text)
+    if repository == "jasonxtn/argus":
+        return _argus_findings(repository, target, text)
 
     findings: list[Finding] = []
     seen: set[tuple[str, str, str]] = set()
@@ -261,6 +265,7 @@ def _subdomain_finding(
         "theharvester": "theHarvester",
         "bbot": "BBOT",
         "spiderfoot": "SpiderFoot",
+        "argus": "Argus",
     }.get(parser, parser)
     evidence = f"{label} reported subdomain: {normalized}"
     if source_label:
@@ -1338,6 +1343,263 @@ def _spiderfoot_host_port(data_text: str, record: dict[str, Any]) -> tuple[str, 
         host_part, port_part = data_text.rsplit(":", 1)
         return _normalize_hostname(host_part) or host_part.strip(), port_part.strip()
     return host, port or data_text.strip()
+
+
+def _argus_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    seen: set[tuple[str, str]] = set()
+    seen_subdomains: set[tuple[str, str]] = set()
+    root_domain = _target_domain(target)
+
+    for record in _json_records(text):
+        for finding in _argus_record_findings(repository, target, record, root_domain, seen, seen_subdomains):
+            findings.append(finding)
+
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact:
+            continue
+        for finding in _argus_line_findings(repository, target, compact, root_domain, seen, seen_subdomains):
+            findings.append(finding)
+    return tuple(findings)
+
+
+def _argus_record_findings(
+    repository: str,
+    target: ScanTarget,
+    record: dict[str, Any],
+    root_domain: str,
+    seen: set[tuple[str, str]],
+    seen_subdomains: set[tuple[str, str]],
+) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    module = _first_scalar(record.get("module") or record.get("name") or record.get("category"))
+    for key in ("url", "link", "endpoint"):
+        finding = _argus_url_finding(repository, target, _first_scalar(record.get(key)), module, seen)
+        if finding:
+            findings.append(finding)
+    for key in ("email", "emails"):
+        for email in _string_list(record.get(key)):
+            finding = _argus_observed_finding(repository, target, "email", email.lower(), module, seen)
+            if finding:
+                findings.append(finding)
+    for key in ("host", "domain", "subdomain", "fqdn"):
+        hostname = _normalize_hostname(_first_scalar(record.get(key)))
+        if not hostname:
+            continue
+        if root_domain and hostname != root_domain and hostname.endswith(f".{root_domain}"):
+            finding = _subdomain_finding(
+                repository=repository,
+                parser="argus",
+                target=target,
+                root_domain=root_domain,
+                subdomain=hostname,
+                source_label=module,
+                ip=_metadata_list_text(record.get("ip") or record.get("ips")),
+                raw_line="",
+                seen=seen_subdomains,
+            )
+        else:
+            finding = _argus_observed_finding(repository, target, "domain", hostname, module, seen)
+        if finding:
+            findings.append(finding)
+    for key in ("ip", "address"):
+        finding = _argus_observed_finding(repository, target, "ip", _first_scalar(record.get(key)), module, seen)
+        if finding:
+            findings.append(finding)
+    for key in ("port", "open_port"):
+        finding = _argus_observed_finding(repository, target, "port", _first_scalar(record.get(key)), module, seen)
+        if finding:
+            findings.append(finding)
+    for key in ("technology", "tech", "cms", "server"):
+        finding = _argus_observed_finding(repository, target, "technology", _metadata_list_text(record.get(key)), module, seen)
+        if finding:
+            findings.append(finding)
+    return tuple(findings)
+
+
+def _argus_line_findings(
+    repository: str,
+    target: ScanTarget,
+    line: str,
+    root_domain: str,
+    seen: set[tuple[str, str]],
+    seen_subdomains: set[tuple[str, str]],
+) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    module = _argus_module_label(line)
+
+    for raw_url in URL_RE.findall(line):
+        finding = _argus_url_finding(repository, target, raw_url.rstrip(".,;"), module, seen)
+        if finding:
+            findings.append(finding)
+
+    for email in EMAIL_RE.findall(line):
+        finding = _argus_observed_finding(repository, target, "email", email.lower(), module, seen)
+        if finding:
+            findings.append(finding)
+
+    for phone in PHONE_RE.findall(line):
+        finding = _argus_observed_finding(repository, target, "phone", phone, module, seen)
+        if finding:
+            findings.append(finding)
+
+    for ip in IPV4_RE.findall(line):
+        finding = _argus_observed_finding(repository, target, "ip", ip, module, seen)
+        if finding:
+            findings.append(finding)
+
+    for port in _argus_ports(line):
+        finding = _argus_observed_finding(repository, target, "port", port, module, seen)
+        if finding:
+            findings.append(finding)
+
+    technology = _argus_technology(line)
+    if technology:
+        finding = _argus_observed_finding(repository, target, "technology", technology, module, seen)
+        if finding:
+            findings.append(finding)
+
+    for hostname in _hostnames_from_text(line):
+        finding = _subdomain_finding(
+            repository=repository,
+            parser="argus",
+            target=target,
+            root_domain=root_domain,
+            subdomain=hostname,
+            source_label=module,
+            ip="",
+            raw_line="",
+            seen=seen_subdomains,
+        )
+        if finding:
+            findings.append(finding)
+    return tuple(findings)
+
+
+def _argus_url_finding(
+    repository: str,
+    target: ScanTarget,
+    url: str,
+    module: str,
+    seen: set[tuple[str, str]],
+) -> Finding | None:
+    value = url.strip()
+    if not value.startswith(("http://", "https://")):
+        return None
+    key = ("url", value.lower())
+    if key in seen:
+        return None
+    seen.add(key)
+    metadata = _argus_metadata(repository, module)
+    domain = (urlparse(value).hostname or "").lower()
+    if domain:
+        metadata["domain"] = domain
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="candidate",
+        url=value,
+        confidence="medium",
+        evidence=_short(f"Argus reported URL: {value}"),
+        metadata=metadata,
+    )
+
+
+def _argus_observed_finding(
+    repository: str,
+    target: ScanTarget,
+    metadata_key: str,
+    value: str,
+    module: str,
+    seen: set[tuple[str, str]],
+) -> Finding | None:
+    normalized = " ".join(str(value).split()).strip(" ,;")
+    if not normalized:
+        return None
+    if metadata_key == "email" and not EMAIL_RE.fullmatch(normalized):
+        return None
+    if metadata_key == "domain":
+        normalized = _normalize_hostname(normalized)
+        if not normalized:
+            return None
+    if metadata_key == "phone" and not PHONE_RE.fullmatch(normalized):
+        return None
+    if metadata_key == "port" and not _valid_port(normalized):
+        return None
+    key = (metadata_key, normalized.lower())
+    if key in seen:
+        return None
+    seen.add(key)
+    metadata = _argus_metadata(repository, module)
+    metadata[metadata_key] = normalized
+    if metadata_key == "email":
+        metadata["domain"] = normalized.rsplit("@", 1)[1].lower()
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="candidate" if metadata_key in {"email", "phone", "domain", "port"} else "observed",
+        confidence="medium",
+        evidence=_short(f"Argus reported {metadata_key}: {normalized}"),
+        metadata=metadata,
+    )
+
+
+def _argus_metadata(repository: str, module: str) -> dict[str, str]:
+    metadata = {
+        "repository": repository,
+        "parser": "argus",
+    }
+    if module:
+        metadata["argus_module"] = module
+    return metadata
+
+
+def _argus_module_label(line: str) -> str:
+    stripped = _strip_prefix(line)
+    match = KEY_VALUE_RE.match(stripped)
+    if match:
+        return " ".join(match.group("key").split())
+    if ":" in stripped:
+        return " ".join(stripped.split(":", 1)[0].split())
+    return ""
+
+
+def _argus_ports(line: str) -> tuple[str, ...]:
+    lowered = line.lower()
+    if not any(keyword in lowered for keyword in ("port", "open", "tcp", "udp", "service")):
+        return ()
+    ports: list[str] = []
+    for match in re.finditer(r"\b(?P<port>[1-9]\d{0,4})/(?:tcp|udp)\b", line, re.IGNORECASE):
+        if _valid_port(match.group("port")):
+            ports.append(match.group("port"))
+    for match in re.finditer(r"\bport\s*[:=]?\s*(?P<port>[1-9]\d{0,4})\b", line, re.IGNORECASE):
+        if _valid_port(match.group("port")):
+            ports.append(match.group("port"))
+    return _dedupe_text(ports)
+
+
+def _argus_technology(line: str) -> str:
+    lowered = line.lower()
+    if not any(keyword in lowered for keyword in ("technology", "tech stack", "cms", "server info", "server:")):
+        return ""
+    match = KEY_VALUE_RE.match(_strip_prefix(line))
+    if not match:
+        return ""
+    value = match.group("value").strip()
+    if value.startswith(("http://", "https://")):
+        return ""
+    return value
+
+
+def _valid_port(value: str) -> bool:
+    try:
+        port = int(value)
+    except ValueError:
+        return False
+    return 0 < port <= 65535
 
 
 def _mosint_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:

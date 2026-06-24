@@ -65,6 +65,8 @@ def run_adapter_findings(
         )
 
     command_text = format_command(command)
+    command_input = adapter.render_command_input(target)
+    command_input_lines = _line_count(command_input)
     if not execute:
         return (
             Finding(
@@ -74,7 +76,11 @@ def run_adapter_findings(
                 status="planned",
                 confidence="not_checked",
                 evidence=f"Dry run command: {command_text}",
-                metadata={**adapter.to_dict(), "command": command_text},
+                metadata={
+                    **adapter.to_dict(),
+                    "command": command_text,
+                    "stdin_lines": str(command_input_lines),
+                },
             ),
         )
 
@@ -89,7 +95,12 @@ def run_adapter_findings(
                 status="config_missing",
                 confidence="high",
                 evidence=f"Required environment variable(s) are not set: {missing}",
-                metadata={**adapter.to_dict(), "command": command_text, "missing_env": missing},
+                metadata={
+                    **adapter.to_dict(),
+                    "command": command_text,
+                    "missing_env": missing,
+                    "stdin_lines": str(command_input_lines),
+                },
             ),
         )
 
@@ -103,7 +114,7 @@ def run_adapter_findings(
                 status="missing",
                 confidence="high",
                 evidence=f"Executable is not available on PATH: {command[0]}",
-                metadata={**adapter.to_dict(), "command": command_text},
+                metadata={**adapter.to_dict(), "command": command_text, "stdin_lines": str(command_input_lines)},
             ),
         )
 
@@ -130,6 +141,7 @@ def run_adapter_findings(
     try:
         result = subprocess.run(
             [executable, *command[1:]],
+            input=command_input or None,
             text=True,
             capture_output=True,
             timeout=timeout,
@@ -148,7 +160,12 @@ def run_adapter_findings(
                 status="timeout",
                 confidence="low",
                 evidence=f"Adapter timed out after {timeout} seconds.",
-                metadata={**adapter.to_dict(), "stdout": _truncate(exc.stdout), "stderr": _truncate(exc.stderr)},
+                metadata={
+                    **adapter.to_dict(),
+                    "stdout": _truncate(exc.stdout),
+                    "stderr": _truncate(exc.stderr),
+                    "stdin_lines": str(command_input_lines),
+                },
             ),
         )
 
@@ -171,6 +188,7 @@ def run_adapter_findings(
             "returncode": str(result.returncode),
             "stderr": _truncate(result.stderr),
             "generated_output_files": str(generated_count),
+            "stdin_lines": str(command_input_lines),
         },
     )
     parsed_stdout = "\n".join(part for part in (result.stdout, generated_output) if part)
@@ -213,3 +231,7 @@ def _read_generated_outputs(output_dir: str, patterns: tuple[str, ...]) -> tuple
             count += 1
             parts.append(path.read_text(encoding="utf-8", errors="replace"))
     return "\n".join(parts), count
+
+
+def _line_count(value: str) -> int:
+    return len([line for line in value.splitlines() if line.strip()])

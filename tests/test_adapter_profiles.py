@@ -10,6 +10,7 @@ class AdapterProfileTests(unittest.TestCase):
         self.assertIn("username-full", profiles)
         self.assertIn("email-safe", profiles)
         self.assertIn("domain-recon", profiles)
+        self.assertIn("broad-recon", profiles)
         self.assertEqual(find_adapter_profile("USERNAME-FULL").name, "username-full")
         self.assertIn("sherlock-project/sherlock", profiles["username-full"].repositories)
         self.assertIn("kaifcodec/user-scanner", profiles["username-full"].repositories)
@@ -20,6 +21,9 @@ class AdapterProfileTests(unittest.TestCase):
         self.assertIn("laramies/theHarvester", profiles["domain-recon"].repositories)
         self.assertIn("blacklanternsecurity/bbot", profiles["domain-recon"].repositories)
         self.assertIn("smicallef/spiderfoot", profiles["domain-recon"].repositories)
+        self.assertIn("blacklanternsecurity/bbot", profiles["broad-recon"].repositories)
+        self.assertIn("smicallef/spiderfoot", profiles["broad-recon"].repositories)
+        self.assertIn("jasonxtn/argus", profiles["broad-recon"].repositories)
 
     def test_expand_adapter_repositories_dedupes_profiles_and_explicit_adapters(self):
         repositories = expand_adapter_repositories(

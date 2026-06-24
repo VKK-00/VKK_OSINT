@@ -26,6 +26,7 @@ class AdapterSpec:
     required_env: tuple[str, ...] = ()
     optional_env: tuple[str, ...] = ()
     command_templates: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    command_input_template: tuple[str, ...] = ()
     generated_output_dir_args: tuple[str, ...] = ()
     generated_output_file_args: tuple[str, ...] = ()
     generated_output_patterns: tuple[str, ...] = ()
@@ -43,6 +44,7 @@ class AdapterSpec:
             "target_kinds": ", ".join(self.target_kinds),
             "command_template": " ".join(self.command_template),
             "command_templates": self.render_command_templates(),
+            "command_input_template": "\\n".join(self.command_input_template),
             "install_kind": self.install_kind,
             "install_command": " ".join(self.install_command),
             "install_note": self.install_note,
@@ -61,18 +63,7 @@ class AdapterSpec:
         command_template = self.command_template_for(target.kind)
         if not command_template:
             return ()
-        context = {
-            "target_value": target.value,
-            "target_kind": target.kind,
-            "region": target.region,
-            "region_code": _region_code(target.region),
-            "region_include_flag": _region_include_flag(target.region),
-            "region_tag": _region_tag(target.region),
-            "region_tags_flag": _region_tags_flag(target.region),
-            "instagram_profile": _instagram_profile_value(target.value),
-            "bbot_target": _bbot_target_value(target),
-            "spiderfoot_script": _spiderfoot_script_value(),
-        }
+        context = self.render_context(target)
         rendered: list[str] = []
         for part in command_template:
             value = part.format(**context)
@@ -119,6 +110,27 @@ class AdapterSpec:
             if value:
                 rendered.append(value)
         return tuple(rendered)
+
+    def render_command_input(self, target: ScanTarget) -> str:
+        if not self.command_input_template:
+            return ""
+        context = self.render_context(target)
+        lines = [line.format(**context) for line in self.command_input_template]
+        return "\n".join(line for line in lines if line) + "\n"
+
+    def render_context(self, target: ScanTarget) -> dict[str, str]:
+        return {
+            "target_value": target.value,
+            "target_kind": target.kind,
+            "region": target.region,
+            "region_code": _region_code(target.region),
+            "region_include_flag": _region_include_flag(target.region),
+            "region_tag": _region_tag(target.region),
+            "region_tags_flag": _region_tags_flag(target.region),
+            "instagram_profile": _instagram_profile_value(target.value),
+            "bbot_target": _bbot_target_value(target),
+            "spiderfoot_script": _spiderfoot_script_value(),
+        }
 
 
 @dataclass(frozen=True)
@@ -496,6 +508,35 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         required_env=("SPIDERFOOT_SF_PATH",),
     ),
     AdapterSpec(
+        "jasonxtn/argus",
+        "interactive all-in-one reconnaissance toolkit",
+        "external_cli_interactive",
+        "MIT",
+        "planned",
+        "argus << set target <target>; runall infra; viewout; exit",
+        "Interactive Argus CLI adapter; execute mode feeds a conservative infra-category command script and parses stdout/cache output.",
+        ("domain", "url", "email", "username", "phone"),
+        ("argus",),
+        install_kind="pip",
+        install_command=("python", "-m", "pip", "install", "argus-recon"),
+        install_note="Argus is interactive. The adapter feeds commands through stdin; broader categories and API-backed modules remain operator-controlled.",
+        docs_url="https://github.com/jasonxtn/argus",
+        optional_env=(
+            "VIRUSTOTAL_API_KEY",
+            "SHODAN_API_KEY",
+            "CENSYS_API_ID",
+            "CENSYS_API_SECRET",
+            "GOOGLE_API_KEY",
+            "HIBP_API_KEY",
+        ),
+        command_input_template=(
+            "set target {target_value}",
+            "runall infra",
+            "viewout",
+            "exit",
+        ),
+    ),
+    AdapterSpec(
         "snooppr/snoop",
         "username search with RU/UA country filters",
         "external_cli",
@@ -596,6 +637,18 @@ ADAPTER_PROFILES: tuple[AdapterProfile, ...] = (
             "smicallef/spiderfoot",
         ),
         note="Default profile stays passive; active/bruteforce Amass, broader BBOT/SpiderFoot use cases and screenshot/API endpoint scans are separate scope decisions.",
+    ),
+    AdapterProfile(
+        name="broad-recon",
+        title="Broad reconnaissance suite",
+        description="Broad upstream recon frameworks that may combine passive and active modules.",
+        target_kinds=("domain", "url", "email", "username", "phone"),
+        repositories=(
+            "blacklanternsecurity/bbot",
+            "smicallef/spiderfoot",
+            "jasonxtn/argus",
+        ),
+        note="Dry-run by default. Execute only after confirming scope because Argus runall infra and broader framework presets may be active.",
     ),
 )
 

@@ -433,6 +433,60 @@ class InvestigationTests(unittest.TestCase):
         self.assertIn(("domain", "example.com", "resolved_ip", "ip", "93.184.216.34"), edges)
         self.assertIn(("domain", "example.com", "open_port", "port", "443"), edges)
 
+    def test_execute_argus_adapter_adds_entities_and_edges(self):
+        def fake_run(args, **kwargs):
+            self.assertEqual(args, ["argus"])
+            self.assertEqual(kwargs["input"], "set target example.com\nrunall infra\nviewout\nexit\n")
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout=(
+                    "Associated Hosts: api.example.com\n"
+                    "Email Harvesting: admin@example.com\n"
+                    "Archive History: https://www.example.com/login\n"
+                    "IP Info: 93.184.216.34\n"
+                    "Open Ports Scan: 443/tcp open\n"
+                    "Technology Stack: nginx\n"
+                    "Contact: +380441234567\n"
+                ),
+                stderr="",
+            )
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="argus"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            result = run_investigation(
+                (ScanTarget(kind="domain", value="example.com"),),
+                include_adapters=True,
+                execute_adapters=True,
+                adapter_repositories=("jasonxtn/argus",),
+            )
+
+        parsed = [finding for finding in result.adapter_findings if finding.module == "external-adapter-parser"]
+        self.assertTrue(any(finding.metadata.get("parser") == "argus" for finding in parsed))
+
+        entities = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("email", "admin@example.com"), entities)
+        self.assertIn(("subdomain", "api.example.com"), entities)
+        self.assertIn(("url", "https://www.example.com/login"), entities)
+        self.assertIn(("ip", "93.184.216.34"), entities)
+        self.assertIn(("port", "443"), entities)
+        self.assertIn(("technology", "nginx"), entities)
+        self.assertIn(("phone", "+380441234567"), entities)
+
+        edges = {
+            (edge.source_kind, edge.source_value.lower(), edge.relation, edge.target_kind, edge.target_value.lower())
+            for edge in result.edges
+        }
+        self.assertIn(("domain", "example.com", "related_email", "email", "admin@example.com"), edges)
+        self.assertIn(("domain", "example.com", "related_phone", "phone", "+380441234567"), edges)
+        self.assertIn(("domain", "example.com", "discovered_subdomain", "subdomain", "api.example.com"), edges)
+        self.assertIn(("domain", "example.com", "produced_url", "url", "https://www.example.com/login"), edges)
+        self.assertIn(("domain", "example.com", "resolved_ip", "ip", "93.184.216.34"), edges)
+        self.assertIn(("domain", "example.com", "open_port", "port", "443"), edges)
+        self.assertIn(("domain", "example.com", "uses_technology", "technology", "nginx"), edges)
+
     def test_person_target_expands_to_username_scan_edges(self):
         result = run_investigation((ScanTarget(kind="person", value="Ivan Petrenko"),))
 

@@ -130,6 +130,7 @@ class AdapterSetupTests(unittest.TestCase):
         theharvester = find_adapter("laramies/theHarvester")
         bbot = find_adapter("blacklanternsecurity/bbot")
         spiderfoot = find_adapter("smicallef/spiderfoot")
+        argus = find_adapter("jasonxtn/argus")
 
         self.assertEqual(
             subfinder.render_command(ScanTarget(kind="domain", value="example.com")),
@@ -167,6 +168,12 @@ class AdapterSetupTests(unittest.TestCase):
                 ("python", "C:\\tools\\spiderfoot\\sf.py", "-s", "example.com", "-u", "passive", "-o", "json", "-q"),
             )
 
+        self.assertEqual(argus.render_command(ScanTarget(kind="domain", value="example.com")), ("argus",))
+        self.assertEqual(
+            argus.render_command_input(ScanTarget(kind="domain", value="example.com")),
+            "set target example.com\nrunall infra\nviewout\nexit\n",
+        )
+
         with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
             setup = build_adapter_setup(subfinder)
 
@@ -201,6 +208,13 @@ class AdapterSetupTests(unittest.TestCase):
 
         self.assertEqual(spiderfoot_ready.readiness, "ready")
         self.assertEqual(spiderfoot_ready.install_kind, "manual")
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
+            argus_setup = build_adapter_setup(argus)
+
+        self.assertEqual(argus_setup.readiness, "missing")
+        self.assertEqual(argus_setup.install_kind, "pip")
+        self.assertEqual(argus_setup.install_command, "python -m pip install argus-recon")
 
     def test_setup_reports_not_configured_for_dataset_adapter(self):
         setup = build_adapter_setup(find_adapter("WebBreacher/WhatsMyName"))

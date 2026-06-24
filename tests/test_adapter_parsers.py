@@ -822,6 +822,40 @@ class AdapterParserTests(unittest.TestCase):
         self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings))
         self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings))
 
+    def test_parse_argus_stdout_events(self):
+        findings = parse_adapter_output(
+            "jasonxtn/argus",
+            ScanTarget(kind="domain", value="example.com"),
+            """
+            Associated Hosts: api.example.com
+            Email Harvesting: admin@example.com
+            Archive History: https://www.example.com/login
+            IP Info: 93.184.216.34
+            Open Ports Scan: 443/tcp open
+            Technology Stack: nginx
+            Contact: +380441234567
+            """,
+        )
+
+        metadata = [finding.metadata for finding in findings]
+        self.assertTrue(any(item.get("parser") == "argus" for item in metadata))
+        self.assertTrue(any(item.get("subdomain") == "api.example.com" for item in metadata))
+        self.assertTrue(any(item.get("email") == "admin@example.com" for item in metadata))
+        self.assertTrue(any(item.get("ip") == "93.184.216.34" for item in metadata))
+        self.assertTrue(any(item.get("port") == "443" for item in metadata))
+        self.assertTrue(any(item.get("technology") == "nginx" for item in metadata))
+        self.assertTrue(any(item.get("phone") == "+380441234567" for item in metadata))
+        self.assertIn("https://www.example.com/login", {finding.url for finding in findings})
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("subdomain", "api.example.com"), entities)
+        self.assertIn(("email", "admin@example.com"), entities)
+        self.assertIn(("url", "https://www.example.com/login"), entities)
+        self.assertIn(("ip", "93.184.216.34"), entities)
+        self.assertIn(("port", "443"), entities)
+        self.assertIn(("technology", "nginx"), entities)
+        self.assertIn(("phone", "+380441234567"), entities)
+
     def test_run_adapter_findings_adds_parsed_results_after_execution(self):
         completed = subprocess.CompletedProcess(
             args=["sherlock", "example_user"],
@@ -1089,6 +1123,40 @@ class AdapterParserTests(unittest.TestCase):
         self.assertIn("passive", args)
         self.assertEqual(findings[0].status, "completed")
         self.assertTrue(any(finding.metadata.get("parser") == "spiderfoot" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings[1:]))
+        self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings[1:]))
+
+    def test_run_argus_adapter_feeds_interactive_script_after_execution(self):
+        def fake_run(args, **kwargs):
+            self.assertEqual(args, ["C:\\tools\\argus.exe"])
+            self.assertEqual(kwargs["input"], "set target example.com\nrunall infra\nviewout\nexit\n")
+            self.assertTrue(kwargs["text"])
+            self.assertTrue(kwargs["capture_output"])
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout=(
+                    "Associated Hosts: api.example.com\n"
+                    "Email Harvesting: admin@example.com\n"
+                    "Archive History: https://www.example.com/login\n"
+                ),
+                stderr="",
+            )
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="C:\\tools\\argus.exe"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            findings = run_adapter_findings(
+                "jasonxtn/argus",
+                ScanTarget(kind="domain", value="example.com"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertEqual(findings[0].metadata["stdin_lines"], "4")
+        self.assertTrue(any(finding.metadata.get("parser") == "argus" for finding in findings[1:]))
         self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
         self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings[1:]))
         self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings[1:]))

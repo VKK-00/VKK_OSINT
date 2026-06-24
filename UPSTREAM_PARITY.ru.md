@@ -275,7 +275,10 @@ Gap:
 - parser для BBOT generated JSON/NDJSON/stdout events: `DNS_NAME`, `EMAIL_ADDRESS`, `URL`, `IP_ADDRESS`, `OPEN_TCP_PORT`, `TECHNOLOGY`, `FINDING` и `VULNERABILITY` нормализуются в `Finding`/entities/graph signals;
 - executable adapter target для `smicallef/spiderfoot`: `python <SPIDERFOOT_SF_PATH> -s <target> -u passive -o json -q`;
 - parser для SpiderFoot JSON/stdout events: `INTERNET_NAME`, `DOMAIN_NAME`, `EMAILADDR`, `WEBLINK`, `IP_ADDRESS`, `TCP_PORT_OPEN`, `PHONE_NUMBER`, `HUMAN_NAME`, `TECHNOLOGY`, ASN и vulnerability/finding events нормализуются в `Finding`/entities/graph signals;
+- executable interactive adapter target для `jasonxtn/argus`: `argus` со stdin-сценарием `set target <target>`, `runall infra`, `viewout`, `exit`;
+- parser для Argus stdout/cache-like output: URL, email, phone, host/subdomain, IP, port и technology signals нормализуются в `Finding`/entities/graph signals;
 - adapter profile `domain-recon` для Subfinder/httpx/passive Amass/theHarvester/BBOT/SpiderFoot.
+- adapter profile `broad-recon` для BBOT/SpiderFoot/Argus как более широких recon suites.
 
 Gap:
 
@@ -283,12 +286,12 @@ Gap:
 - raw WHOIS full-text export is intentionally not included in reports; parser keeps domain-level fields only by default;
 - crawler bounded и mostly HTML/XML/text-only: нет JavaScript rendering, form submission, full robots policy enforcement, authentication, headless browser или broad SpiderFoot/Photon-style crawling;
 - нет SpiderFoot web/API server connector и full module policy mapping;
-- нет активных Amass/bruteforce modes, broader BBOT/SpiderFoot use cases/deadly modules, theHarvester screenshots или API endpoint scans по умолчанию.
+- нет активных Amass/bruteforce modes, broader BBOT/SpiderFoot/Argus use cases/deadly modules, theHarvester screenshots или API endpoint scans по умолчанию.
 
 План:
 
 1. Native: дальше расширять passive domain recon: richer document metadata extraction, optional sitemap/robots policy tuning and more TLD-specific WHOIS parsing.
-2. Adapter: следующий слой — Argus-style recon, SpiderFoot API/server connector, richer BBOT/SpiderFoot presets/output modules и более богатые generated report parsers.
+2. Adapter: следующий слой — SpiderFoot API/server connector, richer BBOT/SpiderFoot/Argus presets/output modules и более богатые generated report parsers.
 3. Normalize domains, URLs, emails, phones, subdomains, IPs, ports and technologies into shared entity model.
 
 ## External adapter runner
@@ -312,6 +315,7 @@ python -m osint_toolkit adapter-setup <repository>
 - restricted adapter guard via `--allow-restricted`;
 - `run_adapter_findings()` returns summary + parsed findings;
 - stdout parser for common URL/email/phone/key-value lines from generic adapter output;
+- scripted stdin support for interactive CLI adapters;
 - generated report ingestion: adapters can run with a temporary output folder, temporary output file or isolated temporary working directory and feed generated files back into `parse_adapter_output()`;
 - adapter-specific parser for Sherlock stdout and generated CSV/TXT report rows;
 - adapter-specific parser for Nexfil stdout and autosaved TXT report rows;
@@ -327,14 +331,16 @@ python -m osint_toolkit adapter-setup <repository>
 - adapter-specific parser for theHarvester generated JSON/stdout domain recon output;
 - adapter-specific parser for BBOT generated JSON/NDJSON/stdout event output;
 - adapter-specific parser for SpiderFoot JSON/stdout event output;
+- adapter-specific parser for Argus interactive stdout/cache-like output;
 - adapter profile `domain-recon` for passive domain/web upstream adapters;
+- adapter profile `broad-recon` for broad recon suites BBOT/SpiderFoot/Argus;
 - install/config/readiness metadata in `AdapterSpec`;
 - `adapter-setup` command for setup plans, docs URLs, PATH/env readiness.
 
 Gap:
 
 - нет автоматической установки upstream CLI;
-- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events и SpiderFoot events;
+- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.
 
