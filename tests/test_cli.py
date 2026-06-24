@@ -136,6 +136,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("domain-baseline", result.stdout)
         self.assertIn("dns-resolution", result.stdout)
+        self.assertIn("certificate-transparency", result.stdout)
 
     def test_scan_telegram_dry_run_command(self):
         result = self.run_cli("scan", "telegram", "@durov")

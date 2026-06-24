@@ -256,22 +256,23 @@ def _edges_from_findings(
             if not mapped or not value:
                 continue
             relation, target_kind = mapped
-            if not _has_entity(entity_keys, target_kind, value):
-                continue
-            if source_kind == target_kind and source_value.lower() == value.lower():
-                continue
-            edges.append(
-                GraphEdge(
-                    source_kind=source_kind,
-                    source_value=source_value,
-                    relation=relation,
-                    target_kind=target_kind,
-                    target_value=value,
-                    source=source,
-                    confidence=finding.confidence,
-                    note=f"metadata:{metadata_key}",
+            for metadata_value in _metadata_values(metadata_key, value):
+                if not _has_entity(entity_keys, target_kind, metadata_value):
+                    continue
+                if source_kind == target_kind and source_value.lower() == metadata_value.lower():
+                    continue
+                edges.append(
+                    GraphEdge(
+                        source_kind=source_kind,
+                        source_value=source_value,
+                        relation=relation,
+                        target_kind=target_kind,
+                        target_value=metadata_value,
+                        source=source,
+                        confidence=finding.confidence,
+                        note=f"metadata:{metadata_key}",
+                    )
                 )
-            )
     return tuple(edges)
 
 
@@ -311,8 +312,17 @@ def _metadata_edge(key: str) -> tuple[str, str] | None:
         "number_range": ("phone_range_hint", "phone-range"),
         "zip_code": ("postal_code_hint", "postal-code"),
         "country_code": ("country_code_hint", "country-code"),
+        "subdomain": ("discovered_subdomain", "subdomain"),
+        "subdomains": ("discovered_subdomain", "subdomain"),
     }
     return mapping.get(key)
+
+
+def _metadata_values(key: str, value: str) -> tuple[str, ...]:
+    if key in {"subdomain", "subdomains"}:
+        parts = [part.strip() for part in value.replace("|", ",").split(",")]
+        return tuple(part for part in parts if part)
+    return (value,)
 
 
 def _has_entity(entity_keys: set[tuple[str, str]], kind: str, value: str) -> bool:

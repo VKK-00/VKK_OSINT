@@ -5,7 +5,7 @@ from pathlib import Path
 from osint_toolkit.adapter_parsers import parse_adapter_output
 from osint_toolkit.case_store import CaseStore
 from osint_toolkit.entities import entities_from_findings, entities_from_targets, merge_entities
-from osint_toolkit.engine import ScanTarget
+from osint_toolkit.engine import Finding, ScanTarget
 from osint_toolkit.graph import analyze_case_graph, graph_edges_from_case
 from osint_toolkit.investigation import run_investigation
 
@@ -76,6 +76,33 @@ class GraphAnalysisTests(unittest.TestCase):
         self.assertIn(("phone", "+380441234567", "phone_range_hint", "phone-range", "0038044xxxxxxx"), edge_keys)
         self.assertIn(("phone", "+380441234567", "location_hint", "location", "Kyiv"), edge_keys)
         self.assertIn(("phone", "+380441234567", "postal_code_hint", "postal-code", "01001"), edge_keys)
+
+    def test_certificate_transparency_subdomain_metadata_edges(self):
+        target = ScanTarget(kind="domain", value="example.com")
+        findings = (
+            Finding(
+                module="domain-baseline",
+                source="certificate-transparency",
+                target="example.com",
+                status="candidate",
+                confidence="medium",
+                evidence="Found 2 unique subdomain(s).",
+                metadata={"domain": "example.com", "subdomains": "api.example.com, www.example.com"},
+            ),
+        )
+
+        entities = merge_entities(entities_from_targets((target,)), entities_from_findings(findings))
+        entity_keys = {(entity.kind, entity.value.lower()) for entity in entities}
+        self.assertIn(("subdomain", "api.example.com"), entity_keys)
+        self.assertIn(("subdomain", "www.example.com"), entity_keys)
+
+        edges = graph_edges_from_case((target,), findings, entities)
+        edge_keys = {
+            (edge.source_kind, edge.source_value, edge.relation, edge.target_kind, edge.target_value)
+            for edge in edges
+        }
+        self.assertIn(("domain", "example.com", "discovered_subdomain", "subdomain", "api.example.com"), edge_keys)
+        self.assertIn(("domain", "example.com", "discovered_subdomain", "subdomain", "www.example.com"), edge_keys)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ from osint_toolkit.engine import Engine, RunConfig, ScanTarget
 from osint_toolkit.http_client import HttpClient, HttpResult
 from osint_toolkit.investigation import render_investigation_json, render_investigation_markdown, run_investigation
 from osint_toolkit.modules import DomainScanModule, EmailScanModule, PersonNameScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
-from osint_toolkit.modules.domain import normalize_domain
+from osint_toolkit.modules.domain import normalize_domain, parse_crtsh_subdomains
 from osint_toolkit.modules.person import generate_username_candidates, normalize_person_name
 from osint_toolkit.modules.phone import detect_country, is_e164_like, normalize_phone
 from osint_toolkit.modules.ru_ua_sources import RuUaSourcePackModule
@@ -55,6 +55,16 @@ class _FakeHttpResponse:
 
     def getcode(self) -> int:
         return self._status_code
+
+
+class _FakeDomainHttpClient:
+    def __init__(self, results: tuple[HttpResult, ...]):
+        self.results = list(results)
+        self.requests: list[tuple[str, bool, dict[str, str] | None]] = []
+
+    def check(self, url, *, fetch_title=False, headers=None, method="GET", body=""):
+        self.requests.append((url, fetch_title, headers))
+        return self.results.pop(0)
 
 
 class EngineTests(unittest.TestCase):
@@ -548,15 +558,75 @@ class EngineTests(unittest.TestCase):
         engine = Engine([DomainScanModule()])
         findings = engine.scan(ScanTarget(kind="domain", value="https://example.com/path"), RunConfig())
 
-        self.assertEqual(len(findings), 3)
+        self.assertEqual(len(findings), 4)
         self.assertEqual(findings[0].source, "dns-resolution")
         self.assertEqual(findings[0].metadata["domain"], "example.com")
         self.assertEqual(findings[1].url, "https://example.com")
         self.assertEqual(findings[2].url, "http://example.com")
+        self.assertEqual(findings[3].source, "certificate-transparency")
+        self.assertIn("crt.sh", findings[3].url)
 
     def test_domain_normalizer_rejects_invalid_values(self):
         self.assertEqual(normalize_domain("https://Example.COM/a"), "example.com")
         self.assertEqual(normalize_domain("not a domain"), "")
+
+    def test_parse_crtsh_subdomains_filters_wildcards_and_foreign_domains(self):
+        body = """
+        [
+          {"name_value": "*.Example.com\\nwww.example.com\\nexample.com\\nforeign.test"},
+          {"common_name": "api.example.com"}
+        ]
+        """
+
+        self.assertEqual(parse_crtsh_subdomains(body, "example.com"), ("api.example.com", "www.example.com"))
+
+    def test_domain_scan_live_adds_certificate_transparency_subdomains(self):
+        ct_body = """
+        [
+          {"name_value": "*.example.com\\nwww.example.com\\napi.example.com"},
+          {"common_name": "www.example.com"}
+        ]
+        """
+        fake_client = _FakeDomainHttpClient(
+            (
+                HttpResult(
+                    url="https://example.com",
+                    final_url="https://example.com",
+                    status_code=200,
+                    title="Example",
+                    content_type="text/html",
+                    headers={"strict-transport-security": "max-age=31536000"},
+                ),
+                HttpResult(
+                    url="http://example.com",
+                    final_url="https://example.com",
+                    status_code=301,
+                    content_type="text/html",
+                ),
+                HttpResult(
+                    url="https://crt.sh/?q=%25.example.com&output=json",
+                    final_url="https://crt.sh/?q=%25.example.com&output=json",
+                    status_code=200,
+                    body_text=ct_body,
+                    content_type="application/json",
+                ),
+            )
+        )
+
+        with patch(
+            "osint_toolkit.modules.domain.socket.getaddrinfo",
+            return_value=[(socket.AF_INET, None, None, "", ("93.184.216.34", 0))],
+        ), patch("osint_toolkit.modules.domain.HttpClient", return_value=fake_client):
+            findings = Engine([DomainScanModule()]).scan(
+                ScanTarget(kind="domain", value="example.com"),
+                RunConfig(live=True),
+            )
+
+        sources = {finding.source: finding for finding in findings}
+        self.assertEqual(sources["certificate-transparency"].status, "candidate")
+        self.assertEqual(sources["certificate-transparency"].metadata["subdomain_count"], "2")
+        self.assertEqual(sources["certificate-transparency"].metadata["subdomains"], "api.example.com, www.example.com")
+        self.assertEqual(fake_client.requests[2][2], {"Accept": "application/json"})
 
     def test_telegram_scan_normalizes_handle_and_post_url(self):
         engine = Engine([TelegramScanModule()])

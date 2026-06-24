@@ -228,19 +228,20 @@ Gap:
 - `python -m osint_toolkit scan domain <domain>`;
 - live DNS resolution;
 - HTTPS/HTTP status, redirect final URL, title and content-type;
-- presence list for common security headers.
+- presence list for common security headers;
+- certificate transparency lookup via `crt.sh` JSON in live mode;
+- CT-derived `subdomain` entities and graph edges `domain -> subdomain`.
 
 Gap:
 
-- нет subdomain enumeration;
+- нет brute-force/passive subdomain enumeration за пределами crt.sh;
 - нет WHOIS/RDAP;
-- нет certificate transparency;
 - нет crawler/email extraction;
 - нет Amass/Subfinder/httpx/SpiderFoot adapters.
 
 План:
 
-1. Native: HTTP status, redirects, title, basic headers.
+1. Native: дальше расширять passive domain recon: RDAP/WHOIS и crawler/email extraction.
 2. Adapter: `httpx`, `theHarvester`, `spiderfoot`, `amass`, `subfinder`.
 3. Normalize domains, URLs, emails, subdomains into shared entity model.
 
