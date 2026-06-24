@@ -230,18 +230,20 @@ Gap:
 - HTTPS/HTTP status, redirect final URL, title and content-type;
 - presence list for common security headers;
 - certificate transparency lookup via `crt.sh` JSON in live mode;
-- CT-derived `subdomain` entities and graph edges `domain -> subdomain`.
+- CT-derived `subdomain` entities and graph edges `domain -> subdomain`;
+- RDAP registration lookup via `rdap.org` JSON in live mode;
+- RDAP-derived `registrar`/`nameserver` entities and graph edges `domain -> registrar|nameserver`.
 
 Gap:
 
 - нет brute-force/passive subdomain enumeration за пределами crt.sh;
-- нет WHOIS/RDAP;
+- нет raw WHOIS text lookup;
 - нет crawler/email extraction;
 - нет Amass/Subfinder/httpx/SpiderFoot adapters.
 
 План:
 
-1. Native: дальше расширять passive domain recon: RDAP/WHOIS и crawler/email extraction.
+1. Native: дальше расширять passive domain recon: raw WHOIS fallback и crawler/email extraction.
 2. Adapter: `httpx`, `theHarvester`, `spiderfoot`, `amass`, `subfinder`.
 3. Normalize domains, URLs, emails, subdomains into shared entity model.
 

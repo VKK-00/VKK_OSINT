@@ -12,7 +12,7 @@ from osint_toolkit.engine import Engine, RunConfig, ScanTarget
 from osint_toolkit.http_client import HttpClient, HttpResult
 from osint_toolkit.investigation import render_investigation_json, render_investigation_markdown, run_investigation
 from osint_toolkit.modules import DomainScanModule, EmailScanModule, PersonNameScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
-from osint_toolkit.modules.domain import normalize_domain, parse_crtsh_subdomains
+from osint_toolkit.modules.domain import normalize_domain, parse_crtsh_subdomains, parse_rdap_domain_record
 from osint_toolkit.modules.person import generate_username_candidates, normalize_person_name
 from osint_toolkit.modules.phone import detect_country, is_e164_like, normalize_phone
 from osint_toolkit.modules.ru_ua_sources import RuUaSourcePackModule
@@ -558,13 +558,15 @@ class EngineTests(unittest.TestCase):
         engine = Engine([DomainScanModule()])
         findings = engine.scan(ScanTarget(kind="domain", value="https://example.com/path"), RunConfig())
 
-        self.assertEqual(len(findings), 4)
+        self.assertEqual(len(findings), 5)
         self.assertEqual(findings[0].source, "dns-resolution")
         self.assertEqual(findings[0].metadata["domain"], "example.com")
         self.assertEqual(findings[1].url, "https://example.com")
         self.assertEqual(findings[2].url, "http://example.com")
         self.assertEqual(findings[3].source, "certificate-transparency")
         self.assertIn("crt.sh", findings[3].url)
+        self.assertEqual(findings[4].source, "rdap-domain")
+        self.assertIn("rdap.org/domain/example.com", findings[4].url)
 
     def test_domain_normalizer_rejects_invalid_values(self):
         self.assertEqual(normalize_domain("https://Example.COM/a"), "example.com")
@@ -580,12 +582,59 @@ class EngineTests(unittest.TestCase):
 
         self.assertEqual(parse_crtsh_subdomains(body, "example.com"), ("api.example.com", "www.example.com"))
 
-    def test_domain_scan_live_adds_certificate_transparency_subdomains(self):
+    def test_parse_rdap_domain_record_extracts_registration_metadata(self):
+        body = """
+        {
+          "ldhName": "EXAMPLE.COM",
+          "handle": "2336799_DOMAIN_COM-VRSN",
+          "status": ["client delete prohibited", "client transfer prohibited"],
+          "nameservers": [{"ldhName": "A.IANA-SERVERS.NET"}, {"ldhName": "b.iana-servers.net."}],
+          "events": [
+            {"eventAction": "registration", "eventDate": "1995-08-14T04:00:00Z"},
+            {"eventAction": "expiration", "eventDate": "2026-08-13T04:00:00Z"}
+          ],
+          "entities": [
+            {
+              "roles": ["registrar"],
+              "vcardArray": ["vcard", [["fn", {}, "text", "Example Registrar, Inc."]]]
+            }
+          ]
+        }
+        """
+
+        record = parse_rdap_domain_record(body, "example.com")
+
+        self.assertEqual(record.domain, "example.com")
+        self.assertEqual(record.registrar, "Example Registrar, Inc.")
+        self.assertEqual(record.handle, "2336799_DOMAIN_COM-VRSN")
+        self.assertEqual(record.nameservers, ("a.iana-servers.net", "b.iana-servers.net"))
+        self.assertEqual(record.created_at, "1995-08-14T04:00:00Z")
+        self.assertEqual(record.expires_at, "2026-08-13T04:00:00Z")
+
+    def test_domain_scan_live_adds_ct_and_rdap_findings(self):
         ct_body = """
         [
           {"name_value": "*.example.com\\nwww.example.com\\napi.example.com"},
           {"common_name": "www.example.com"}
         ]
+        """
+        rdap_body = """
+        {
+          "ldhName": "example.com",
+          "handle": "2336799_DOMAIN_COM-VRSN",
+          "status": ["client transfer prohibited"],
+          "nameservers": [{"ldhName": "a.iana-servers.net"}, {"ldhName": "b.iana-servers.net"}],
+          "events": [
+            {"eventAction": "registration", "eventDate": "1995-08-14T04:00:00Z"},
+            {"eventAction": "expiration", "eventDate": "2026-08-13T04:00:00Z"}
+          ],
+          "entities": [
+            {
+              "roles": ["registrar"],
+              "vcardArray": ["vcard", [["fn", {}, "text", "Example Registrar, Inc."]]]
+            }
+          ]
+        }
         """
         fake_client = _FakeDomainHttpClient(
             (
@@ -610,6 +659,13 @@ class EngineTests(unittest.TestCase):
                     body_text=ct_body,
                     content_type="application/json",
                 ),
+                HttpResult(
+                    url="https://rdap.org/domain/example.com",
+                    final_url="https://rdap.org/domain/example.com",
+                    status_code=200,
+                    body_text=rdap_body,
+                    content_type="application/rdap+json",
+                ),
             )
         )
 
@@ -627,6 +683,11 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(sources["certificate-transparency"].metadata["subdomain_count"], "2")
         self.assertEqual(sources["certificate-transparency"].metadata["subdomains"], "api.example.com, www.example.com")
         self.assertEqual(fake_client.requests[2][2], {"Accept": "application/json"})
+        self.assertEqual(sources["rdap-domain"].status, "candidate")
+        self.assertEqual(sources["rdap-domain"].metadata["registrar"], "Example Registrar, Inc.")
+        self.assertEqual(sources["rdap-domain"].metadata["nameservers"], "a.iana-servers.net, b.iana-servers.net")
+        self.assertEqual(sources["rdap-domain"].metadata["expires_at"], "2026-08-13T04:00:00Z")
+        self.assertEqual(fake_client.requests[3][2], {"Accept": "application/rdap+json, application/json"})
 
     def test_telegram_scan_normalizes_handle_and_post_url(self):
         engine = Engine([TelegramScanModule()])

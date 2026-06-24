@@ -314,12 +314,15 @@ def _metadata_edge(key: str) -> tuple[str, str] | None:
         "country_code": ("country_code_hint", "country-code"),
         "subdomain": ("discovered_subdomain", "subdomain"),
         "subdomains": ("discovered_subdomain", "subdomain"),
+        "registrar": ("registered_via", "registrar"),
+        "nameserver": ("uses_nameserver", "nameserver"),
+        "nameservers": ("uses_nameserver", "nameserver"),
     }
     return mapping.get(key)
 
 
 def _metadata_values(key: str, value: str) -> tuple[str, ...]:
-    if key in {"subdomain", "subdomains"}:
+    if key in {"subdomain", "subdomains", "nameserver", "nameservers"}:
         parts = [part.strip() for part in value.replace("|", ",").split(",")]
         return tuple(part for part in parts if part)
     return (value,)

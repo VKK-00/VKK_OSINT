@@ -16,6 +16,7 @@ SECURITY_HEADERS = (
     "referrer-policy",
 )
 CT_SUBDOMAIN_LIMIT = 50
+RDAP_NAMESERVER_LIMIT = 20
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,16 @@ class DomainScanModule:
                     evidence="Dry run only. Pass --live to query certificate transparency records.",
                     metadata={"domain": domain, "provider": "crt.sh"},
                 ),
+                Finding(
+                    module=self.name,
+                    source="rdap-domain",
+                    target=target.value,
+                    status="planned",
+                    url=_rdap_url(domain),
+                    confidence="not_checked",
+                    evidence="Dry run only. Pass --live to query RDAP domain registration data.",
+                    metadata={"domain": domain, "provider": "rdap.org"},
+                ),
             )
 
         findings: list[Finding] = []
@@ -91,6 +102,7 @@ class DomainScanModule:
         findings.append(_http_metadata(self.name, target.value, domain, "https", client))
         findings.append(_http_metadata(self.name, target.value, domain, "http", client))
         findings.append(_certificate_transparency(self.name, target.value, domain, client))
+        findings.append(_rdap_domain(self.name, target.value, domain, client))
         return tuple(findings)
 
 
@@ -270,6 +282,226 @@ def parse_crtsh_subdomains(body_text: str, domain: str) -> tuple[str, ...]:
 
 def _crtsh_url(domain: str) -> str:
     return f"https://crt.sh/?q={quote(f'%.{domain}', safe='')}&output=json"
+
+
+@dataclass(frozen=True)
+class RdapDomainRecord:
+    domain: str
+    registrar: str = ""
+    handle: str = ""
+    statuses: tuple[str, ...] = ()
+    nameservers: tuple[str, ...] = ()
+    created_at: str = ""
+    updated_at: str = ""
+    expires_at: str = ""
+
+
+def _rdap_domain(module: str, original: str, domain: str, client: HttpClient) -> Finding:
+    url = _rdap_url(domain)
+    result = client.check(url, fetch_title=True, headers={"Accept": "application/rdap+json, application/json"})
+    metadata = {
+        "domain": domain,
+        "provider": "rdap.org",
+        "requested_url": url,
+        "http_attempts": str(result.attempts),
+    }
+    if result.status_code == 404:
+        return Finding(
+            module=module,
+            source="rdap-domain",
+            target=original,
+            status="not_found",
+            url=result.final_url or url,
+            http_status=result.status_code,
+            confidence="medium",
+            evidence="RDAP returned 404 for this domain.",
+            metadata=metadata,
+        )
+    if result.status_code is None or result.status_code >= 400:
+        return Finding(
+            module=module,
+            source="rdap-domain",
+            target=original,
+            status="error",
+            url=result.final_url or url,
+            http_status=result.status_code,
+            confidence="low",
+            evidence=result.error or f"HTTP {result.status_code}",
+            metadata=metadata,
+        )
+    if not result.body_text:
+        return Finding(
+            module=module,
+            source="rdap-domain",
+            target=original,
+            status="error",
+            url=result.final_url or url,
+            http_status=result.status_code,
+            confidence="low",
+            evidence="RDAP returned no JSON body.",
+            metadata=metadata,
+        )
+
+    try:
+        record = parse_rdap_domain_record(result.body_text, domain)
+    except ValueError as exc:
+        return Finding(
+            module=module,
+            source="rdap-domain",
+            target=original,
+            status="error",
+            url=result.final_url or url,
+            http_status=result.status_code,
+            confidence="low",
+            evidence=str(exc),
+            metadata=metadata,
+        )
+
+    nameservers = record.nameservers[:RDAP_NAMESERVER_LIMIT]
+    metadata.update(
+        {
+            "rdap_domain": record.domain,
+            "registrar": record.registrar,
+            "domain_handle": record.handle,
+            "domain_statuses": ", ".join(record.statuses),
+            "nameservers": ", ".join(nameservers),
+            "nameserver_count": str(len(record.nameservers)),
+            "nameservers_truncated": "yes" if len(record.nameservers) > len(nameservers) else "no",
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+            "expires_at": record.expires_at,
+        }
+    )
+    return Finding(
+        module=module,
+        source="rdap-domain",
+        target=original,
+        status="candidate",
+        url=result.final_url or url,
+        http_status=result.status_code,
+        confidence="medium",
+        evidence="RDAP domain registration record found.",
+        metadata=metadata,
+    )
+
+
+def parse_rdap_domain_record(body_text: str, domain: str) -> RdapDomainRecord:
+    try:
+        payload = json.loads(body_text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Could not parse RDAP JSON response: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("RDAP JSON response is not an object.")
+
+    nameservers = _rdap_nameservers(payload.get("nameservers", ()))
+    events = _rdap_events(payload.get("events", ()))
+    return RdapDomainRecord(
+        domain=str(payload.get("ldhName") or payload.get("unicodeName") or domain).strip().lower(),
+        registrar=_rdap_registrar(payload.get("entities", ())),
+        handle=str(payload.get("handle", "")).strip(),
+        statuses=_dedupe_strings(payload.get("status", ())),
+        nameservers=nameservers,
+        created_at=events.get("registration", ""),
+        updated_at=events.get("last changed", "") or events.get("last update of rdap database", ""),
+        expires_at=events.get("expiration", ""),
+    )
+
+
+def _rdap_url(domain: str) -> str:
+    return f"https://rdap.org/domain/{quote(domain, safe='')}"
+
+
+def _rdap_nameservers(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    names: list[str] = []
+    for row in value:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("ldhName") or row.get("unicodeName") or "").strip().lower().strip(".")
+        if name:
+            names.append(name)
+    return _dedupe_strings(names)
+
+
+def _rdap_events(value: object) -> dict[str, str]:
+    if not isinstance(value, list):
+        return {}
+    events: dict[str, str] = {}
+    for row in value:
+        if not isinstance(row, dict):
+            continue
+        action = str(row.get("eventAction", "")).strip().lower()
+        date = str(row.get("eventDate", "")).strip()
+        if action and date and action not in events:
+            events[action] = date
+    return events
+
+
+def _rdap_registrar(value: object) -> str:
+    if not isinstance(value, list):
+        return ""
+    for row in value:
+        if not isinstance(row, dict):
+            continue
+        role_values = row.get("roles", ())
+        roles = (
+            {str(role).strip().lower() for role in role_values if str(role).strip()}
+            if isinstance(role_values, (list, tuple, set))
+            else set()
+        )
+        if "registrar" not in roles:
+            continue
+        name = _rdap_entity_name(row)
+        if name:
+            return name
+    for row in value:
+        if isinstance(row, dict):
+            name = _rdap_entity_name(row)
+            if name:
+                return name
+    return ""
+
+
+def _rdap_entity_name(entity: dict[str, object]) -> str:
+    vcard = entity.get("vcardArray")
+    if isinstance(vcard, list) and len(vcard) >= 2 and isinstance(vcard[1], list):
+        for field in vcard[1]:
+            if not isinstance(field, list) or len(field) < 4:
+                continue
+            name = str(field[0]).strip().lower()
+            value = field[3]
+            if name in {"fn", "org"}:
+                if isinstance(value, list):
+                    flattened = " ".join(str(part).strip() for part in value if str(part).strip())
+                    if flattened:
+                        return flattened
+                text = str(value).strip()
+                if text:
+                    return text
+
+    public_ids = entity.get("publicIds")
+    if isinstance(public_ids, list):
+        for row in public_ids:
+            if isinstance(row, dict) and str(row.get("type", "")).strip().lower() == "iana registrar id":
+                identifier = str(row.get("identifier", "")).strip()
+                if identifier:
+                    return f"IANA Registrar ID {identifier}"
+    return ""
+
+
+def _dedupe_strings(values: object) -> tuple[str, ...]:
+    if not isinstance(values, (list, tuple)):
+        return ()
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in values:
+        normalized = str(value).strip()
+        key = normalized.lower()
+        if normalized and key not in seen:
+            seen.add(key)
+            deduped.append(normalized)
+    return tuple(deduped)
 
 
 def _normalize_ct_name(value: str) -> str:

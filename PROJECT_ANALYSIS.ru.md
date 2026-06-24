@@ -26,7 +26,7 @@ CLI работает в трёх режимах:
 - content marker rules для live username checks: profile markers повышают confidence, soft-404 markers дают `not_found`;
 - email baseline checks: синтаксис, live domain resolution, MX/NS/TXT lookup, SPF, DMARC, MTA-STS, TLS-RPT, BIMI и TXT service signal classification;
 - phone baseline checks: нормализация, E.164-like validation и country-prefix signal;
-- domain baseline recon: DNS resolution, HTTP/HTTPS metadata, presence security headers и certificate transparency subdomain discovery;
+- domain baseline recon: DNS resolution, HTTP/HTTPS metadata, presence security headers, certificate transparency subdomain discovery и RDAP registration lookup;
 - Telegram baseline: handle/post URL normalization и optional live public metadata;
 - RU/UA source pack: curated карты, Telegram/RU platforms, geospatial и pastebin источники;
 - базовый web metadata scan по URL, совместимый с начальным web-check слоем;
@@ -99,7 +99,7 @@ CLI работает в трёх режимах:
   - `PersonNameScanModule` — safe person-name expansion в bounded username-кандидаты, по умолчанию до 24 вариантов.
   - `generate_username_candidates()` — стабильные варианты `firstlast`, `first.last`, `first_initial_last`, reverse-order handles, common given-name aliases, operator-provided aliases, handle suffixes и RU/UA transliteration.
 - `osint_toolkit/modules/email.py`
-  - `EmailScanModule` — базовая проверка email: синтаксис, доменное разрешение, MX/TXT lookup, SPF/DMARC findings.
+  - `EmailScanModule` — базовая проверка email: синтаксис, доменное разрешение, MX/NS/TXT lookup, SPF/DMARC/MTA-STS/TLS-RPT/BIMI и TXT service signal findings.
 - `osint_toolkit/email_auth.py`
   - `classify_spf_policy()` — классификация SPF из доменного TXT: отсутствие, multiple SPF warning, `all` policy, include/redirect counts.
   - `classify_dmarc_policy()` — классификация DMARC из `_dmarc.<domain>` TXT: отсутствие, multiple DMARC warning, `p=`, `sp=`, alignment, percent и report URI tags.
@@ -111,8 +111,9 @@ CLI работает в трёх режимах:
 - `osint_toolkit/modules/phone.py`
   - `PhoneScanModule` — нормализация и country-prefix сигнал для телефонных номеров.
 - `osint_toolkit/modules/domain.py`
-  - `DomainScanModule` — DNS, HTTP/HTTPS baseline и certificate transparency lookup для доменов.
+  - `DomainScanModule` — DNS, HTTP/HTTPS baseline, certificate transparency lookup и RDAP lookup для доменов.
   - `parse_crtsh_subdomains()` — parser `crt.sh` JSON, который нормализует wildcard/common-name значения в bounded `subdomain` signals.
+  - `parse_rdap_domain_record()` — parser RDAP JSON, который извлекает registrar, domain handle, statuses, nameservers и registration/expiration dates.
 - `osint_toolkit/modules/telegram.py`
   - `TelegramScanModule` — нормализация Telegram handles/post URLs и live t.me metadata.
 - `osint_toolkit/modules/ru_ua_sources.py`
@@ -411,7 +412,7 @@ osint-toolkit stats
 - Adapter manifest теперь включает generated CSV/TXT folder template для `sherlock-project/sherlock`, isolated workdir TXT ingestion для `thewhiteh4t/nexfil`, generated JSON-file templates для `alpkeskin/mosint` и `h8mail`, generated JSON-report folder template для `soxoj/maigret`, target-specific executable templates для `user-scanner`, region-aware template для `snooppr/snoop` и executable template для `sundowndev/phoneinfoga`; более сложные adapters могут потребовать richer per-mode config.
 - Adapter parser покрывает общие URL/email/phone/key-value patterns, Sherlock stdout/CSV/TXT reports, Nexfil stdout/TXT reports, Mosint JSON reports, h8mail JSON reports, Maigret JSON/CSV reports, `user-scanner` JSON/verbose output, Snoop stdout/CSV output и PhoneInfoga CLI/API output; сложные JSON/CSV/HTML exports остальных upstream ещё не разобраны.
 - Adapter profiles пока статические; нет пользовательских профилей и per-case persistent adapter policy.
-- Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> subdomain` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics и cross-case entity index, но нет weighted path finding, cross-case edge graph и визуального UI.
+- Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics и cross-case entity index, но нет weighted path finding, cross-case edge graph и визуального UI.
 - SQLite schema сейчас версии 2; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
@@ -474,3 +475,4 @@ osint-toolkit stats
 - 2026-06-24: Sherlock execute mode теперь добавляет generated CSV/TXT output folder; parser stdout/CSV/TXT нормализует `Claimed`, `Available`, `Unknown`, `Illegal`, `WAF` в единые findings.
 - 2026-06-24: Nexfil execute mode теперь запускается в isolated temporary workdir/HOME; parser stdout/TXT нормализует autosaved profile URLs и summary metrics.
 - 2026-06-24: расширен native Web/domain recon: `DomainScanModule` теперь планирует и выполняет `crt.sh` certificate transparency lookup, а CT names попадают в `subdomain` entities и graph edges `domain -> subdomain`.
+- 2026-06-24: добавлен native RDAP lookup для domain recon: registrar/nameservers/status/events попадают в `rdap-domain` finding, `registrar`/`nameserver` entities и graph edges `domain -> registrar|nameserver`.
