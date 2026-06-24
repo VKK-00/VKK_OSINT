@@ -249,6 +249,7 @@ class InvestigationTests(unittest.TestCase):
         self.assertIn(("person", "ivan petrenko"), entities)
         self.assertIn(("normalized-name", "ivan petrenko"), entities)
         self.assertIn(("username", "ivanpetrenko"), entities)
+        self.assertIn(("username", "vanyapetrenko"), entities)
         self.assertIn(("url", "https://github.com/ivanpetrenko"), entities)
 
         edges = {
@@ -256,6 +257,7 @@ class InvestigationTests(unittest.TestCase):
             for edge in result.edges
         }
         self.assertIn(("person", "ivan petrenko", "generated_username_candidate", "username", "ivanpetrenko"), edges)
+        self.assertIn(("person", "ivan petrenko", "generated_username_candidate", "username", "vanyapetrenko"), edges)
         self.assertIn(("username", "ivanpetrenko", "produced_url", "url", "https://github.com/ivanpetrenko"), edges)
 
     def test_person_target_adapter_allowlist_runs_only_on_derived_usernames(self):

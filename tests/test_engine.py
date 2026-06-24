@@ -490,20 +490,28 @@ class EngineTests(unittest.TestCase):
 
     def test_person_scan_generates_username_candidates_from_ru_ua_name(self):
         engine = Engine([PersonNameScanModule()])
-        findings = engine.scan(ScanTarget(kind="person", value="Іван Петренко"), RunConfig(limit=4))
+        findings = engine.scan(ScanTarget(kind="person", value="Іван Петренко"), RunConfig(limit=16))
         usernames = [finding.metadata["username"] for finding in findings]
+        strategies = {finding.metadata["strategy"] for finding in findings}
 
         self.assertEqual(findings[0].metadata["normalized_name"], "ivan petrenko")
         self.assertIn("ivanpetrenko", usernames)
         self.assertIn("ivan.petrenko", usernames)
+        self.assertIn("vanyapetrenko", usernames)
+        self.assertIn("alias_last_joined", strategies)
         self.assertTrue(all(finding.status == "candidate" for finding in findings))
 
     def test_person_name_helpers_generate_stable_variants(self):
         self.assertEqual(normalize_person_name("Олена Іваненко"), "olena ivanenko")
         candidates = generate_username_candidates("olena ivanenko")
         usernames = [candidate.username for candidate in candidates]
+        strategies = {candidate.strategy for candidate in candidates}
 
         self.assertEqual(usernames[:4], ["olena", "olenaivanenko", "olena.ivanenko", "olena_ivanenko"])
+        self.assertIn("elenaivanenko", usernames)
+        self.assertIn("lena.ivanenko", usernames)
+        self.assertIn("olenaivanenkoofficial", usernames)
+        self.assertIn("handle_suffix", strategies)
 
     def test_url_scan_dry_run_normalizes_scheme(self):
         engine = Engine([WebMetadataModule()])

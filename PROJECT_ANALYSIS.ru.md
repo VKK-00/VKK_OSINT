@@ -90,14 +90,14 @@ CLI работает в трёх режимах:
   - `match_content()` — сопоставление title/body с profile/not-found markers.
   - `CURATED_USERNAME_SITES` — локально уточнённые 38 public profile templates.
   - `SHERLOCK_USERNAME_SITES` — импортированные из Sherlock `data.json` templates.
-  - `WHATSMYNAME_USERNAME_SITES` — импортированные GET-compatible entries из WhatsMyName `wmn-data.json`.
+  - `WHATSMYNAME_USERNAME_SITES` — импортированные GET/POST-compatible entries из WhatsMyName `wmn-data.json`.
   - `MAIGRET_USERNAME_SITES` — импортированные sanitized site rules из Maigret.
   - `USERNAME_SITES` — merged native dataset; curated правила идут первыми, одинаковые URL дедуплицируются, одноимённые альтернативные checks получают суффикс источника.
 - `osint_toolkit/http_client.py`
   - `HttpResult.body_text` — ограниченный текст ответа для content marker checks.
 - `osint_toolkit/modules/person.py`
-  - `PersonNameScanModule` — safe person-name expansion в username-кандидаты.
-  - `generate_username_candidates()` — стабильные варианты `firstlast`, `first.last`, `first_initial_last` и RU/UA transliteration.
+  - `PersonNameScanModule` — safe person-name expansion в bounded username-кандидаты, по умолчанию до 24 вариантов.
+  - `generate_username_candidates()` — стабильные варианты `firstlast`, `first.last`, `first_initial_last`, reverse-order handles, common given-name aliases, handle suffixes и RU/UA transliteration.
 - `osint_toolkit/modules/email.py`
   - `EmailScanModule` — базовая проверка email: синтаксис, доменное разрешение, MX/TXT lookup, SPF/DMARC findings.
 - `osint_toolkit/email_auth.py`
@@ -397,7 +397,7 @@ osint-toolkit stats
 
 - Каталог основан на snapshot от 2026-06-24; GitHub stars и актуальность проектов меняются.
 - Качество и безопасность внешних репозиториев не аудированы.
-- Native person-name expansion пока использует базовые шаблоны имени/фамилии и RU/UA transliteration; нет словарей никнеймов, исторических alias и platform-specific username rules.
+- Native person-name expansion использует шаблоны имени/фамилии, reverse-order variants, initials, curated common given-name aliases, handle suffixes и RU/UA transliteration; пока нет исторических alias datasets, operator-provided alias dictionaries и platform-specific alias scoring.
 - Первый native username module уже импортирует Sherlock GET/POST site dataset, WhatsMyName GET/POST dataset и sanitized Maigret site rules, покрывает URL-template/status-code слой, Sherlock response-url `errorUrl`, часть platform syntax rules, custom headers, POST bodies, базовый HTTP retry/backoff и часть content marker rules, но не всю логику Sherlock/Maigret/WhatsMyName: Maigret engine templates/activation/recursive/reporting logic ещё не встроены, нет полного набора WAF/error-handling rules, site-specific rate-limit tuning и enrichment.
 - Native email module делает MX/TXT lookup и SPF/DMARC classifier, но пока не делает native breach lookup, NS/additional TXT classifiers или own API enrichment; Mosint/h8mail покрывают часть enrichment через external adapters.
 - Native phone module пока не делает carrier lookup, reputation lookup или external API enrichment.
@@ -448,6 +448,7 @@ osint-toolkit stats
 - 2026-06-24: добавлен повторяемый `investigate --adapter` allowlist для выбора конкретных upstream adapters в кейсе.
 - 2026-06-24: добавлены `AdapterProfile`, команда `adapter-profiles` и `investigate --adapter-profile` для готовых групп adapters.
 - 2026-06-24: добавлены `PersonNameScanModule`, `scan person` и `investigate --person` с derived username scan/adapters и graph-связью `person -> username`.
+- 2026-06-24: расширен person-name expansion: common RU/UA/name aliases, reverse-order handles, initials и handle suffixes теперь попадают в username candidates.
 - 2026-06-24: расширен native username dataset до 38 URL-шаблонов и добавлены platform-specific username rules со статусом `skipped`.
 - 2026-06-24: импортирован Sherlock `data.json` как native package resource; активный username dataset расширен до 479 URL-шаблонов после дедупликации curated и upstream-записей.
 - 2026-06-24: импортирован WhatsMyName `wmn-data.json` как native package resource; активный username dataset расширен до 1071 check-шаблона с WMN `e_string`/`m_string`, `e_code`/`m_code` и custom headers.

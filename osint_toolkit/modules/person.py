@@ -6,6 +6,45 @@ from dataclasses import dataclass
 from ..engine import Finding, RunConfig, ScanTarget
 
 TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
+HANDLE_SUFFIXES = ("official", "real", "online")
+MAX_GENERATED_CANDIDATES = 64
+
+GIVEN_NAME_ALIASES = {
+    "aleksandr": ("alex", "sasha", "san", "sanya"),
+    "alexandr": ("alex", "sasha", "san", "sanya"),
+    "alexander": ("alex", "sasha"),
+    "alexey": ("alex", "lesha"),
+    "andriy": ("andrew", "andri"),
+    "andrey": ("andrew", "andri"),
+    "anna": ("ania", "anya", "ann"),
+    "artem": ("artyom", "tema"),
+    "bohdan": ("bogdan",),
+    "dmytro": ("dima", "dmitry"),
+    "dmitry": ("dima",),
+    "iryna": ("ira", "irina"),
+    "ivan": ("vanya", "john"),
+    "kateryna": ("kate", "katya", "katerina"),
+    "kyrylo": ("kirill", "kiril"),
+    "maksym": ("max", "maks", "maxim"),
+    "mariia": ("maria", "masha", "mary"),
+    "maria": ("masha", "mary"),
+    "mykhailo": ("misha", "michael"),
+    "nataliia": ("natalia", "natasha", "nata"),
+    "nikita": ("nik", "nick"),
+    "oleksandr": ("alex", "sasha", "san", "sanya"),
+    "oleksandra": ("alexandra", "sasha"),
+    "olena": ("elena", "lena"),
+    "pavlo": ("pavel", "paul"),
+    "petro": ("petr", "peter"),
+    "serhii": ("sergey", "serg"),
+    "sergey": ("serg",),
+    "sviatoslav": ("slava",),
+    "tetiana": ("tatyana", "tanya"),
+    "viktor": ("victor", "vitya"),
+    "volodymyr": ("vladimir", "vova", "vlad"),
+    "yevhen": ("evgeny", "zhenya"),
+    "yuliia": ("julia", "yulia", "jules"),
+}
 
 TRANSLITERATION_TABLE = str.maketrans(
     {
@@ -60,7 +99,7 @@ class UsernameCandidate:
 class PersonNameScanModule:
     name: str = "person-name-expansion"
     supported_targets: tuple[str, ...] = ("person",)
-    default_limit: int = 12
+    default_limit: int = 24
 
     def scan(self, target: ScanTarget, config: RunConfig) -> tuple[Finding, ...]:
         normalized_name = normalize_person_name(target.value)
@@ -142,6 +181,9 @@ def generate_username_candidates(normalized_name: str) -> tuple[UsernameCandidat
             UsernameCandidate(last + first, "last_first_joined"),
             UsernameCandidate(f"{last}.{first}", "last_dot_first"),
             UsernameCandidate(f"{last}_{first}", "last_underscore_first"),
+            UsernameCandidate(f"{last}-{first}", "last_dash_first"),
+            UsernameCandidate(last + first[0], "last_first_initial"),
+            UsernameCandidate(first[0] + last[0], "initial_pair"),
         ]
     )
 
@@ -156,7 +198,34 @@ def generate_username_candidates(normalized_name: str) -> tuple[UsernameCandidat
                 UsernameCandidate(first_middle_last, "first_middle_initials_last"),
             ]
         )
+    proposals.extend(_alias_candidates(first, last))
+    proposals.extend(_suffix_candidates(first, last))
     return _dedupe_candidates(tuple(proposals))
+
+
+def _alias_candidates(first: str, last: str) -> tuple[UsernameCandidate, ...]:
+    aliases = GIVEN_NAME_ALIASES.get(first, ())
+    candidates: list[UsernameCandidate] = []
+    for alias in aliases:
+        candidates.extend(
+            [
+                UsernameCandidate(alias, "given_name_alias"),
+                UsernameCandidate(alias + last, "alias_last_joined"),
+                UsernameCandidate(f"{alias}.{last}", "alias_dot_last"),
+                UsernameCandidate(f"{alias}_{last}", "alias_underscore_last"),
+                UsernameCandidate(alias[0] + last, "alias_initial_last"),
+            ]
+        )
+    return tuple(candidates)
+
+
+def _suffix_candidates(first: str, last: str) -> tuple[UsernameCandidate, ...]:
+    base_names = (first + last, f"{first}.{last}", f"{first}_{last}")
+    return tuple(
+        UsernameCandidate(f"{base}{suffix}", "handle_suffix")
+        for base in base_names
+        for suffix in HANDLE_SUFFIXES
+    )
 
 
 def _name_tokens(value: str) -> tuple[str, ...]:
@@ -184,6 +253,8 @@ def _dedupe_candidates(candidates: tuple[UsernameCandidate, ...]) -> tuple[Usern
         if key not in seen:
             seen.add(key)
             deduped.append(UsernameCandidate(username, candidate.strategy))
+        if len(deduped) >= MAX_GENERATED_CANDIDATES:
+            break
     return tuple(deduped)
 
 

@@ -18,7 +18,7 @@
 - искать по каталогу top-100 OSINT-репозиториев;
 - находить проекты, связанные с OSINT по лицам;
 - находить проекты и ресурсы, связанные с РФ, Украиной и русскоязычными платформами;
-- разворачивать имя человека в username-кандидаты с RU/UA transliteration;
+- разворачивать имя человека в username-кандидаты с RU/UA transliteration, common given-name aliases, initials, reversible name order и handle suffixes;
 - выполнять native username profile checks по 2014 активным URL/check-шаблонам: 38 curated правил, встроенный Sherlock `data.json`, WhatsMyName `wmn-data.json` GET/POST entries и sanitized Maigret site rules с platform-specific username rules, content/status/response-url markers, custom headers, POST bodies и probe/profile URL metadata;
 - выполнять baseline email checks: синтаксис, live domain resolution, MX/TXT lookup, SPF и DMARC policy classification;
 - выполнять baseline phone checks: E.164-like нормализация и префикс региона;
@@ -136,7 +136,7 @@ python -m osint_toolkit scan ru-ua all --region ru --format markdown
 python -m osint_toolkit scan url https://example.com --live --format json
 ```
 
-Native person module делает safe username expansion: нормализует имя, транслитерирует RU/UA/кириллические символы и генерирует кандидаты вроде `ivanpetrenko`, `ivan.petrenko`, `ipetrenko`. Это не подтверждение аккаунтов, а список кандидатов для проверки через username scan и adapters.
+Native person module делает safe username expansion: нормализует имя, транслитерирует RU/UA/кириллические символы и генерирует bounded список кандидатов, по умолчанию до 24 вариантов, например `ivanpetrenko`, `ivan.petrenko`, `ipetrenko`, `vanyapetrenko` и `ivanpetrenkoofficial`. Это не подтверждение аккаунтов, а список кандидатов для проверки через username scan и adapters.
 
 Сейчас native username module покрывает Sherlock/Maigret/WhatsMyName-подобный слой публичных profile URL checks: 38 curated URL-шаблонов, 479 валидных записей из Sherlock `data.json` включая 3 POST-checks и 27 response-url rules, 718 entries из WhatsMyName `wmn-data.json` включая 22 POST-checks и 1423 sanitized Maigret site rules; после дедупликации одинаковых URL активно 2014 check-шаблонов, включая 23 active POST checks и 26 active response-url checks. Curated правила идут первыми. Одинаковые URL удаляются, а альтернативные проверки одного сайта сохраняются с суффиксом источника, например `GitLab (WhatsMyName)`, `AniList (WhatsMyName)` или `Instagram (Maigret)`. Если username не подходит конкретной платформе, finding получает `status=skipped`, а не строит заведомо неверный URL. В `--live` режиме title/body markers, Sherlock `errorUrl` response-url rules, Sherlock/WMN POST bodies, WMN `e_string`/`m_string`, WMN `e_code`/`m_code`, Maigret `presenseStrs`/`absenceStrs`, status rules, custom headers, retry по 429/temporary 5xx, `Retry-After` и операторский `--request-delay` используются для более близкой к upstream классификации. Оставшийся gap до полного 1:1: Maigret engine templates/activation/recursive policy/reporting logic, оставшиеся Sherlock WAF/error-handling нюансы, richer per-site rules и site-specific rate-limit policy либо запуск внешних CLI через adapters.
 

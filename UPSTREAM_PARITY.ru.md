@@ -30,6 +30,7 @@ python -m osint_toolkit scan username <username> --live
 
 - person-name expansion в username-кандидаты;
 - RU/UA/кириллическая transliteration для username candidates;
+- curated common given-name aliases, initials, reversible name order и handle suffixes для person-derived username candidates;
 - 2014 активных публичных URL/check-шаблонов профилей: 38 curated правил, 479 валидных записей из Sherlock `data.json`, 718 WhatsMyName `wmn-data.json` GET/POST entries и 1423 sanitized Maigret site rules после дедупликации одинаковых URL;
 - platform-specific username rules и `skipped` findings для заведомо несовместимых платформ;
 - content markers и response-url rules для части live username checks: profile marker -> `candidate/high`, soft-404 marker или Sherlock `errorUrl` redirect -> `not_found/high`;
@@ -70,7 +71,7 @@ Gap до полного 1:1:
 - Sherlock GET/POST site dataset, WhatsMyName GET/POST dataset и sanitized Maigret site rules импортированы в native username layer;
 - Maigret engine templates, activation flows, recursive policy tuning, report generation, proxies/Tor/I2P and AI mode пока остаются adapter-only;
 - per-site rules покрывают username syntax/length, часть title/body content markers и Sherlock response-url `errorUrl`; есть базовый retry/backoff, но ещё не вся WAF/error-handling логика и site-specific rate-limit tuning;
-- username permutation/alias strategy пока базовая: нет словарей никнеймов, исторических alias и platform-specific username rules;
+- username permutation/alias strategy уже покрывает common given-name aliases и handle suffixes, но пока нет исторических alias datasets, operator-provided alias dictionaries и platform-specific alias scoring;
 - content-based confidence пока частичный: нет полного набора marker rules из upstream datasets;
 - Maigret подключён hybrid: sanitized site rules импортированы native, а web UI, PDF/HTML/XMind reports, recursive policy tuning, proxies/Tor/I2P и AI mode пока не перенесены в native UI;
 - Snoop подключён adapter-first, но локальная установка/обновление Snoop пока остаются операторским действием;
