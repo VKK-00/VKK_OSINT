@@ -29,6 +29,7 @@
 - показывать карту upstream-адаптеров и dry-run/execute запускать настроенные внешние CLI;
 - включать executed adapter outputs в единый investigation report, entities, graph и case store;
 - читать generated JSON reports внешних adapters, если upstream CLI пишет машинный вывод в файл;
+- запускать Mosint adapter в `--silent --output <json>` режиме и разбирать его upstream JSON report;
 - запускать h8mail adapter в `--hide -j <json>` режиме и разбирать его upstream JSON report без переноса credential values в evidence;
 - запускать Maigret adapter в `--json ndjson` режиме и разбирать его dossier findings;
 - запускать Snoop adapter с RU/UA `--include` фильтром и разбирать его stdout/CSV-отчёты;
@@ -57,6 +58,7 @@ python -m osint_toolkit adapter-profiles
 python -m osint_toolkit adapter-setup sherlock-project/sherlock
 python -m osint_toolkit doctor
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
+python -m osint_toolkit run-adapter alpkeskin/mosint email person@example.com
 python -m osint_toolkit run-adapter khast3x/h8mail email person@example.com
 python -m osint_toolkit run-adapter soxoj/maigret username example_user --region ua
 python -m osint_toolkit run-adapter snooppr/snoop username example_user --region ua
@@ -175,7 +177,7 @@ python -m osint_toolkit adapter-profiles
 python -m osint_toolkit adapter-profiles --format json
 ```
 
-Текущие профили включают `username-full`, `username-ru-ua`, `email-safe`, `phone-safe` и `url-archive`. `username-full` включает Maigret через `maigret <username> --json ndjson`, а `username-ru-ua` начинается со Snoop и Maigret; при `--region ru|ua` Snoop получает `--include RU|UA`, а Maigret получает `--tags ru|ua`. `email-safe` включает h8mail через `h8mail -t <email> --hide -j <temp.json>` и `user-scanner` через target-specific JSON-команды `user-scanner -u <username> -f json` и `user-scanner -e <email> -f json`. Restricted email-to-account/email-to-phone adapters в `email-safe` не входят.
+Текущие профили включают `username-full`, `username-ru-ua`, `email-safe`, `phone-safe` и `url-archive`. `username-full` включает Maigret через `maigret <username> --json ndjson`, а `username-ru-ua` начинается со Snoop и Maigret; при `--region ru|ua` Snoop получает `--include RU|UA`, а Maigret получает `--tags ru|ua`. `email-safe` включает Mosint через `mosint --silent <email> --output <temp.json>`, h8mail через `h8mail -t <email> --hide -j <temp.json>` и `user-scanner` через target-specific JSON-команды `user-scanner -u <username> -f json` и `user-scanner -e <email> -f json`. Restricted email-to-account/email-to-phone adapters в `email-safe` не входят.
 
 ### `run-adapter`
 
@@ -184,6 +186,7 @@ Dry-run или явный запуск настроенного upstream CLI ada
 ```powershell
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user --execute
+python -m osint_toolkit run-adapter alpkeskin/mosint email person@example.com
 python -m osint_toolkit run-adapter khast3x/h8mail email person@example.com
 python -m osint_toolkit run-adapter soxoj/maigret username example_user --region ua
 python -m osint_toolkit run-adapter snooppr/snoop username example_user --region ua
@@ -194,7 +197,7 @@ python -m osint_toolkit run-adapter sundowndev/phoneinfoga phone +380441234567
 
 Restricted adapters требуют дополнительный флаг `--allow-restricted`; без него возвращается `restricted`.
 
-При `--execute` поддерживаемые adapters дополнительно проходят через parser. Runner умеет читать stdout/stderr и generated report-файлы из временной output-папки или конкретного output-file аргумента, если upstream CLI пишет машинный вывод не в stdout. Сейчас общий parser извлекает URL, email, E.164-like phone и key/value сигналы из Sherlock/Nexfil/Mosint/PhoneInfoga-подобного вывода. Для h8mail есть parser фактического JSON `{targets: [{target, pwn_num, data}]}`: breach count, related emails, usernames, source labels и paste URLs превращаются в `Finding`/entities, а password/hash/token-like values редактируются и не попадают в evidence. Для Maigret есть parser NDJSON/simple JSON/CSV: `Claimed` -> `candidate/high`, `Available` -> `not_found/medium`, `Unknown` -> `error/low`, `Illegal` -> `skipped/high`, а `ids` попадают в metadata `name`, `location`, `country`, `email`, `phone` и `username`. Для `user-scanner` есть JSON/verbose parser со статусами `Registered`, `Found`, `Not Found`, `Available` и `Error`. Для `snooppr/snoop` есть parser stdout-строк и CSV-отчёта: `найден!` превращается в `candidate/high`, `Увы!` в `not_found/medium`, `блок` и ошибки в `error/low`; отрицательные строки сохраняют `checked_url`, но не создают подтверждённый URL/domain.
+При `--execute` поддерживаемые adapters дополнительно проходят через parser. Runner умеет читать stdout/stderr и generated report-файлы из временной output-папки или конкретного output-file аргумента, если upstream CLI пишет машинный вывод не в stdout. Сейчас общий parser извлекает URL, email, E.164-like phone и key/value сигналы из Sherlock/Nexfil/Mosint/PhoneInfoga-подобного вывода. Для Mosint есть parser фактического JSON `email`, `verified`, `emailrep`, `breachdirectory`, `haveibeenpwned`, `hunter`, `intelx`, `psbdmp`, social flags, `google_search` и `dns_records`; password/hash/sha1-like values редактируются. Для h8mail есть parser фактического JSON `{targets: [{target, pwn_num, data}]}`: breach count, related emails, usernames, source labels и paste URLs превращаются в `Finding`/entities, а password/hash/token-like values редактируются и не попадают в evidence. Для Maigret есть parser NDJSON/simple JSON/CSV: `Claimed` -> `candidate/high`, `Available` -> `not_found/medium`, `Unknown` -> `error/low`, `Illegal` -> `skipped/high`, а `ids` попадают в metadata `name`, `location`, `country`, `email`, `phone` и `username`. Для `user-scanner` есть JSON/verbose parser со статусами `Registered`, `Found`, `Not Found`, `Available` и `Error`. Для `snooppr/snoop` есть parser stdout-строк и CSV-отчёта: `найден!` превращается в `candidate/high`, `Увы!` в `not_found/medium`, `блок` и ошибки в `error/low`; отрицательные строки сохраняют `checked_url`, но не создают подтверждённый URL/domain.
 
 ### `doctor`
 

@@ -48,6 +48,103 @@ class AdapterParserTests(unittest.TestCase):
         self.assertIn(("domain", "example.com"), entities)
         self.assertIn(("name", "example person"), entities)
 
+    def test_parse_mosint_json_report(self):
+        findings = parse_adapter_output(
+            "alpkeskin/mosint",
+            ScanTarget(kind="email", value="target@example.com"),
+            """
+            {
+              "email": "target@example.com",
+              "verified": true,
+              "emailrep": {
+                "email": "target@example.com",
+                "reputation": "medium",
+                "suspicious": true,
+                "references": 2,
+                "details": {
+                  "credentials_leaked": true,
+                  "data_breach": true,
+                  "profiles": ["twitter"],
+                  "first_seen": "2020-01-01",
+                  "deliverable": true,
+                  "valid_mx": true,
+                  "primary_mx": "mx.example.com"
+                }
+              },
+              "breachdirectory": {
+                "success": true,
+                "found": 1,
+                "result": [
+                  {
+                    "has_password": true,
+                    "sources": ["combo-db"],
+                    "password": "secret-value",
+                    "sha1": "sha1-value",
+                    "hash": "hash-value"
+                  }
+                ]
+              },
+              "haveibeenpwned": [
+                {
+                  "Name": "Adobe",
+                  "Title": "Adobe",
+                  "Domain": "adobe.com",
+                  "BreachDate": "2013-10-04",
+                  "PwnCount": 100,
+                  "DataClasses": ["Email addresses", "Passwords"],
+                  "IsVerified": true
+                }
+              ],
+              "hunter": {
+                "data": {
+                  "domain": "example.com",
+                  "organization": "Example Inc",
+                  "country": "US",
+                  "emails": [
+                    {
+                      "value": "admin@example.com",
+                      "first_name": "Admin",
+                      "last_name": "User",
+                      "position": "Security",
+                      "verification": {"status": "valid"},
+                      "sources": [{"uri": "https://example.com/team", "domain": "example.com"}]
+                    }
+                  ],
+                  "linked_domains": ["example.org"]
+                },
+                "meta": {"results": 1}
+              },
+              "psbdmp": ["https://psbdmp.ws/dump/abc"],
+              "google_search": ["https://example.com/contact"],
+              "dns_records": [{"Type": "MX", "Value": "10 mx.example.com"}],
+              "instagram_exists": true,
+              "twitter_exists": true
+            }
+            """,
+        )
+
+        self.assertTrue(any(finding.metadata.get("parser") == "mosint" for finding in findings))
+        self.assertTrue(any(finding.metadata.get("category") == "email-reputation" for finding in findings))
+        self.assertTrue(any(finding.metadata.get("breach_name") == "Adobe" for finding in findings))
+        self.assertTrue(any(finding.metadata.get("source_label") == "combo-db" for finding in findings))
+        self.assertTrue(any(finding.metadata.get("category") == "credential-exposure" for finding in findings))
+        self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings))
+        self.assertTrue(any(finding.url == "https://example.com/team" for finding in findings))
+        self.assertTrue(any(finding.url == "https://psbdmp.ws/dump/abc" for finding in findings))
+
+        for finding in findings:
+            self.assertNotIn("secret-value", finding.evidence)
+            self.assertFalse(any(value == "secret-value" for value in finding.metadata.values()))
+            self.assertFalse(any(value == "sha1-value" for value in finding.metadata.values()))
+            self.assertFalse(any(value == "hash-value" for value in finding.metadata.values()))
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("email", "admin@example.com"), entities)
+        self.assertIn(("domain", "adobe.com"), entities)
+        self.assertIn(("domain", "example.org"), entities)
+        self.assertIn(("name", "admin user"), entities)
+        self.assertIn(("country", "us"), entities)
+
     def test_parse_phoneinfoga_style_key_values(self):
         findings = parse_adapter_output(
             "sundowndev/phoneinfoga",
@@ -387,6 +484,36 @@ class AdapterParserTests(unittest.TestCase):
         self.assertIn("--folderoutput", findings[0].metadata["command"])
         self.assertTrue(any(finding.metadata.get("parser") == "maigret" for finding in findings[1:]))
         self.assertTrue(any(finding.url == "https://github.com/bellingcat" for finding in findings[1:]))
+
+    def test_run_mosint_adapter_reads_generated_json_report_after_execution(self):
+        def fake_run(args, **kwargs):
+            self.assertIn("--silent", args)
+            output_file = Path(args[args.index("--output") + 1])
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.write_text(
+                '{"email":"target@example.com","verified":true,'
+                '"hunter":{"data":{"domain":"example.com","emails":[{"value":"admin@example.com"}]},"meta":{"results":1}},'
+                '"breachdirectory":{"success":true,"found":1,"result":[{"has_password":true,"password":"secret-value","sources":["combo-db"]}]}}',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="JSON report saved\n", stderr="")
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="mosint"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            findings = run_adapter_findings(
+                "alpkeskin/mosint",
+                ScanTarget(kind="email", value="target@example.com"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertEqual(findings[0].metadata["generated_output_files"], "1")
+        self.assertIn("--output", findings[0].metadata["command"])
+        self.assertTrue(any(finding.metadata.get("parser") == "mosint" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
+        self.assertFalse(any("secret-value" in finding.evidence for finding in findings))
 
     def test_run_h8mail_adapter_reads_generated_json_report_after_execution(self):
         def fake_run(args, **kwargs):

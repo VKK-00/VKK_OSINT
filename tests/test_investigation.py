@@ -205,6 +205,43 @@ class InvestigationTests(unittest.TestCase):
         self.assertIn(("email", "target@example.com", "related_email", "email", "admin@example.com"), edges)
         self.assertNotIn(("email", "target@example.com", "related_email", "email", "target@example.com"), edges)
 
+    def test_execute_mosint_adapter_reads_report_into_entities_and_edges(self):
+        def fake_run(args, **kwargs):
+            output_file = Path(args[args.index("--output") + 1])
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.write_text(
+                '{"email":"target@example.com","verified":true,'
+                '"hunter":{"data":{"domain":"example.com","emails":[{"value":"admin@example.com"}]},"meta":{"results":1}},'
+                '"breachdirectory":{"success":true,"found":1,"result":[{"has_password":true,"password":"secret-value","sources":["combo-db"]}]}}',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="JSON report saved\n", stderr="")
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="mosint"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            result = run_investigation(
+                (ScanTarget(kind="email", value="target@example.com"),),
+                include_adapters=True,
+                execute_adapters=True,
+                adapter_repositories=("alpkeskin/mosint",),
+            )
+
+        parsed = [finding for finding in result.adapter_findings if finding.module == "external-adapter-parser"]
+        self.assertTrue(any(finding.metadata.get("parser") == "mosint" for finding in parsed))
+        self.assertFalse(any("secret-value" in finding.evidence for finding in parsed))
+
+        entities = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("email", "admin@example.com"), entities)
+        self.assertIn(("domain", "example.com"), entities)
+
+        edges = {
+            (edge.source_kind, edge.source_value.lower(), edge.relation, edge.target_kind, edge.target_value.lower())
+            for edge in result.edges
+        }
+        self.assertIn(("email", "target@example.com", "related_email", "email", "admin@example.com"), edges)
+
     def test_person_target_expands_to_username_scan_edges(self):
         result = run_investigation((ScanTarget(kind="person", value="Ivan Petrenko"),))
 

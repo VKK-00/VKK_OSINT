@@ -51,6 +51,21 @@ class AdapterSetupTests(unittest.TestCase):
         self.assertEqual(adapter.render_output_file_args("C:\\tmp\\h8mail.json"), ("-j", "C:\\tmp\\h8mail.json"))
         self.assertEqual(adapter.generated_output_patterns, ("*.json",))
 
+    def test_mosint_setup_uses_json_output_command(self):
+        adapter = find_adapter("alpkeskin/mosint")
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "missing")
+        self.assertEqual(setup.install_command, "go install github.com/alpkeskin/mosint/v3/cmd/mosint@latest")
+        self.assertEqual(
+            adapter.render_command(ScanTarget(kind="email", value="person@example.com")),
+            ("mosint", "--silent", "person@example.com"),
+        )
+        self.assertEqual(adapter.render_output_file_args("C:\\tmp\\mosint.json"), ("--output", "C:\\tmp\\mosint.json"))
+        self.assertEqual(adapter.generated_output_patterns, ("*.json",))
+
     def test_user_scanner_setup_uses_target_specific_command_templates(self):
         adapter = find_adapter("kaifcodec/user-scanner")
 

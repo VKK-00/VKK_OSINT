@@ -75,6 +75,8 @@ def parse_adapter_output(
         return _snoop_findings(repository, target, text)
     if repository == "soxoj/maigret":
         return _maigret_findings(repository, target, text)
+    if repository == "alpkeskin/mosint":
+        return _mosint_findings(repository, target, text)
     if repository == "khast3x/h8mail":
         return _h8mail_findings(repository, target, text)
 
@@ -91,6 +93,597 @@ def parse_adapter_output(
         if key_value:
             findings.append(key_value)
     return tuple(findings)
+
+
+def _mosint_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    structured = _mosint_json_findings(repository, target, text)
+    if structured:
+        return structured
+
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact:
+            continue
+        findings.extend(_url_findings(repository, target, compact, seen))
+        findings.extend(_email_findings(repository, target, compact, seen))
+        findings.extend(_phone_findings(repository, target, compact, seen))
+        key_value = _key_value_finding(repository, target, compact, seen)
+        if key_value:
+            findings.append(key_value)
+    return tuple(findings)
+
+
+def _mosint_json_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    payload = _load_json_payload(text)
+    if not isinstance(payload, dict):
+        return ()
+
+    email = _first_scalar(payload.get("email")) or target.value
+    findings: list[Finding] = []
+    seen: set[tuple[str, ...]] = set()
+
+    _append_if(findings, _mosint_verification_finding(repository, target, email, payload, seen))
+    findings.extend(_mosint_emailrep_findings(repository, target, email, payload.get("emailrep"), seen))
+    findings.extend(_mosint_breachdirectory_findings(repository, target, email, payload.get("breachdirectory"), seen))
+    findings.extend(_mosint_hibp_findings(repository, target, email, payload.get("haveibeenpwned"), seen))
+    findings.extend(_mosint_hunter_findings(repository, target, email, payload.get("hunter"), seen))
+    findings.extend(_mosint_url_list_findings(repository, target, email, payload.get("google_search"), "google-search", seen))
+    findings.extend(_mosint_url_list_findings(repository, target, email, payload.get("psbdmp"), "paste-dump", seen))
+    findings.extend(_mosint_url_list_findings(repository, target, email, payload.get("intelx"), "intelx", seen))
+    findings.extend(_mosint_social_findings(repository, target, email, payload, seen))
+    findings.extend(_mosint_dns_findings(repository, target, email, payload.get("dns_records"), seen))
+    _append_if(findings, _mosint_ipapi_finding(repository, target, email, payload.get("ipapi"), seen))
+    return tuple(findings)
+
+
+def _mosint_verification_finding(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    payload: dict[str, Any],
+    seen: set[tuple[str, ...]],
+) -> Finding | None:
+    if not email and "verified" not in payload:
+        return None
+    verified = bool(payload.get("verified"))
+    metadata = _mosint_metadata(repository, target, email, "verification", "mosint")
+    metadata["verified"] = str(verified).lower()
+    return _mosint_finding(
+        repository=repository,
+        target=target,
+        status="candidate" if verified else "observed",
+        confidence="medium" if verified else "low",
+        evidence=f"Mosint verification for {email or target.value}: {str(verified).lower()}",
+        metadata=metadata,
+        seen=seen,
+        key=("mosint", "verification", email.lower(), str(verified).lower()),
+    )
+
+
+def _mosint_emailrep_findings(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    value: object,
+    seen: set[tuple[str, ...]],
+) -> tuple[Finding, ...]:
+    if not isinstance(value, dict):
+        return ()
+
+    details = value.get("details") if isinstance(value.get("details"), dict) else {}
+    rep_email = _first_scalar(value.get("email")) or email
+    reputation = _first_scalar(value.get("reputation"))
+    references = _first_scalar(value.get("references"))
+    if not rep_email and not reputation and not references:
+        return ()
+
+    metadata = _mosint_metadata(repository, target, rep_email, "email-reputation", "emailrep")
+    for source_key, metadata_key in (
+        ("reputation", "reputation"),
+        ("suspicious", "suspicious"),
+        ("references", "references"),
+    ):
+        result = _first_scalar(value.get(source_key))
+        if result:
+            metadata[metadata_key] = result
+    for source_key in (
+        "blacklisted",
+        "malicious_activity",
+        "credentials_leaked",
+        "credentials_leaked_recent",
+        "data_breach",
+        "first_seen",
+        "last_seen",
+        "domain_reputation",
+        "spam",
+        "deliverable",
+        "valid_mx",
+        "primary_mx",
+        "spf_strict",
+        "dmarc_enforced",
+    ):
+        result = _first_scalar(details.get(source_key))
+        if result:
+            metadata[f"extra_{source_key}"] = result
+
+    risk = any(_truthy(details.get(key)) for key in ("credentials_leaked", "data_breach", "blacklisted", "malicious_activity"))
+    findings: list[Finding] = []
+    _append_if(
+        findings,
+        _mosint_finding(
+            repository=repository,
+            target=target,
+            status="candidate" if risk else "observed",
+            confidence="high" if risk else "medium",
+            evidence=_short(f"Mosint EmailRep: reputation={reputation or 'unknown'}, suspicious={_first_scalar(value.get('suspicious')) or 'false'}"),
+            metadata=metadata,
+            seen=seen,
+            key=("mosint", "emailrep", rep_email.lower(), reputation.lower()),
+        ),
+    )
+
+    profiles = details.get("profiles")
+    if isinstance(profiles, list):
+        for profile in profiles:
+            platform = _first_scalar(profile)
+            if not platform:
+                continue
+            social_metadata = _mosint_metadata(repository, target, rep_email, "social-account", platform)
+            _append_if(
+                findings,
+                _mosint_finding(
+                    repository=repository,
+                    target=target,
+                    status="candidate",
+                    confidence="medium",
+                    evidence=f"Mosint EmailRep social profile signal: {platform}",
+                    metadata=social_metadata,
+                    seen=seen,
+                    key=("mosint", "emailrep-profile", rep_email.lower(), platform.lower()),
+                ),
+            )
+    return tuple(findings)
+
+
+def _mosint_breachdirectory_findings(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    value: object,
+    seen: set[tuple[str, ...]],
+) -> tuple[Finding, ...]:
+    if not isinstance(value, dict):
+        return ()
+
+    found = _safe_int(_first_scalar(value.get("found")) or "0") or 0
+    success = _truthy(value.get("success"))
+    findings: list[Finding] = []
+    if success or found:
+        metadata = _mosint_metadata(repository, target, email, "breach-summary", "breachdirectory")
+        metadata["breach_count"] = str(found)
+        _append_if(
+            findings,
+            _mosint_finding(
+                repository=repository,
+                target=target,
+                status="candidate" if found > 0 else "not_found",
+                confidence="high" if found > 0 else "medium",
+                evidence=f"Mosint BreachDirectory: {found} result(s)",
+                metadata=metadata,
+                seen=seen,
+                key=("mosint", "breachdirectory-summary", email.lower(), str(found)),
+            ),
+        )
+
+    results = value.get("result")
+    if not isinstance(results, list):
+        return tuple(findings)
+
+    for index, record in enumerate(results):
+        if not isinstance(record, dict):
+            continue
+        sources = record.get("sources")
+        if isinstance(sources, list):
+            for source in sources:
+                label = _first_scalar(source)
+                if not label:
+                    continue
+                metadata = _mosint_metadata(repository, target, email, "breach-source", "breachdirectory")
+                metadata["source_label"] = label
+                _append_if(
+                    findings,
+                    _mosint_finding(
+                        repository=repository,
+                        target=target,
+                        status="observed",
+                        confidence="medium",
+                        evidence=f"Mosint BreachDirectory source: {label}",
+                        metadata=metadata,
+                        seen=seen,
+                        key=("mosint", "breachdirectory-source", email.lower(), label.lower()),
+                    ),
+                )
+        if _truthy(record.get("has_password")) or record.get("password") or record.get("hash") or record.get("sha1"):
+            metadata = _mosint_metadata(repository, target, email, "credential-exposure", "breachdirectory")
+            metadata["sensitive_value_redacted"] = "true"
+            metadata["credential_signal"] = "password_hash"
+            _append_if(
+                findings,
+                _mosint_finding(
+                    repository=repository,
+                    target=target,
+                    status="candidate",
+                    confidence="high",
+                    evidence="Mosint BreachDirectory credential exposure observed; sensitive value redacted",
+                    metadata=metadata,
+                    seen=seen,
+                    key=("mosint", "breachdirectory-credential", email.lower(), str(index)),
+                ),
+            )
+    return tuple(findings)
+
+
+def _mosint_hibp_findings(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    value: object,
+    seen: set[tuple[str, ...]],
+) -> tuple[Finding, ...]:
+    if not isinstance(value, list):
+        return ()
+
+    findings: list[Finding] = []
+    for record in value:
+        if not isinstance(record, dict):
+            continue
+        name = _first_scalar(record.get("Name"))
+        title = _first_scalar(record.get("Title")) or name
+        breach_domain = _first_scalar(record.get("Domain"))
+        breach_date = _first_scalar(record.get("BreachDate"))
+        if not any((name, title, breach_domain, breach_date)):
+            continue
+        metadata = _mosint_metadata(repository, target, email, "breach", "haveibeenpwned")
+        if breach_domain:
+            metadata["domain"] = breach_domain.lower()
+        if name:
+            metadata["breach_name"] = name
+        if breach_date:
+            metadata["breach_date"] = breach_date
+        pwn_count = _first_scalar(record.get("PwnCount"))
+        if pwn_count:
+            metadata["pwn_count"] = pwn_count
+        data_classes = _string_list(record.get("DataClasses"))
+        if data_classes:
+            metadata["data_classes"] = ", ".join(data_classes)
+        for key in ("IsVerified", "IsFabricated", "IsSensitive", "IsRetired", "IsSpamList", "IsMalware"):
+            result = _first_scalar(record.get(key))
+            if result:
+                metadata[f"extra_{_metadata_key(key)}"] = result
+        _append_if(
+            findings,
+            _mosint_finding(
+                repository=repository,
+                target=target,
+                status="candidate",
+                confidence="high" if _truthy(record.get("IsVerified")) else "medium",
+                evidence=_short(f"Mosint HIBP breach: {title or name or breach_domain} ({breach_date or 'date unknown'})"),
+                metadata=metadata,
+                seen=seen,
+                key=("mosint", "hibp", email.lower(), (name or title or breach_domain).lower()),
+            ),
+        )
+    return tuple(findings)
+
+
+def _mosint_hunter_findings(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    value: object,
+    seen: set[tuple[str, ...]],
+) -> tuple[Finding, ...]:
+    if not isinstance(value, dict):
+        return ()
+
+    data = value.get("data") if isinstance(value.get("data"), dict) else {}
+    meta = value.get("meta") if isinstance(value.get("meta"), dict) else {}
+    domain = _first_scalar(data.get("domain"))
+    organization = _first_scalar(data.get("organization"))
+    country = _first_scalar(data.get("country"))
+    results = _first_scalar(meta.get("results"))
+
+    findings: list[Finding] = []
+    if any((domain, organization, country, results)):
+        metadata = _mosint_metadata(repository, target, email, "domain-enrichment", "hunter")
+        if domain:
+            metadata["domain"] = domain.lower()
+        if organization:
+            metadata["extra_organization"] = organization
+        if country:
+            metadata["country"] = country
+        if results:
+            metadata["count"] = results
+        _append_if(
+            findings,
+            _mosint_finding(
+                repository=repository,
+                target=target,
+                status="observed",
+                confidence="medium",
+                evidence=_short(f"Mosint Hunter domain enrichment: {domain or email} ({results or 0} result(s))"),
+                metadata=metadata,
+                seen=seen,
+                key=("mosint", "hunter-domain", email.lower(), domain.lower(), results),
+            ),
+        )
+
+    emails = data.get("emails")
+    if isinstance(emails, list):
+        for record in emails:
+            if not isinstance(record, dict):
+                continue
+            related = _first_scalar(record.get("value"))
+            if not related or not EMAIL_RE.fullmatch(related):
+                continue
+            metadata = _mosint_metadata(repository, target, related, "related-email", "hunter")
+            name = " ".join(part for part in (_first_scalar(record.get("first_name")), _first_scalar(record.get("last_name"))) if part)
+            if name:
+                metadata["name"] = name
+            for source_key in ("type", "confidence", "position", "seniority", "department"):
+                result = _first_scalar(record.get(source_key))
+                if result:
+                    metadata[f"extra_{source_key}"] = result
+            verification = record.get("verification")
+            if isinstance(verification, dict):
+                status = _first_scalar(verification.get("status"))
+                if status:
+                    metadata["result_status"] = status
+            _append_if(
+                findings,
+                _mosint_finding(
+                    repository=repository,
+                    target=target,
+                    status="candidate",
+                    confidence="high",
+                    evidence=f"Mosint Hunter related email: {related}",
+                    metadata=metadata,
+                    seen=seen,
+                    key=("mosint", "hunter-email", email.lower(), related.lower()),
+                ),
+            )
+
+            sources = record.get("sources")
+            if isinstance(sources, list):
+                for source in sources:
+                    if not isinstance(source, dict):
+                        continue
+                    uri = _first_scalar(source.get("uri"))
+                    if uri and uri.startswith(("http://", "https://")):
+                        findings.extend(_mosint_url_list_findings(repository, target, email, (uri,), "hunter-source", seen))
+
+    linked_domains = data.get("linked_domains")
+    if isinstance(linked_domains, list):
+        for linked_domain in linked_domains:
+            domain_value = _first_scalar(linked_domain).lower()
+            if not domain_value:
+                continue
+            metadata = _mosint_metadata(repository, target, email, "linked-domain", "hunter")
+            metadata["domain"] = domain_value
+            _append_if(
+                findings,
+                _mosint_finding(
+                    repository=repository,
+                    target=target,
+                    status="candidate",
+                    confidence="medium",
+                    evidence=f"Mosint Hunter linked domain: {domain_value}",
+                    metadata=metadata,
+                    seen=seen,
+                    key=("mosint", "hunter-linked-domain", email.lower(), domain_value),
+                ),
+            )
+    return tuple(findings)
+
+
+def _mosint_url_list_findings(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    value: object,
+    category: str,
+    seen: set[tuple[str, ...]],
+) -> tuple[Finding, ...]:
+    items = value if isinstance(value, (list, tuple)) else ()
+    findings: list[Finding] = []
+    for item in items:
+        raw_value = _first_scalar(item)
+        if not raw_value:
+            continue
+        urls = URL_RE.findall(raw_value)
+        if not urls and raw_value.startswith(("http://", "https://")):
+            urls = [raw_value]
+        for raw_url in urls:
+            url = raw_url.rstrip(".,;")
+            metadata = _mosint_metadata(repository, target, email, category, category)
+            domain = (urlparse(url).hostname or "").lower()
+            if domain:
+                metadata["domain"] = domain
+            _append_if(
+                findings,
+                _mosint_finding(
+                    repository=repository,
+                    target=target,
+                    status="candidate",
+                    confidence="medium",
+                    evidence=f"Mosint {category} URL: {url}",
+                    metadata=metadata,
+                    seen=seen,
+                    key=("mosint", category, email.lower(), url.lower()),
+                    url=url,
+                ),
+            )
+    return tuple(findings)
+
+
+def _mosint_social_findings(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    payload: dict[str, Any],
+    seen: set[tuple[str, ...]],
+) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    for key, platform in (
+        ("instagram_exists", "Instagram"),
+        ("spotify_exists", "Spotify"),
+        ("twitter_exists", "Twitter"),
+    ):
+        if not _truthy(payload.get(key)):
+            continue
+        metadata = _mosint_metadata(repository, target, email, "social-account", platform)
+        metadata["result_status"] = "exists"
+        _append_if(
+            findings,
+            _mosint_finding(
+                repository=repository,
+                target=target,
+                status="candidate",
+                confidence="medium",
+                evidence=f"Mosint social account signal: {platform}",
+                metadata=metadata,
+                seen=seen,
+                key=("mosint", "social", email.lower(), platform.lower()),
+            ),
+        )
+    return tuple(findings)
+
+
+def _mosint_dns_findings(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    value: object,
+    seen: set[tuple[str, ...]],
+) -> tuple[Finding, ...]:
+    if not isinstance(value, list):
+        return ()
+    findings: list[Finding] = []
+    for record in value:
+        if not isinstance(record, dict):
+            continue
+        record_type = _first_scalar(record.get("Type") or record.get("type"))
+        record_value = _first_scalar(record.get("Value") or record.get("value"))
+        if not record_type and not record_value:
+            continue
+        metadata = _mosint_metadata(repository, target, email, "dns-record", "dns")
+        if record_type:
+            metadata["record_type"] = record_type
+        if record_value:
+            metadata["record_value"] = record_value
+        _append_if(
+            findings,
+            _mosint_finding(
+                repository=repository,
+                target=target,
+                status="observed",
+                confidence="medium",
+                evidence=_short(f"Mosint DNS {record_type or 'record'}: {record_value}"),
+                metadata=metadata,
+                seen=seen,
+                key=("mosint", "dns", email.lower(), record_type.lower(), record_value.lower()),
+            ),
+        )
+    return tuple(findings)
+
+
+def _mosint_ipapi_finding(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    value: object,
+    seen: set[tuple[str, ...]],
+) -> Finding | None:
+    if not isinstance(value, dict):
+        return None
+    ip = _first_scalar(value.get("ip"))
+    country = _first_scalar(value.get("country_name") or value.get("country"))
+    city = _first_scalar(value.get("city"))
+    org = _first_scalar(value.get("org"))
+    asn = _first_scalar(value.get("asn"))
+    if not any((ip, country, city, org, asn)):
+        return None
+    metadata = _mosint_metadata(repository, target, email, "domain-ip-intel", "ipapi")
+    if country:
+        metadata["country"] = country
+    if city:
+        metadata["location"] = city
+    if ip:
+        metadata["extra_ip"] = ip
+    if org:
+        metadata["extra_org"] = org
+    if asn:
+        metadata["extra_asn"] = asn
+    return _mosint_finding(
+        repository=repository,
+        target=target,
+        status="observed",
+        confidence="medium",
+        evidence=_short(f"Mosint ipapi: {country or 'unknown country'} {city or ''}".strip()),
+        metadata=metadata,
+        seen=seen,
+        key=("mosint", "ipapi", email.lower(), ip, country, city, asn),
+    )
+
+
+def _mosint_metadata(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    category: str,
+    source_label: str,
+) -> dict[str, str]:
+    metadata = {
+        "repository": repository,
+        "parser": "mosint",
+        "target_kind": target.kind,
+        "category": category,
+    }
+    if source_label:
+        metadata["source_label"] = source_label
+    if EMAIL_RE.fullmatch(email):
+        metadata["email"] = email
+        metadata["domain"] = email.rsplit("@", 1)[1].lower()
+    return metadata
+
+
+def _mosint_finding(
+    *,
+    repository: str,
+    target: ScanTarget,
+    status: str,
+    confidence: str,
+    evidence: str,
+    metadata: dict[str, str],
+    seen: set[tuple[str, ...]],
+    key: tuple[str, ...],
+    url: str = "",
+) -> Finding | None:
+    if key in seen:
+        return None
+    seen.add(key)
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status=status,
+        url=url,
+        confidence=confidence,
+        evidence=_short(evidence),
+        metadata=metadata,
+    )
 
 
 def _h8mail_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
@@ -339,7 +932,7 @@ def _h8mail_source_label(group: tuple[tuple[str, str], ...]) -> str:
 
 def _h8mail_sensitive_type(normalized_type: str) -> bool:
     tokens = {token for token in re.split(r"[^A-Z0-9]+", normalized_type) if token}
-    sensitive_tokens = {"PASSWORD", "PASS", "PWD", "HASH", "HASHSALT", "MD5", "SALT", "TOKEN", "SECRET", "KEY"}
+    sensitive_tokens = {"PASSWORD", "PASS", "PWD", "HASH", "HASHSALT", "MD5", "SHA1", "SALT", "TOKEN", "SECRET", "KEY"}
     return bool(tokens & sensitive_tokens)
 
 
@@ -386,6 +979,21 @@ def _safe_int(value: str) -> int | None:
         return int(str(value).strip())
     except ValueError:
         return None
+
+
+def _truthy(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "1", "y"}
+    return False
+
+
+def _append_if(findings: list[Finding], finding: Finding | None) -> None:
+    if finding:
+        findings.append(finding)
 
 
 def _maigret_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
