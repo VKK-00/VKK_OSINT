@@ -83,6 +83,8 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--http-retries", type=int, default=1, help="Retry 429/temporary 5xx HTTP responses this many times.")
     scan.add_argument("--http-backoff", type=float, default=1.0, help="Base backoff seconds for HTTP retries.")
     scan.add_argument("--request-delay", type=float, default=0.0, help="Delay seconds between live username HTTP checks.")
+    scan.add_argument("--crawl-pages", type=int, default=5, help="Maximum same-site pages for live URL/domain crawler.")
+    scan.add_argument("--crawl-depth", type=int, default=1, help="Maximum link depth for live URL/domain crawler.")
     scan.add_argument("--person-alias", action="append", default=[], help="Known person alias/handle to include in person username expansion. Can be repeated.")
     scan.add_argument("--person-alias-file", action="append", default=[], help="UTF-8 file with one alias per line or comma-separated aliases.")
     scan.add_argument("--limit", type=int)
@@ -159,6 +161,8 @@ def build_parser() -> argparse.ArgumentParser:
     investigate.add_argument("--http-retries", type=int, default=1, help="Retry 429/temporary 5xx HTTP responses this many times.")
     investigate.add_argument("--http-backoff", type=float, default=1.0, help="Base backoff seconds for HTTP retries.")
     investigate.add_argument("--request-delay", type=float, default=0.0, help="Delay seconds between live username HTTP checks.")
+    investigate.add_argument("--crawl-pages", type=int, default=5, help="Maximum same-site pages for live URL/domain crawler.")
+    investigate.add_argument("--crawl-depth", type=int, default=1, help="Maximum link depth for live URL/domain crawler.")
     investigate.add_argument("--person-alias", action="append", default=[], help="Known person alias/handle to include in person username expansion. Can be repeated.")
     investigate.add_argument("--person-alias-file", action="append", default=[], help="UTF-8 file with one alias per line or comma-separated aliases.")
     investigate.add_argument("--format", choices=("markdown", "json"), default="markdown")
@@ -236,6 +240,8 @@ def handle_scan(args: argparse.Namespace) -> int:
         http_retries=args.http_retries,
         http_backoff=args.http_backoff,
         request_delay=args.request_delay,
+        crawl_pages=args.crawl_pages,
+        crawl_depth=args.crawl_depth,
         person_aliases=_person_aliases_from_args(args),
     )
     findings = engine.scan(target, config)
@@ -323,6 +329,8 @@ def handle_investigate(args: argparse.Namespace) -> int:
         http_retries=args.http_retries,
         http_backoff=args.http_backoff,
         request_delay=args.request_delay,
+        crawl_pages=args.crawl_pages,
+        crawl_depth=args.crawl_depth,
         person_aliases=_person_aliases_from_args(args),
         adapter_repositories=expand_adapter_repositories(
             tuple(args.adapter_profile),

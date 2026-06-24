@@ -229,22 +229,25 @@ Gap:
 - live DNS resolution;
 - HTTPS/HTTP status, redirect final URL, title and content-type;
 - public email extraction from fetched landing page HTML/text;
+- bounded same-site crawler for URL/domain live scans with operator limits `--crawl-pages` and `--crawl-depth`;
+- crawler extraction of same-site URLs, external URLs, social URLs, public emails and E.164-like phone values;
 - presence list for common security headers;
 - certificate transparency lookup via `crt.sh` JSON in live mode;
 - CT-derived `subdomain` entities and graph edges `domain -> subdomain`;
 - RDAP registration lookup via `rdap.org` JSON in live mode;
-- RDAP-derived `registrar`/`nameserver` entities and graph edges `domain -> registrar|nameserver`.
+- RDAP-derived `registrar`/`nameserver` entities and graph edges `domain -> registrar|nameserver`;
+- crawler-derived `url`/`email`/`phone` entities and graph edges for discovered/internal/external/social links and page contacts.
 
 Gap:
 
 - нет brute-force/passive subdomain enumeration за пределами crt.sh;
 - нет raw WHOIS text lookup;
-- нет recursive crawler/email extraction за пределами fetched landing pages;
+- crawler bounded и HTML-only: нет JavaScript rendering, form submission, sitemap/robots policy engine, authentication, headless browser или broad SpiderFoot/Photon-style crawling;
 - нет Amass/Subfinder/httpx/SpiderFoot adapters.
 
 План:
 
-1. Native: дальше расширять passive domain recon: raw WHOIS fallback и bounded recursive crawler/email extraction.
+1. Native: дальше расширять passive domain recon: raw WHOIS fallback, sitemap/robots-aware discovery и richer document metadata extraction.
 2. Adapter: `httpx`, `theHarvester`, `spiderfoot`, `amass`, `subfinder`.
 3. Normalize domains, URLs, emails, subdomains into shared entity model.
 

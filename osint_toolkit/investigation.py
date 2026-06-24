@@ -55,6 +55,8 @@ def run_investigation(
     http_retries: int = 1,
     http_backoff: float = 1.0,
     request_delay: float = 0.0,
+    crawl_pages: int = 5,
+    crawl_depth: int = 1,
     person_aliases: tuple[str, ...] = (),
     adapter_repositories: tuple[str, ...] = (),
 ) -> InvestigationResult:
@@ -65,6 +67,8 @@ def run_investigation(
         http_retries=http_retries,
         http_backoff=http_backoff,
         request_delay=request_delay,
+        crawl_pages=crawl_pages,
+        crawl_depth=crawl_depth,
         person_aliases=person_aliases,
     )
     findings: list[Finding] = []

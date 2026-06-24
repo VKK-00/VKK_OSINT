@@ -7,6 +7,7 @@ from urllib.parse import quote, urlparse
 
 from ..engine import Finding, RunConfig, ScanTarget
 from ..http_client import HttpClient, HttpResult
+from ..web_crawler import CrawlResult, crawl_metadata, crawl_public_site
 from ..web_extract import extract_public_emails, split_emails_by_domain
 
 SECURITY_HEADERS = (
@@ -81,6 +82,21 @@ class DomainScanModule:
                 ),
                 Finding(
                     module=self.name,
+                    source="web-crawl",
+                    target=target.value,
+                    status="planned",
+                    url=f"https://{domain}",
+                    confidence="not_checked",
+                    evidence="Dry run only. Pass --live to crawl bounded same-site links and extract public contacts.",
+                    metadata={
+                        "domain": domain,
+                        "seed_url": f"https://{domain}",
+                        "max_pages": str(config.crawl_pages),
+                        "max_depth": str(config.crawl_depth),
+                    },
+                ),
+                Finding(
+                    module=self.name,
                     source="certificate-transparency",
                     target=target.value,
                     status="planned",
@@ -114,6 +130,14 @@ class DomainScanModule:
         findings.append(_http_metadata(self.name, target.value, domain, "https", https_result))
         findings.append(_http_metadata(self.name, target.value, domain, "http", http_result))
         findings.append(_page_email_extraction(self.name, target.value, domain, (https_result, http_result)))
+        crawl = crawl_public_site(
+            f"https://{domain}",
+            client,
+            max_pages=config.crawl_pages,
+            max_depth=config.crawl_depth,
+            initial_results=(https_result, http_result),
+        )
+        findings.append(_web_crawl(self.name, target.value, domain, crawl))
         findings.append(_certificate_transparency(self.name, target.value, domain, client))
         findings.append(_rdap_domain(self.name, target.value, domain, client))
         return tuple(findings)
@@ -235,6 +259,31 @@ def _page_email_extraction(
         status="candidate",
         confidence="medium",
         evidence=f"Found {len(emails)} public email address(es) on fetched landing pages.",
+        metadata=metadata,
+    )
+
+
+def _web_crawl(module: str, original: str, domain: str, crawl: CrawlResult) -> Finding:
+    metadata = crawl_metadata(crawl)
+    metadata["domain"] = domain
+    same_domain, external = split_emails_by_domain(crawl.emails, domain)
+    metadata["same_domain_email_count"] = str(len(same_domain))
+    metadata["external_email_count"] = str(len(external))
+    successful_pages = sum(1 for page in crawl.pages if page.status_code and page.status_code < 400)
+    status = "candidate" if successful_pages else "unknown" if crawl.pages else "error"
+    return Finding(
+        module=module,
+        source="web-crawl",
+        target=original,
+        status=status,
+        url=crawl.crawled_urls[0] if crawl.crawled_urls else crawl.seed_url,
+        http_status=crawl.pages[0].status_code if crawl.pages else None,
+        confidence="medium" if successful_pages else "low",
+        evidence=(
+            f"Crawled {len(crawl.pages)} page(s); found {len(crawl.internal_links)} same-site URL(s), "
+            f"{len(crawl.external_links)} external URL(s), {len(crawl.social_links)} social URL(s), "
+            f"{len(crawl.emails)} email(s) and {len(crawl.phones)} phone(s)."
+        ),
         metadata=metadata,
     )
 

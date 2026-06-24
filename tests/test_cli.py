@@ -51,6 +51,25 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("GitHub", result.stdout)
 
+    def test_scan_accepts_crawl_options(self):
+        result = self.run_cli(
+            "scan",
+            "url",
+            "example.com",
+            "--crawl-pages",
+            "2",
+            "--crawl-depth",
+            "0",
+            "--format",
+            "json",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        crawl = {finding["source"]: finding for finding in payload}["web-crawl"]
+
+        self.assertEqual(crawl["metadata"]["max_pages"], "2")
+        self.assertEqual(crawl["metadata"]["max_depth"], "0")
+
     def test_scan_username_reports_site_rule_skip(self):
         result = self.run_cli("scan", "username", "example_user", "--limit", "1", "--format", "json")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -137,6 +156,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("domain-baseline", result.stdout)
         self.assertIn("dns-resolution", result.stdout)
         self.assertIn("page-email-extraction", result.stdout)
+        self.assertIn("web-crawl", result.stdout)
         self.assertIn("certificate-transparency", result.stdout)
         self.assertIn("rdap-domain", result.stdout)
 

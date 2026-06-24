@@ -66,6 +66,21 @@ def entities_from_findings(findings: tuple[Finding, ...]) -> tuple[Entity, ...]:
                     if EMAIL_RE.fullmatch(email):
                         entities.append(Entity("email", email, source, finding.confidence, "metadata:emails"))
                 continue
+            if key == "phones":
+                for phone in _split_metadata_values(value):
+                    if PHONE_RE.fullmatch(phone):
+                        entities.append(Entity("phone", phone, source, finding.confidence, "metadata:phones"))
+                continue
+            if key in {"crawled_urls", "discovered_urls", "external_urls", "social_urls"}:
+                for url in _split_metadata_values(value):
+                    entities.append(Entity("url", url, source, finding.confidence, f"metadata:{key}"))
+                    domain = _domain_from_url(url)
+                    if domain:
+                        entities.append(Entity("domain", domain, source, finding.confidence, f"metadata:{key} host"))
+                    telegram = _telegram_handle_from_url(url)
+                    if telegram:
+                        entities.append(Entity("telegram", telegram, source, finding.confidence, f"metadata:{key} t.me URL"))
+                continue
             if key in {"subdomain", "subdomains"}:
                 for subdomain in _split_metadata_values(value):
                     entities.append(Entity("subdomain", subdomain, source, finding.confidence, f"metadata:{key}"))

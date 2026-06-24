@@ -22,6 +22,8 @@ class RunConfig:
     http_backoff: float = 1.0
     request_delay: float = 0.0
     person_aliases: tuple[str, ...] = ()
+    crawl_pages: int = 5
+    crawl_depth: int = 1
 
 
 @dataclass(frozen=True)

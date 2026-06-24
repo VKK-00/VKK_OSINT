@@ -550,10 +550,11 @@ class EngineTests(unittest.TestCase):
         engine = Engine([WebMetadataModule()])
         findings = engine.scan(ScanTarget(kind="url", value="example.com"), RunConfig())
 
-        self.assertEqual(len(findings), 2)
+        self.assertEqual(len(findings), 3)
         self.assertEqual(findings[0].status, "planned")
         self.assertEqual(findings[0].url, "https://example.com")
         self.assertEqual(findings[1].source, "page-email-extraction")
+        self.assertEqual(findings[2].source, "web-crawl")
 
     def test_url_scan_live_extracts_public_emails(self):
         response = _FakeHttpResponse(
@@ -572,21 +573,57 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(sources["page-email-extraction"].status, "candidate")
         self.assertEqual(sources["page-email-extraction"].metadata["emails"], "info@example.com")
         self.assertEqual(sources["page-email-extraction"].metadata["email_count"], "1")
+        self.assertEqual(sources["web-crawl"].metadata["email_count"], "1")
+
+    def test_url_scan_live_crawls_same_site_links(self):
+        responses = (
+            _FakeHttpResponse(url="https://example.com", status_code=200),
+            _FakeHttpResponse(
+                url="https://example.com",
+                status_code=200,
+                body=(
+                    b"<html><title>Home</title><a href='/about'>About</a>"
+                    b"<a href='https://github.com/example'>GitHub</a>"
+                    b"info@example.com +380 44 123 45 67</html>"
+                ),
+            ),
+            _FakeHttpResponse(url="https://example.com/about", status_code=200),
+            _FakeHttpResponse(
+                url="https://example.com/about",
+                status_code=200,
+                body=b"<html><title>About</title>team@example.com</html>",
+            ),
+        )
+
+        with patch("osint_toolkit.http_client.urllib.request.urlopen", side_effect=responses):
+            findings = Engine([WebMetadataModule()]).scan(
+                ScanTarget(kind="url", value="example.com"),
+                RunConfig(live=True, crawl_pages=3, crawl_depth=1),
+            )
+
+        crawl = {finding.source: finding for finding in findings}["web-crawl"]
+        self.assertEqual(crawl.status, "candidate")
+        self.assertEqual(crawl.metadata["pages_fetched"], "2")
+        self.assertEqual(crawl.metadata["emails"], "info@example.com, team@example.com")
+        self.assertEqual(crawl.metadata["phones"], "+380441234567")
+        self.assertEqual(crawl.metadata["discovered_urls"], "https://example.com/about")
+        self.assertEqual(crawl.metadata["social_urls"], "https://github.com/example")
 
     def test_domain_scan_dry_run_plans_dns_and_http_metadata(self):
         engine = Engine([DomainScanModule()])
         findings = engine.scan(ScanTarget(kind="domain", value="https://example.com/path"), RunConfig())
 
-        self.assertEqual(len(findings), 6)
+        self.assertEqual(len(findings), 7)
         self.assertEqual(findings[0].source, "dns-resolution")
         self.assertEqual(findings[0].metadata["domain"], "example.com")
         self.assertEqual(findings[1].url, "https://example.com")
         self.assertEqual(findings[2].url, "http://example.com")
         self.assertEqual(findings[3].source, "page-email-extraction")
-        self.assertEqual(findings[4].source, "certificate-transparency")
-        self.assertIn("crt.sh", findings[4].url)
-        self.assertEqual(findings[5].source, "rdap-domain")
-        self.assertIn("rdap.org/domain/example.com", findings[5].url)
+        self.assertEqual(findings[4].source, "web-crawl")
+        self.assertEqual(findings[5].source, "certificate-transparency")
+        self.assertIn("crt.sh", findings[5].url)
+        self.assertEqual(findings[6].source, "rdap-domain")
+        self.assertIn("rdap.org/domain/example.com", findings[6].url)
 
     def test_domain_normalizer_rejects_invalid_values(self):
         self.assertEqual(normalize_domain("https://Example.COM/a"), "example.com")
@@ -663,7 +700,7 @@ class EngineTests(unittest.TestCase):
                     final_url="https://example.com",
                     status_code=200,
                     title="Example",
-                    body_text="<a href='mailto:info@example.com'>Contact</a> support@external.test",
+                    body_text="<a href='mailto:info@example.com'>Contact</a> support@external.test <a href='/contact'>Contact page</a>",
                     content_type="text/html",
                     headers={"strict-transport-security": "max-age=31536000"},
                 ),
@@ -671,6 +708,14 @@ class EngineTests(unittest.TestCase):
                     url="http://example.com",
                     final_url="https://example.com",
                     status_code=301,
+                    content_type="text/html",
+                ),
+                HttpResult(
+                    url="https://example.com/contact",
+                    final_url="https://example.com/contact",
+                    status_code=200,
+                    title="Contact",
+                    body_text="team@example.com +380 44 123 45 67 <a href='https://vk.com/example'>VK</a>",
                     content_type="text/html",
                 ),
                 HttpResult(
@@ -704,15 +749,19 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(sources["page-email-extraction"].metadata["emails"], "info@example.com, support@external.test")
         self.assertEqual(sources["page-email-extraction"].metadata["same_domain_email_count"], "1")
         self.assertEqual(sources["page-email-extraction"].metadata["external_email_count"], "1")
+        self.assertEqual(sources["web-crawl"].metadata["pages_fetched"], "2")
+        self.assertEqual(sources["web-crawl"].metadata["emails"], "info@example.com, support@external.test, team@example.com")
+        self.assertEqual(sources["web-crawl"].metadata["phones"], "+380441234567")
+        self.assertEqual(sources["web-crawl"].metadata["social_urls"], "https://vk.com/example")
         self.assertEqual(sources["certificate-transparency"].status, "candidate")
         self.assertEqual(sources["certificate-transparency"].metadata["subdomain_count"], "2")
         self.assertEqual(sources["certificate-transparency"].metadata["subdomains"], "api.example.com, www.example.com")
-        self.assertEqual(fake_client.requests[2][2], {"Accept": "application/json"})
+        self.assertEqual(fake_client.requests[3][2], {"Accept": "application/json"})
         self.assertEqual(sources["rdap-domain"].status, "candidate")
         self.assertEqual(sources["rdap-domain"].metadata["registrar"], "Example Registrar, Inc.")
         self.assertEqual(sources["rdap-domain"].metadata["nameservers"], "a.iana-servers.net, b.iana-servers.net")
         self.assertEqual(sources["rdap-domain"].metadata["expires_at"], "2026-08-13T04:00:00Z")
-        self.assertEqual(fake_client.requests[3][2], {"Accept": "application/rdap+json, application/json"})
+        self.assertEqual(fake_client.requests[4][2], {"Accept": "application/rdap+json, application/json"})
 
     def test_telegram_scan_normalizes_handle_and_post_url(self):
         engine = Engine([TelegramScanModule()])

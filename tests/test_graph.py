@@ -162,6 +162,45 @@ class GraphAnalysisTests(unittest.TestCase):
         self.assertIn(("domain", "example.com", "page_contact_email", "email", "info@example.com"), edge_keys)
         self.assertIn(("domain", "example.com", "page_contact_email", "email", "support@example.com"), edge_keys)
 
+    def test_web_crawl_metadata_edges(self):
+        target = ScanTarget(kind="domain", value="example.com")
+        findings = (
+            Finding(
+                module="domain-baseline",
+                source="web-crawl",
+                target="example.com",
+                status="candidate",
+                confidence="medium",
+                evidence="Crawled 2 page(s).",
+                metadata={
+                    "domain": "example.com",
+                    "discovered_urls": "https://example.com/contact",
+                    "external_urls": "https://external.test/profile",
+                    "social_urls": "https://vk.com/example",
+                    "emails": "info@example.com",
+                    "phones": "+380441234567",
+                },
+            ),
+        )
+
+        entities = merge_entities(entities_from_targets((target,)), entities_from_findings(findings))
+        entity_keys = {(entity.kind, entity.value.lower()) for entity in entities}
+        self.assertIn(("url", "https://example.com/contact"), entity_keys)
+        self.assertIn(("url", "https://external.test/profile"), entity_keys)
+        self.assertIn(("url", "https://vk.com/example"), entity_keys)
+        self.assertIn(("phone", "+380441234567"), entity_keys)
+        self.assertIn(("email", "info@example.com"), entity_keys)
+
+        edges = graph_edges_from_case((target,), findings, entities)
+        edge_keys = {
+            (edge.source_kind, edge.source_value, edge.relation, edge.target_kind, edge.target_value)
+            for edge in edges
+        }
+        self.assertIn(("domain", "example.com", "discovered_url", "url", "https://example.com/contact"), edge_keys)
+        self.assertIn(("domain", "example.com", "linked_external_url", "url", "https://external.test/profile"), edge_keys)
+        self.assertIn(("domain", "example.com", "linked_social_url", "url", "https://vk.com/example"), edge_keys)
+        self.assertIn(("domain", "example.com", "page_contact_phone", "phone", "+380441234567"), edge_keys)
+
 
 if __name__ == "__main__":
     unittest.main()
