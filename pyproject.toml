@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "osint-toolkit"
+version = "0.1.0"
+description = "Local OSINT catalog navigator based on a curated GitHub OSINT snapshot"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Volodymyr Ksienich" }
+]
+dependencies = []
+
+[project.scripts]
+osint-toolkit = "osint_toolkit.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["osint_toolkit*"]
