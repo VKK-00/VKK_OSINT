@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 import tempfile
@@ -105,8 +106,28 @@ class CliTests(unittest.TestCase):
             self.assertTrue(output.exists())
             content = output.read_text(encoding="utf-8")
             self.assertIn("# example case", content)
+            self.assertIn("Entity Summary", content)
             self.assertIn("Native Findings", content)
             self.assertIn("Adapter Dry Runs", content)
+
+    def test_investigate_json_includes_entities(self):
+        result = self.run_cli(
+            "investigate",
+            "--email",
+            "person@example.com",
+            "--telegram",
+            "@durov",
+            "--format",
+            "json",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        entities = {(entity["kind"], entity["value"].lower()) for entity in payload["entities"]}
+        self.assertIn(("email", "person@example.com"), entities)
+        self.assertIn(("domain", "example.com"), entities)
+        self.assertIn(("telegram", "@durov"), entities)
+        self.assertIn(("url", "https://t.me/durov"), entities)
 
     def test_brief_command_writes_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:

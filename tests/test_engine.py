@@ -4,7 +4,7 @@ from osint_toolkit.adapters import filter_adapters
 from osint_toolkit.adapter_runner import run_adapter
 from osint_toolkit.doctor import inspect_adapters
 from osint_toolkit.engine import Engine, RunConfig, ScanTarget
-from osint_toolkit.investigation import render_investigation_markdown, run_investigation
+from osint_toolkit.investigation import render_investigation_json, render_investigation_markdown, run_investigation
 from osint_toolkit.modules import DomainScanModule, EmailScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
 from osint_toolkit.modules.domain import normalize_domain
 from osint_toolkit.modules.phone import detect_country, is_e164_like, normalize_phone
@@ -163,6 +163,32 @@ class EngineTests(unittest.TestCase):
         markdown = render_investigation_markdown(result)
         self.assertIn("# test case", markdown)
         self.assertIn("Adapter Dry Runs", markdown)
+
+    def test_investigation_builds_entity_summary(self):
+        result = run_investigation(
+            (
+                ScanTarget(kind="email", value="person@example.com"),
+                ScanTarget(kind="phone", value="+380 44 123 45 67"),
+                ScanTarget(kind="telegram", value="@durov"),
+            )
+        )
+
+        entity_keys = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("email", "person@example.com"), entity_keys)
+        self.assertIn(("domain", "example.com"), entity_keys)
+        self.assertIn(("normalized-value", "+380441234567"), entity_keys)
+        self.assertIn(("country", "ukraine"), entity_keys)
+        self.assertIn(("telegram", "@durov"), entity_keys)
+        self.assertIn(("url", "https://t.me/durov"), entity_keys)
+
+        markdown = render_investigation_markdown(result)
+        self.assertIn("Entity Summary", markdown)
+        self.assertIn("person@example.com", markdown)
+        self.assertIn("@durov", markdown)
+
+        json_output = render_investigation_json(result)
+        self.assertIn('"entities"', json_output)
+        self.assertIn('"value": "person@example.com"', json_output)
 
 
 if __name__ == "__main__":

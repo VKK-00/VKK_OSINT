@@ -10,10 +10,11 @@
 
 Проект хранит датированные CSV/Markdown/JSON-срезы GitHub OSINT-проектов и предоставляет Python CLI/engine поверх этих данных.
 
-CLI работает в двух режимах:
+CLI работает в трёх режимах:
 
 - catalog/recommend/brief — работа с curated-каталогом;
-- scan/adapters — единое ядро выполнения и карта функциональной совместимости upstream-проектов.
+- scan/adapters — единое ядро выполнения и карта функциональной совместимости upstream-проектов;
+- investigate — объединение нескольких seed values, native findings, adapter dry-runs и нормализованных сущностей в один отчёт.
 
 Первый native-слой уже выполняет:
 
@@ -26,7 +27,7 @@ CLI работает в двух режимах:
 - базовый web metadata scan по URL, совместимый с начальным web-check слоем;
 - external adapter dry-run/execute runner для настроенных upstream CLI;
 - adapter doctor: проверка фактической доступности upstream CLI в `PATH`;
-- investigation runner: один кейс, несколько seed-типов, единый Markdown/JSON отчёт;
+- investigation runner: один кейс, несколько seed-типов, entity summary, единый Markdown/JSON отчёт;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
 
@@ -75,8 +76,13 @@ CLI работает в двух режимах:
   - `run_adapter()` — dry-run или явный запуск внешнего CLI adapter без shell.
 - `osint_toolkit/doctor.py`
   - `inspect_adapters()` — диагностика доступности upstream adapters.
+- `osint_toolkit/entities.py`
+  - `Entity` — нормализованная сущность кейса: email, phone, domain, URL, Telegram handle, country/region и т.д.
+  - `entities_from_targets()` — извлечение сущностей из seed values.
+  - `entities_from_findings()` — извлечение сущностей из native и adapter findings.
+  - `merge_entities()` — дедупликация сущностей с учётом confidence.
 - `osint_toolkit/investigation.py`
-  - `run_investigation()` — multi-target native scan.
+  - `run_investigation()` — multi-target native scan + optional adapter dry-runs + entity summary.
   - `render_investigation_markdown()` — единый отчёт по кейсу.
 - `osint_toolkit/workflows.py`
   - `recommend_projects()` — подбор ресурсов под тип задачи.
@@ -112,6 +118,14 @@ Adapter-поток:
 4. При `--execute` команда запускается через `subprocess.run()` без shell, только если executable найден в `PATH`.
 5. Restricted adapters требуют отдельный `--allow-restricted`.
 
+Investigation-поток:
+
+1. Пользователь запускает `python -m osint_toolkit investigate` с одним или несколькими seed values.
+2. CLI превращает каждый seed в `ScanTarget`.
+3. `run_investigation()` запускает native scan-модули и, при `--include-adapters`, adapter dry-runs.
+4. `entities.py` извлекает и объединяет сущности из входных целей, `Finding.url`, `Finding.evidence` и `Finding.metadata`.
+5. Отчёт выводится как Markdown или JSON; Markdown содержит `Entity Summary`, native findings, adapter dry-runs и review checklist.
+
 ## Поток данных
 
 Источник истины — локальные CSV-файлы. Код не изменяет эти CSV при обычной работе.
@@ -132,7 +146,7 @@ Adapter-поток:
 
 Investigation:
 
-`multiple CLI seeds -> ScanTarget[] -> Engine -> Finding[] -> optional adapter dry-runs -> Markdown/JSON report`
+`multiple CLI seeds -> ScanTarget[] -> Engine -> Finding[] -> optional adapter dry-runs -> Entity[] -> Markdown/JSON report`
 
 ## Внешние интеграции
 
@@ -156,6 +170,8 @@ Native live-модули используют публичные HTTP(S) URL che
 - `scan --live` — явное разрешение сетевых проверок.
 - `scan --timeout` — HTTP timeout.
 - `scan --region` — фильтр URL-шаблонов или workflow по региону.
+- `investigate --include-adapters` — добавить dry-run команды совместимых upstream adapters.
+- `investigate --format markdown|json` — формат отчёта по кейсу.
 
 ## Команды запуска, тестирования, проверки и отладки
 
@@ -198,6 +214,7 @@ osint-toolkit stats
 - Используется только стандартная библиотека Python. Это снижает риск установки и упрощает запуск на Windows.
 - CLI читает уже проверенные CSV, а не тянет актуальные данные из GitHub. Это делает результаты воспроизводимыми.
 - Система строится вокруг единого `Finding`, чтобы результаты native-модулей и external adapters можно было объединять.
+- `Entity` отделён от `Finding`: finding описывает источник и сигнал, entity описывает нормализованный объект для сводки кейса и будущего графа.
 - Dry-run используется по умолчанию для scan-команд. Live-сетевые проверки требуют явного `--live`.
 - Лицензионно сложные или большие проекты подключаются adapters вместо прямого копирования кода.
 - Password recovery flows, email-to-account и phone-to-account механики не переносятся в native-код без restricted-режима.
@@ -219,6 +236,7 @@ osint-toolkit stats
 - Telegram module пока не использует Telegram API и не получает private/group data.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
+- Entity summary пока строится только в памяти для одного отчёта; persistent graph/database ещё нет.
 - Investigation runner пока не хранит историю кейсов в базе данных; отчёт пишется в файл или stdout.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
@@ -228,6 +246,7 @@ osint-toolkit stats
 - При изменении CSV-схемы обновлять `Catalog.load()` и тесты.
 - При добавлении native-модуля обновлять `engine.py`, `cli.py`, README и тесты.
 - При подключении upstream-проекта обновлять `adapters.py`, указать лицензию, режим интеграции и parity gap.
+- При изменении схемы сущностей обновлять `entities.py`, `investigation.py`, README и тесты JSON/Markdown.
 - При добавлении команд обновлять `README.md` и этот анализ.
 - При изменении safety-границ обновлять `README.md`, `workflows.py` и тесты brief/recommend.
 - При новом snapshot обновлять дату в `catalog.py` или добавить явный выбор snapshot.
@@ -236,3 +255,4 @@ osint-toolkit stats
 
 - 2026-06-24: добавлен Python CLI `osint_toolkit` поверх существующих OSINT snapshot CSV.
 - 2026-06-24: цель уточнена до единой OSINT-системы с 1:1 functional parity; добавлены engine, native scan modules и adapter manifest.
+- 2026-06-24: добавлен report-level entity summary для объединения seed values, native findings и adapter dry-runs в расследовании.

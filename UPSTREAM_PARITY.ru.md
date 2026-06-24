@@ -229,7 +229,7 @@ Gap:
 
 - нет установки upstream CLI;
 - нет богатого parser-слоя для stdout каждого инструмента;
-- нет нормализации complex outputs в сущности graph model;
+- базовая нормализация `Finding` -> `Entity` уже есть, но нет adapter-specific parsers для complex outputs;
 - нет per-adapter config/API key handling.
 
 ## Case investigation runner
@@ -247,12 +247,13 @@ python -m osint_toolkit investigate --username <name> --include-adapters --out r
 - единый native scan через `Engine`;
 - optional adapter dry-runs;
 - Markdown/JSON report;
+- Entity Summary from targets, finding URLs, evidence and metadata;
 - review checklist in every Markdown report.
 
 Gap:
 
 - нет persistent case database;
-- нет graph/entity merge;
+- entity merge пока только in-memory внутри одного отчёта, без persistent graph;
 - нет parser-слоя для executed adapter outputs;
 - нет UI для просмотра кейса.
 

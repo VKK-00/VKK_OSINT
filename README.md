@@ -155,6 +155,8 @@ python -m osint_toolkit investigate --username example_user --telegram "@durov" 
 python -m osint_toolkit investigate --domain example.com --live --format json
 ```
 
+Отчёт содержит `Entity Summary`: нормализованные email, phone, domain, URL, Telegram handle, country/region и другие сущности, извлечённые из входных seed values, native findings и adapter dry-runs. Это общий слой для будущего case graph.
+
 Статусы:
 
 - `partial_native` — часть функционала уже реализована native-кодом.

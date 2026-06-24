@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .adapter_runner import run_adapter
 from .adapters import ADAPTERS
+from .entities import Entity, entities_from_findings, entities_from_targets, merge_entities
 from .engine import Finding, RunConfig, ScanTarget
 from .runtime import build_default_engine
 
@@ -17,6 +18,7 @@ class InvestigationResult:
     targets: tuple[ScanTarget, ...]
     findings: tuple[Finding, ...]
     adapter_findings: tuple[Finding, ...]
+    entities: tuple[Entity, ...]
     generated_at: str
 
     def all_findings(self) -> tuple[Finding, ...]:
@@ -30,6 +32,7 @@ class InvestigationResult:
                 {"kind": target.kind, "value": target.value, "region": target.region}
                 for target in self.targets
             ],
+            "entities": [entity.to_dict() for entity in self.entities],
             "findings": [finding.to_dict() for finding in self.findings],
             "adapter_findings": [finding.to_dict() for finding in self.adapter_findings],
         }
@@ -54,12 +57,18 @@ def run_investigation(
     if include_adapters:
         for target in targets:
             adapter_findings.extend(_adapter_dry_runs(target, adapter_limit))
+    entities = merge_entities(
+        entities_from_targets(targets),
+        entities_from_findings(tuple(findings)),
+        entities_from_findings(tuple(adapter_findings)),
+    )
 
     return InvestigationResult(
         title=title,
         targets=targets,
         findings=tuple(findings),
         adapter_findings=tuple(adapter_findings),
+        entities=entities,
         generated_at=datetime.now().astimezone().isoformat(timespec="seconds"),
     )
 
@@ -77,6 +86,21 @@ def render_investigation_markdown(result: InvestigationResult) -> str:
     ]
     for target in result.targets:
         lines.append(f"| {target.kind} | {_escape(target.value)} | {target.region} |")
+
+    lines.extend(
+        [
+            "",
+            "## Entity Summary",
+            "",
+            "| Kind | Value | Confidence | Source | Note |",
+            "|---|---|---|---|---|",
+        ]
+    )
+    for entity in result.entities:
+        lines.append(
+            f"| {entity.kind} | {_escape(entity.value)} | {entity.confidence} | "
+            f"{_escape(entity.source)} | {_escape(entity.note)} |"
+        )
 
     lines.extend(
         [
