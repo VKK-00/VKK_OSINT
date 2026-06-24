@@ -61,6 +61,11 @@ def entities_from_findings(findings: tuple[Finding, ...]) -> tuple[Entity, ...]:
             entities.append(Entity("phone", phone, source, "low", "from evidence text"))
 
         for key, value in finding.metadata.items():
+            if key == "emails":
+                for email in _split_metadata_values(value):
+                    if EMAIL_RE.fullmatch(email):
+                        entities.append(Entity("email", email, source, finding.confidence, "metadata:emails"))
+                continue
             if key in {"subdomain", "subdomains"}:
                 for subdomain in _split_metadata_values(value):
                     entities.append(Entity("subdomain", subdomain, source, finding.confidence, f"metadata:{key}"))

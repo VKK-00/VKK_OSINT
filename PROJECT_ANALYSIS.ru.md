@@ -26,10 +26,10 @@ CLI работает в трёх режимах:
 - content marker rules для live username checks: profile markers повышают confidence, soft-404 markers дают `not_found`;
 - email baseline checks: синтаксис, live domain resolution, MX/NS/TXT lookup, SPF, DMARC, MTA-STS, TLS-RPT, BIMI и TXT service signal classification;
 - phone baseline checks: нормализация, E.164-like validation и country-prefix signal;
-- domain baseline recon: DNS resolution, HTTP/HTTPS metadata, presence security headers, certificate transparency subdomain discovery и RDAP registration lookup;
+- domain baseline recon: DNS resolution, HTTP/HTTPS metadata, public page email extraction, presence security headers, certificate transparency subdomain discovery и RDAP registration lookup;
 - Telegram baseline: handle/post URL normalization и optional live public metadata;
 - RU/UA source pack: curated карты, Telegram/RU platforms, geospatial и pastebin источники;
-- базовый web metadata scan по URL, совместимый с начальным web-check слоем;
+- базовый web metadata scan и public email extraction по URL, совместимый с начальным web-check слоем;
 - external adapter dry-run/execute runner для настроенных upstream CLI;
 - adapter stdout parser: извлечение URL, email, phone и key/value сигналов из выполненных upstream CLI;
 - generated report ingestion: внешние adapters могут писать JSON/CSV во временную output-папку или конкретный временный output-файл, после чего runner читает эти файлы и передаёт их в parser;
@@ -114,12 +114,15 @@ CLI работает в трёх режимах:
   - `DomainScanModule` — DNS, HTTP/HTTPS baseline, certificate transparency lookup и RDAP lookup для доменов.
   - `parse_crtsh_subdomains()` — parser `crt.sh` JSON, который нормализует wildcard/common-name значения в bounded `subdomain` signals.
   - `parse_rdap_domain_record()` — parser RDAP JSON, который извлекает registrar, domain handle, statuses, nameservers и registration/expiration dates.
+- `osint_toolkit/web_extract.py`
+  - `extract_public_emails()` — bounded extraction публичных email-адресов из уже загруженного HTML/text.
+  - `split_emails_by_domain()` — разделение same-domain и external email findings для domain recon metadata.
 - `osint_toolkit/modules/telegram.py`
   - `TelegramScanModule` — нормализация Telegram handles/post URLs и live t.me metadata.
 - `osint_toolkit/modules/ru_ua_sources.py`
   - `RuUaSourcePackModule` — curated RU/UA source pack.
 - `osint_toolkit/modules/web.py`
-  - `WebMetadataModule` — HTTP status/final URL/title.
+  - `WebMetadataModule` — HTTP status/final URL/title и public page email extraction.
 - `osint_toolkit/adapters.py`
   - `AdapterSpec` — карта upstream-проектов, лицензий, режима интеграции, target-specific command templates и текущего статуса.
   - `AdapterProfile` — reusable группы adapters для `investigate --adapter-profile`.
@@ -412,7 +415,7 @@ osint-toolkit stats
 - Adapter manifest теперь включает generated CSV/TXT folder template для `sherlock-project/sherlock`, isolated workdir TXT ingestion для `thewhiteh4t/nexfil`, generated JSON-file templates для `alpkeskin/mosint` и `h8mail`, generated JSON-report folder template для `soxoj/maigret`, target-specific executable templates для `user-scanner`, region-aware template для `snooppr/snoop` и executable template для `sundowndev/phoneinfoga`; более сложные adapters могут потребовать richer per-mode config.
 - Adapter parser покрывает общие URL/email/phone/key-value patterns, Sherlock stdout/CSV/TXT reports, Nexfil stdout/TXT reports, Mosint JSON reports, h8mail JSON reports, Maigret JSON/CSV reports, `user-scanner` JSON/verbose output, Snoop stdout/CSV output и PhoneInfoga CLI/API output; сложные JSON/CSV/HTML exports остальных upstream ещё не разобраны.
 - Adapter profiles пока статические; нет пользовательских профилей и per-case persistent adapter policy.
-- Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics и cross-case entity index, но нет weighted path finding, cross-case edge graph и визуального UI.
+- Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> email`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics и cross-case entity index, но нет weighted path finding, cross-case edge graph и визуального UI.
 - SQLite schema сейчас версии 2; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
@@ -476,3 +479,4 @@ osint-toolkit stats
 - 2026-06-24: Nexfil execute mode теперь запускается в isolated temporary workdir/HOME; parser stdout/TXT нормализует autosaved profile URLs и summary metrics.
 - 2026-06-24: расширен native Web/domain recon: `DomainScanModule` теперь планирует и выполняет `crt.sh` certificate transparency lookup, а CT names попадают в `subdomain` entities и graph edges `domain -> subdomain`.
 - 2026-06-24: добавлен native RDAP lookup для domain recon: registrar/nameservers/status/events попадают в `rdap-domain` finding, `registrar`/`nameserver` entities и graph edges `domain -> registrar|nameserver`.
+- 2026-06-24: добавлен native public page email extraction для domain/url recon: emails из fetched landing pages попадают в `page-email-extraction` findings, `email` entities и graph edges `domain|url -> email`.

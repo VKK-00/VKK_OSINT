@@ -299,6 +299,7 @@ def _metadata_edge(key: str) -> tuple[str, str] | None:
     mapping = {
         "domain": ("has_domain", "domain"),
         "email": ("related_email", "email"),
+        "emails": ("page_contact_email", "email"),
         "normalized": ("normalized_as", "normalized-value"),
         "country": ("country_hint", "country"),
         "region": ("region_hint", "region"),
@@ -322,7 +323,7 @@ def _metadata_edge(key: str) -> tuple[str, str] | None:
 
 
 def _metadata_values(key: str, value: str) -> tuple[str, ...]:
-    if key in {"subdomain", "subdomains", "nameserver", "nameservers"}:
+    if key in {"emails", "subdomain", "subdomains", "nameserver", "nameservers"}:
         parts = [part.strip() for part in value.replace("|", ",").split(",")]
         return tuple(part for part in parts if part)
     return (value,)

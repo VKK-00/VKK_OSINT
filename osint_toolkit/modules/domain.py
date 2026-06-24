@@ -7,6 +7,7 @@ from urllib.parse import quote, urlparse
 
 from ..engine import Finding, RunConfig, ScanTarget
 from ..http_client import HttpClient, HttpResult
+from ..web_extract import extract_public_emails, split_emails_by_domain
 
 SECURITY_HEADERS = (
     "strict-transport-security",
@@ -71,6 +72,15 @@ class DomainScanModule:
                 ),
                 Finding(
                     module=self.name,
+                    source="page-email-extraction",
+                    target=target.value,
+                    status="planned",
+                    confidence="not_checked",
+                    evidence="Dry run only. Pass --live to extract public email addresses from landing pages.",
+                    metadata={"domain": domain, "scope": "https,http landing pages"},
+                ),
+                Finding(
+                    module=self.name,
                     source="certificate-transparency",
                     target=target.value,
                     status="planned",
@@ -99,8 +109,11 @@ class DomainScanModule:
             retries=config.http_retries,
             backoff_seconds=config.http_backoff,
         )
-        findings.append(_http_metadata(self.name, target.value, domain, "https", client))
-        findings.append(_http_metadata(self.name, target.value, domain, "http", client))
+        https_result = _http_check(domain, "https", client)
+        http_result = _http_check(domain, "http", client)
+        findings.append(_http_metadata(self.name, target.value, domain, "https", https_result))
+        findings.append(_http_metadata(self.name, target.value, domain, "http", http_result))
+        findings.append(_page_email_extraction(self.name, target.value, domain, (https_result, http_result)))
         findings.append(_certificate_transparency(self.name, target.value, domain, client))
         findings.append(_rdap_domain(self.name, target.value, domain, client))
         return tuple(findings)
@@ -144,9 +157,13 @@ def _resolve_domain(module: str, original: str, domain: str) -> Finding:
     )
 
 
-def _http_metadata(module: str, original: str, domain: str, scheme: str, client: HttpClient) -> Finding:
+def _http_check(domain: str, scheme: str, client: HttpClient) -> HttpResult:
     url = f"{scheme}://{domain}"
-    result = client.check(url, fetch_title=True)
+    return client.check(url, fetch_title=True)
+
+
+def _http_metadata(module: str, original: str, domain: str, scheme: str, result: HttpResult) -> Finding:
+    url = f"{scheme}://{domain}"
     status = "candidate" if result.status_code and result.status_code < 400 else "unknown"
     security_headers = {
         header: result.headers[header]
@@ -169,6 +186,56 @@ def _http_metadata(module: str, original: str, domain: str, scheme: str, client:
             "requested_url": url,
             "security_headers_present": ", ".join(sorted(security_headers)),
         },
+    )
+
+
+def _page_email_extraction(
+    module: str,
+    original: str,
+    domain: str,
+    results: tuple[HttpResult, ...],
+) -> Finding:
+    emails: list[str] = []
+    seen: set[str] = set()
+    source_urls: list[str] = []
+    for result in results:
+        if not result.body_text:
+            continue
+        for email in extract_public_emails(result.body_text):
+            if email not in seen:
+                seen.add(email)
+                emails.append(email)
+        source_url = result.final_url or result.url
+        if source_url:
+            source_urls.append(source_url)
+
+    same_domain, external = split_emails_by_domain(tuple(emails), domain)
+    metadata = {
+        "domain": domain,
+        "emails": ", ".join(emails),
+        "email_count": str(len(emails)),
+        "same_domain_email_count": str(len(same_domain)),
+        "external_email_count": str(len(external)),
+        "source_urls": " | ".join(dict.fromkeys(source_urls)),
+    }
+    if not emails:
+        return Finding(
+            module=module,
+            source="page-email-extraction",
+            target=original,
+            status="not_found",
+            confidence="medium",
+            evidence="No public email addresses found on fetched landing pages.",
+            metadata=metadata,
+        )
+    return Finding(
+        module=module,
+        source="page-email-extraction",
+        target=original,
+        status="candidate",
+        confidence="medium",
+        evidence=f"Found {len(emails)} public email address(es) on fetched landing pages.",
+        metadata=metadata,
     )
 
 

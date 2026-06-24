@@ -550,23 +550,43 @@ class EngineTests(unittest.TestCase):
         engine = Engine([WebMetadataModule()])
         findings = engine.scan(ScanTarget(kind="url", value="example.com"), RunConfig())
 
-        self.assertEqual(len(findings), 1)
+        self.assertEqual(len(findings), 2)
         self.assertEqual(findings[0].status, "planned")
         self.assertEqual(findings[0].url, "https://example.com")
+        self.assertEqual(findings[1].source, "page-email-extraction")
+
+    def test_url_scan_live_extracts_public_emails(self):
+        response = _FakeHttpResponse(
+            url="https://example.com/contact",
+            status_code=200,
+            body=b"<html><title>Contact</title><a href='mailto:info@example.com'>Email</a></html>",
+        )
+
+        with patch("osint_toolkit.http_client.urllib.request.urlopen", return_value=response):
+            findings = Engine([WebMetadataModule()]).scan(
+                ScanTarget(kind="url", value="example.com/contact"),
+                RunConfig(live=True),
+            )
+
+        sources = {finding.source: finding for finding in findings}
+        self.assertEqual(sources["page-email-extraction"].status, "candidate")
+        self.assertEqual(sources["page-email-extraction"].metadata["emails"], "info@example.com")
+        self.assertEqual(sources["page-email-extraction"].metadata["email_count"], "1")
 
     def test_domain_scan_dry_run_plans_dns_and_http_metadata(self):
         engine = Engine([DomainScanModule()])
         findings = engine.scan(ScanTarget(kind="domain", value="https://example.com/path"), RunConfig())
 
-        self.assertEqual(len(findings), 5)
+        self.assertEqual(len(findings), 6)
         self.assertEqual(findings[0].source, "dns-resolution")
         self.assertEqual(findings[0].metadata["domain"], "example.com")
         self.assertEqual(findings[1].url, "https://example.com")
         self.assertEqual(findings[2].url, "http://example.com")
-        self.assertEqual(findings[3].source, "certificate-transparency")
-        self.assertIn("crt.sh", findings[3].url)
-        self.assertEqual(findings[4].source, "rdap-domain")
-        self.assertIn("rdap.org/domain/example.com", findings[4].url)
+        self.assertEqual(findings[3].source, "page-email-extraction")
+        self.assertEqual(findings[4].source, "certificate-transparency")
+        self.assertIn("crt.sh", findings[4].url)
+        self.assertEqual(findings[5].source, "rdap-domain")
+        self.assertIn("rdap.org/domain/example.com", findings[5].url)
 
     def test_domain_normalizer_rejects_invalid_values(self):
         self.assertEqual(normalize_domain("https://Example.COM/a"), "example.com")
@@ -643,6 +663,7 @@ class EngineTests(unittest.TestCase):
                     final_url="https://example.com",
                     status_code=200,
                     title="Example",
+                    body_text="<a href='mailto:info@example.com'>Contact</a> support@external.test",
                     content_type="text/html",
                     headers={"strict-transport-security": "max-age=31536000"},
                 ),
@@ -679,6 +700,10 @@ class EngineTests(unittest.TestCase):
             )
 
         sources = {finding.source: finding for finding in findings}
+        self.assertEqual(sources["page-email-extraction"].status, "candidate")
+        self.assertEqual(sources["page-email-extraction"].metadata["emails"], "info@example.com, support@external.test")
+        self.assertEqual(sources["page-email-extraction"].metadata["same_domain_email_count"], "1")
+        self.assertEqual(sources["page-email-extraction"].metadata["external_email_count"], "1")
         self.assertEqual(sources["certificate-transparency"].status, "candidate")
         self.assertEqual(sources["certificate-transparency"].metadata["subdomain_count"], "2")
         self.assertEqual(sources["certificate-transparency"].metadata["subdomains"], "api.example.com, www.example.com")

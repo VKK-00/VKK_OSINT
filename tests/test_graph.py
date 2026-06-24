@@ -135,6 +135,33 @@ class GraphAnalysisTests(unittest.TestCase):
         self.assertIn(("domain", "example.com", "registered_via", "registrar", "Example Registrar, Inc."), edge_keys)
         self.assertIn(("domain", "example.com", "uses_nameserver", "nameserver", "a.iana-servers.net"), edge_keys)
 
+    def test_page_email_metadata_edges(self):
+        target = ScanTarget(kind="domain", value="example.com")
+        findings = (
+            Finding(
+                module="domain-baseline",
+                source="page-email-extraction",
+                target="example.com",
+                status="candidate",
+                confidence="medium",
+                evidence="Found 2 public email address(es).",
+                metadata={"domain": "example.com", "emails": "info@example.com, support@example.com"},
+            ),
+        )
+
+        entities = merge_entities(entities_from_targets((target,)), entities_from_findings(findings))
+        entity_keys = {(entity.kind, entity.value.lower()) for entity in entities}
+        self.assertIn(("email", "info@example.com"), entity_keys)
+        self.assertIn(("email", "support@example.com"), entity_keys)
+
+        edges = graph_edges_from_case((target,), findings, entities)
+        edge_keys = {
+            (edge.source_kind, edge.source_value, edge.relation, edge.target_kind, edge.target_value)
+            for edge in edges
+        }
+        self.assertIn(("domain", "example.com", "page_contact_email", "email", "info@example.com"), edge_keys)
+        self.assertIn(("domain", "example.com", "page_contact_email", "email", "support@example.com"), edge_keys)
+
 
 if __name__ == "__main__":
     unittest.main()
