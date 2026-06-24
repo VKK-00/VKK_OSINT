@@ -128,18 +128,21 @@ Gap:
 - `python -m osint_toolkit scan phone <number>`;
 - E.164-like нормализация;
 - базовый country-prefix signal для `+380`, `+7` и нескольких глобальных префиксов.
+- `sundowndev/phoneinfoga` как safe external adapter через `phoneinfoga scan -n <number>`;
+- parser фактического PhoneInfoga CLI stdout `Results for <scanner>` и REST/API-like JSON для `local`, `numverify`, `googlesearch`, `googlecse`, `ovh`;
+- graph/entities mapping для `normalized`, `country`, `country_code`, `carrier`, `line_type`, `location`, `number_range`, `zip_code`, Google dork URL и CSE result URL.
 
 Gap:
 
 - нет carrier/type lookup;
 - нет reputation lookup;
 - нет внешних API;
-- нет PhoneInfoga parity adapter.
+- GPL-код PhoneInfoga не копируется в native Python-код; паритет делается через внешний CLI/API output ingestion, чтобы не смешивать copyleft-код с основным пакетом.
 
 План:
 
 1. Native: нормализация номера, country code, форматирование, базовая валидация.
-2. Adapter: `phoneinfoga`.
+2. Adapter: расширять `phoneinfoga` parser при появлении новых scanner output fields.
 3. Restricted adapter: phone-to-account checks.
 
 ### Instagram / social-platform modules
@@ -256,13 +259,14 @@ python -m osint_toolkit adapter-setup <repository>
 - adapter-specific parser for Maigret NDJSON/simple JSON and CSV report rows;
 - adapter-specific parser for `user-scanner` JSON and verbose line output;
 - adapter-specific parser for Snoop stdout and CSV report rows;
+- adapter-specific parser for PhoneInfoga CLI sections and REST/API-like JSON scanner outputs;
 - install/config/readiness metadata in `AdapterSpec`;
 - `adapter-setup` command for setup plans, docs URLs, PATH/env readiness.
 
 Gap:
 
 - нет автоматической установки upstream CLI;
-- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose и Snoop stdout/CSV;
+- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV и PhoneInfoga CLI/API output;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.
 

@@ -72,6 +72,9 @@ def entities_from_findings(findings: tuple[Finding, ...]) -> tuple[Entity, ...]:
                     "normalized_name": "normalized-name",
                     "category": "source-category",
                     "line_type": "line-type",
+                    "number_range": "phone-range",
+                    "zip_code": "postal-code",
+                    "country_code": "country-code",
                 }.get(key, entity_kind)
                 entities.append(Entity(entity_kind, value, source, finding.confidence, f"metadata:{key}"))
     return dedupe_entities(tuple(entities))
@@ -136,5 +139,8 @@ def _metadata_entity_kind(key: str) -> str:
         "carrier",
         "location",
         "line_type",
+        "number_range",
+        "zip_code",
+        "country_code",
     }
     return key if key in supported else ""

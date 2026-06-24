@@ -334,7 +334,7 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "GPL-3.0",
         "partial_native",
         "phoneinfoga scan -n <number>",
-        "Native phone module covers normalization/prefix baseline; full parity should use external adapter.",
+        "Native phone module covers baseline signals; CLI/API output parser ingests PhoneInfoga scanner results without copying GPL code.",
         ("phone",),
         ("phoneinfoga", "scan", "-n", "{target_value}"),
         "binary",

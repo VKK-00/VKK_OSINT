@@ -79,6 +79,8 @@ def parse_adapter_output(
         return _mosint_findings(repository, target, text)
     if repository == "khast3x/h8mail":
         return _h8mail_findings(repository, target, text)
+    if repository == "sundowndev/phoneinfoga":
+        return _phoneinfoga_findings(repository, target, text)
 
     findings: list[Finding] = []
     seen: set[tuple[str, str, str]] = set()
@@ -972,6 +974,467 @@ def _h8mail_evidence(
     if category == "breach-source":
         return f"h8mail {h8mail_target}: breach source {value}"
     return f"h8mail {h8mail_target}: {result_type}={value}{source}"
+
+
+PHONEINFOGA_SCALAR_KEYS = {
+    "raw local": "raw_local",
+    "raw_local": "raw_local",
+    "local": "local",
+    "local format": "local_format",
+    "local_format": "local_format",
+    "e164": "normalized",
+    "international": "international",
+    "international format": "normalized",
+    "international_format": "normalized",
+    "valid": "valid",
+    "found": "found",
+    "number": "phone_number",
+    "phone": "phone",
+    "country": "country",
+    "country code": "country_code",
+    "country_code": "country_code",
+    "country name": "country",
+    "country_name": "country",
+    "country prefix": "country_prefix",
+    "country_prefix": "country_prefix",
+    "location": "location",
+    "city": "location",
+    "carrier": "carrier",
+    "line type": "line_type",
+    "line_type": "line_type",
+    "number range": "number_range",
+    "number_range": "number_range",
+    "zip code": "zip_code",
+    "zip_code": "zip_code",
+    "homepage": "homepage",
+    "results shown": "result_count",
+    "result count": "result_count",
+    "result_count": "result_count",
+    "total number of results": "total_result_count",
+    "total result count": "total_result_count",
+    "total_result_count": "total_result_count",
+    "requests made": "total_request_count",
+    "total request count": "total_request_count",
+    "total_request_count": "total_request_count",
+}
+
+PHONEINFOGA_GOOGLE_CATEGORIES = {
+    "social_media",
+    "disposable_providers",
+    "reputation",
+    "individuals",
+    "general",
+    "items",
+}
+
+
+def _phoneinfoga_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    structured = _phoneinfoga_json_findings(repository, target, text)
+    if structured:
+        return structured
+    return _phoneinfoga_console_findings(repository, target, text)
+
+
+def _phoneinfoga_json_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    payload = _load_json_payload(text)
+    if payload is None:
+        return ()
+
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+    for scanner, result in _phoneinfoga_json_results(payload):
+        if isinstance(result, str):
+            finding = _phoneinfoga_error_finding(repository, target, scanner or "api", result, seen)
+            if finding:
+                findings.append(finding)
+            continue
+        findings.extend(_phoneinfoga_result_findings(repository, target, scanner, result, seen))
+    return tuple(findings)
+
+
+def _phoneinfoga_json_results(payload: object) -> list[tuple[str, object]]:
+    if isinstance(payload, list):
+        results: list[tuple[str, object]] = []
+        for item in payload:
+            results.extend(_phoneinfoga_json_results(item))
+        return results
+    if not isinstance(payload, dict):
+        return []
+
+    if payload.get("success") is False and payload.get("error"):
+        return [("api", str(payload["error"]))]
+
+    if "result" in payload:
+        result = payload["result"]
+        scanner = _first_scalar(payload.get("scanner") or payload.get("name"))
+        return [(scanner or _phoneinfoga_infer_scanner(result), result)]
+
+    scanner_names = {"local", "numverify", "googlesearch", "googlecse", "ovh"}
+    keyed_results = [
+        (str(key), value)
+        for key, value in payload.items()
+        if str(key).lower() in scanner_names and isinstance(value, (dict, list))
+    ]
+    if keyed_results:
+        return keyed_results
+
+    scanner = _first_scalar(payload.get("scanner") or payload.get("name"))
+    if scanner and any(key in payload for key in ("data", "response", "result")):
+        return [(scanner, payload.get("data") or payload.get("response") or payload.get("result"))]
+
+    inferred = _phoneinfoga_infer_scanner(payload)
+    return [(inferred, payload)] if inferred else []
+
+
+def _phoneinfoga_infer_scanner(result: object) -> str:
+    if not isinstance(result, dict):
+        return ""
+    keys = {_metadata_key(str(key)) for key in result}
+    if keys & {"raw_local", "e164", "international"}:
+        return "local"
+    if keys & {"local_format", "international_format", "line_type", "country_prefix"}:
+        return "numverify"
+    if keys & {"social_media", "disposable_providers", "reputation", "individuals", "general"}:
+        return "googlesearch"
+    if keys & {"homepage", "result_count", "total_result_count", "total_request_count", "items"}:
+        return "googlecse"
+    if keys & {"number_range", "zip_code", "found", "city"}:
+        return "ovh"
+    return ""
+
+
+def _phoneinfoga_result_findings(
+    repository: str,
+    target: ScanTarget,
+    scanner: str,
+    result: object,
+    seen: set[tuple[str, str, str]],
+) -> tuple[Finding, ...]:
+    if isinstance(result, list):
+        findings: list[Finding] = []
+        for item in result:
+            findings.extend(_phoneinfoga_result_findings(repository, target, scanner, item, seen))
+        return tuple(findings)
+    if not isinstance(result, dict):
+        scalar = _first_scalar(result)
+        if not scalar:
+            return ()
+        finding = _phoneinfoga_scalar_finding(repository, target, scanner or "api", "value", scalar, seen)
+        return (finding,) if finding else ()
+
+    normalized_scanner = (scanner or _phoneinfoga_infer_scanner(result) or "api").lower()
+    findings: list[Finding] = []
+    for key, value in result.items():
+        normalized_key = _metadata_key(str(key))
+        if isinstance(value, list):
+            if normalized_key in PHONEINFOGA_GOOGLE_CATEGORIES:
+                findings.extend(
+                    _phoneinfoga_records_findings(repository, target, normalized_scanner, normalized_key, value, seen)
+                )
+            continue
+        if isinstance(value, dict):
+            if normalized_key in {"result", "data", "response"}:
+                findings.extend(
+                    _phoneinfoga_result_findings(repository, target, normalized_scanner, value, seen)
+                )
+            continue
+
+        scalar = _first_scalar(value)
+        if not scalar:
+            continue
+        if scalar.startswith(("http://", "https://")):
+            finding = _phoneinfoga_url_finding(
+                repository,
+                target,
+                normalized_scanner,
+                _phoneinfoga_display_key(str(key)),
+                scalar,
+                seen,
+                dork="",
+                title="",
+            )
+        else:
+            finding = _phoneinfoga_scalar_finding(
+                repository,
+                target,
+                normalized_scanner,
+                _phoneinfoga_display_key(str(key)),
+                scalar,
+                seen,
+            )
+        if finding:
+            findings.append(finding)
+    return tuple(findings)
+
+
+def _phoneinfoga_records_findings(
+    repository: str,
+    target: ScanTarget,
+    scanner: str,
+    category: str,
+    records: list[object],
+    seen: set[tuple[str, str, str]],
+) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        url = _first_scalar(record.get("url") or record.get("link"))
+        if not url:
+            continue
+        finding = _phoneinfoga_url_finding(
+            repository,
+            target,
+            scanner,
+            _phoneinfoga_display_key(category),
+            url,
+            seen,
+            dork=_first_scalar(record.get("dork") or record.get("query")),
+            title=_first_scalar(record.get("title")),
+            number=_first_scalar(record.get("number")),
+        )
+        if finding:
+            findings.append(finding)
+    return tuple(findings)
+
+
+def _phoneinfoga_console_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+    scanner = ""
+    category = ""
+    in_errors = False
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.lower().startswith("running scan for phone number"):
+            continue
+        if re.fullmatch(r"\d+\s+scanner\(s\)\s+succeeded", stripped, re.IGNORECASE):
+            continue
+
+        if stripped.lower() == "the following scanners returned errors:":
+            in_errors = True
+            scanner = ""
+            category = ""
+            continue
+
+        section = re.match(r"^Results for\s+(?P<scanner>.+)$", stripped, re.IGNORECASE)
+        if section:
+            in_errors = False
+            scanner = section.group("scanner").strip().lower()
+            category = ""
+            continue
+
+        if in_errors:
+            error_match = re.match(r"^(?P<scanner>[^:]{2,80}):\s*(?P<error>.+)$", stripped)
+            if error_match:
+                finding = _phoneinfoga_error_finding(
+                    repository,
+                    target,
+                    error_match.group("scanner").strip().lower(),
+                    error_match.group("error").strip(),
+                    seen,
+                )
+                if finding:
+                    findings.append(finding)
+            continue
+
+        if stripped.endswith(":") and not URL_RE.search(stripped):
+            category = _metadata_key(stripped[:-1])
+            continue
+
+        match = KEY_VALUE_RE.match(_strip_prefix(stripped))
+        if match:
+            raw_key = " ".join(match.group("key").split())
+            value = match.group("value").strip()
+            if raw_key.lower() == "url" and value.startswith(("http://", "https://")):
+                finding = _phoneinfoga_url_finding(
+                    repository,
+                    target,
+                    scanner or "cli",
+                    _phoneinfoga_display_key(category or raw_key),
+                    value,
+                    seen,
+                    dork="",
+                    title="",
+                )
+            else:
+                finding = _phoneinfoga_scalar_finding(
+                    repository,
+                    target,
+                    scanner or "cli",
+                    raw_key,
+                    value,
+                    seen,
+                    category=category,
+                )
+            if finding:
+                findings.append(finding)
+            continue
+
+        for url in URL_RE.findall(stripped):
+            finding = _phoneinfoga_url_finding(
+                repository,
+                target,
+                scanner or "cli",
+                _phoneinfoga_display_key(category or "url"),
+                url.rstrip(".,;"),
+                seen,
+                dork="",
+                title="",
+            )
+            if finding:
+                findings.append(finding)
+    return tuple(findings)
+
+
+def _phoneinfoga_scalar_finding(
+    repository: str,
+    target: ScanTarget,
+    scanner: str,
+    raw_key: str,
+    value: str,
+    seen: set[tuple[str, str, str]],
+    *,
+    category: str = "",
+) -> Finding | None:
+    value = value.strip()
+    if not value or value.lower() in {"none", "not found", "unknown", "n/a"}:
+        return None
+
+    normalized_key = _metadata_key(raw_key).replace("_", " ")
+    metadata_key = PHONEINFOGA_SCALAR_KEYS.get(normalized_key)
+    if not metadata_key:
+        metadata_key = f"phoneinfoga_{_metadata_key(raw_key)}"
+
+    seen_key = ("phoneinfoga-kv", scanner.lower(), f"{metadata_key}:{value.lower()}")
+    if seen_key in seen:
+        return None
+    seen.add(seen_key)
+
+    metadata = {
+        "repository": repository,
+        "parser": "phoneinfoga",
+        "scanner": scanner,
+        "field": _phoneinfoga_display_key(raw_key),
+        metadata_key: value,
+    }
+    if category:
+        metadata["category"] = category
+    if metadata_key == "phone_number" and value.startswith("+"):
+        metadata["normalized"] = value
+    elif metadata_key == "country_code" and re.fullmatch(r"[A-Za-z]{2}", value):
+        metadata["country"] = value.upper()
+
+    entity_keys = {
+        "normalized",
+        "country",
+        "country_code",
+        "carrier",
+        "location",
+        "line_type",
+        "number_range",
+        "zip_code",
+    }
+    status = "candidate" if set(metadata) & entity_keys else "observed"
+    confidence = "medium" if status == "candidate" else "low"
+    evidence = f"PhoneInfoga {scanner}: {_phoneinfoga_display_key(raw_key)}: {value}"
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status=status,
+        confidence=confidence,
+        evidence=_short(evidence),
+        metadata=metadata,
+    )
+
+
+def _phoneinfoga_url_finding(
+    repository: str,
+    target: ScanTarget,
+    scanner: str,
+    category: str,
+    url: str,
+    seen: set[tuple[str, str, str]],
+    *,
+    dork: str = "",
+    title: str = "",
+    number: str = "",
+) -> Finding | None:
+    url = url.strip().rstrip(".,;")
+    if not url.startswith(("http://", "https://")):
+        return None
+    seen_key = ("phoneinfoga-url", scanner.lower(), url.lower())
+    if seen_key in seen:
+        return None
+    seen.add(seen_key)
+
+    parsed = urlparse(url)
+    metadata = {
+        "repository": repository,
+        "parser": "phoneinfoga",
+        "scanner": scanner,
+        "category": _metadata_key(category),
+        "domain": (parsed.hostname or "").lower(),
+    }
+    if dork:
+        metadata["dork"] = dork
+    if title:
+        metadata["title"] = title
+    if number:
+        metadata["phone_number"] = number
+        if number.startswith("+"):
+            metadata["normalized"] = number
+
+    evidence_bits = [f"PhoneInfoga {scanner}", category]
+    if title:
+        evidence_bits.append(title)
+    if dork:
+        evidence_bits.append(dork)
+    evidence_bits.append(url)
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="candidate",
+        url=url,
+        confidence="medium",
+        evidence=_short(": ".join(bit for bit in evidence_bits if bit)),
+        metadata=metadata,
+    )
+
+
+def _phoneinfoga_error_finding(
+    repository: str,
+    target: ScanTarget,
+    scanner: str,
+    error: str,
+    seen: set[tuple[str, str, str]],
+) -> Finding | None:
+    error = error.strip()
+    if not error:
+        return None
+    seen_key = ("phoneinfoga-error", scanner.lower(), error.lower())
+    if seen_key in seen:
+        return None
+    seen.add(seen_key)
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="error",
+        confidence="low",
+        evidence=_short(f"PhoneInfoga {scanner}: {error}"),
+        metadata={"repository": repository, "parser": "phoneinfoga", "scanner": scanner, "error": error},
+    )
+
+
+def _phoneinfoga_display_key(value: str) -> str:
+    value = value.replace("_", " ").strip()
+    return " ".join(value.split()).title()
 
 
 def _safe_int(value: str) -> int | None:

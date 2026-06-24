@@ -308,6 +308,9 @@ def _metadata_edge(key: str) -> tuple[str, str] | None:
         "carrier": ("carrier_hint", "carrier"),
         "location": ("location_hint", "location"),
         "line_type": ("line_type_hint", "line-type"),
+        "number_range": ("phone_range_hint", "phone-range"),
+        "zip_code": ("postal_code_hint", "postal-code"),
+        "country_code": ("country_code_hint", "country-code"),
     }
     return mapping.get(key)
 

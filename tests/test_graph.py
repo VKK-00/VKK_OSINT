@@ -2,9 +2,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from osint_toolkit.adapter_parsers import parse_adapter_output
 from osint_toolkit.case_store import CaseStore
+from osint_toolkit.entities import entities_from_findings, entities_from_targets, merge_entities
 from osint_toolkit.engine import ScanTarget
-from osint_toolkit.graph import analyze_case_graph
+from osint_toolkit.graph import analyze_case_graph, graph_edges_from_case
 from osint_toolkit.investigation import run_investigation
 
 
@@ -50,6 +52,30 @@ class GraphAnalysisTests(unittest.TestCase):
             analyze_case_graph(payload, focus_kind="email")
         with self.assertRaises(ValueError):
             analyze_case_graph(payload, limit=0)
+
+    def test_phoneinfoga_metadata_edges(self):
+        target = ScanTarget(kind="phone", value="+380441234567")
+        findings = parse_adapter_output(
+            "sundowndev/phoneinfoga",
+            target,
+            """
+            Results for ovh
+            Found: true
+            Number range: 0038044xxxxxxx
+            City: Kyiv
+            Zip code: 01001
+            """,
+        )
+        entities = merge_entities(entities_from_targets((target,)), entities_from_findings(findings))
+        edges = graph_edges_from_case((target,), findings, entities)
+
+        edge_keys = {
+            (edge.source_kind, edge.source_value, edge.relation, edge.target_kind, edge.target_value)
+            for edge in edges
+        }
+        self.assertIn(("phone", "+380441234567", "phone_range_hint", "phone-range", "0038044xxxxxxx"), edge_keys)
+        self.assertIn(("phone", "+380441234567", "location_hint", "location", "Kyiv"), edge_keys)
+        self.assertIn(("phone", "+380441234567", "postal_code_hint", "postal-code", "01001"), edge_keys)
 
 
 if __name__ == "__main__":

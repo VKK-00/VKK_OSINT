@@ -150,21 +150,115 @@ class AdapterParserTests(unittest.TestCase):
             "sundowndev/phoneinfoga",
             ScanTarget(kind="phone", value="+380441234567"),
             """
+            Running scan for phone number +380441234567...
+
+            Results for local
+            Raw local: 0441234567
+            E164: +380441234567
+            International: 380441234567
             International format: +380441234567
-            Country: Ukraine
+            Country: UA
+            Country code: UA
             Carrier: Example Mobile
+            Line type: mobile
+
+            Results for googlesearch
+            Social media:
+                    URL: https://www.google.com/search?q=site%3Avk.com+intext%3A%22380441234567%22
+
+            Results for ovh
+            Found: true
+            Number range: 0038044xxxxxxx
+            City: Kyiv
+            Zip code: 01001
+
+            The following scanners returned errors:
+            googlecse: search engine ID and/or API key is not defined
+
+            3 scanner(s) succeeded
             """,
         )
 
         metadata = [finding.metadata for finding in findings]
         self.assertTrue(any(item.get("normalized") == "+380441234567" for item in metadata))
-        self.assertTrue(any(item.get("country") == "Ukraine" for item in metadata))
+        self.assertTrue(any(item.get("country") == "UA" for item in metadata))
         self.assertTrue(any(item.get("carrier") == "Example Mobile" for item in metadata))
+        self.assertTrue(any(item.get("line_type") == "mobile" for item in metadata))
+        self.assertTrue(any(item.get("number_range") == "0038044xxxxxxx" for item in metadata))
+        self.assertTrue(any(item.get("zip_code") == "01001" for item in metadata))
+        self.assertTrue(any(item.get("scanner") == "googlecse" and item.get("error") for item in metadata))
+
+        urls = {finding.url for finding in findings}
+        self.assertIn("https://www.google.com/search?q=site%3Avk.com+intext%3A%22380441234567%22", urls)
 
         entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
         self.assertIn(("normalized-value", "+380441234567"), entities)
-        self.assertIn(("country", "ukraine"), entities)
+        self.assertIn(("country", "ua"), entities)
         self.assertIn(("carrier", "example mobile"), entities)
+        self.assertIn(("line-type", "mobile"), entities)
+        self.assertIn(("phone-range", "0038044xxxxxxx"), entities)
+        self.assertIn(("postal-code", "01001"), entities)
+
+    def test_parse_phoneinfoga_rest_json_results(self):
+        findings = parse_adapter_output(
+            "sundowndev/phoneinfoga",
+            ScanTarget(kind="phone", value="+79516566591"),
+            """
+            {
+              "numverify": {
+                "valid": true,
+                "number": "79516566591",
+                "local_format": "9516566591",
+                "international_format": "+79516566591",
+                "country_prefix": "+7",
+                "country_code": "RU",
+                "country_name": "Russian Federation",
+                "location": "Saint Petersburg and Leningrad Oblast",
+                "carrier": "OJSC St. Petersburg Telecom",
+                "line_type": "mobile"
+              },
+              "googlesearch": {
+                "social_media": [
+                  {
+                    "number": "+79516566591",
+                    "dork": "site:vk.com intext:\\"79516566591\\"",
+                    "url": "https://www.google.com/search?q=site%3Avk.com+intext%3A%2279516566591%22"
+                  }
+                ]
+              },
+              "googlecse": {
+                "homepage": "https://cse.google.com/cse?cx=example",
+                "result_count": 1,
+                "total_result_count": 1,
+                "total_request_count": 1,
+                "items": [
+                  {
+                    "title": "Example profile",
+                    "url": "https://example.com/profile"
+                  }
+                ]
+              }
+            }
+            """,
+        )
+
+        metadata = [finding.metadata for finding in findings]
+        self.assertTrue(any(item.get("scanner") == "numverify" and item.get("country") == "Russian Federation" for item in metadata))
+        self.assertTrue(any(item.get("scanner") == "numverify" and item.get("country_code") == "RU" for item in metadata))
+        self.assertTrue(any(item.get("scanner") == "numverify" and item.get("location") == "Saint Petersburg and Leningrad Oblast" for item in metadata))
+        self.assertTrue(any(item.get("dork") == 'site:vk.com intext:"79516566591"' for item in metadata))
+        self.assertTrue(any(item.get("title") == "Example profile" for item in metadata))
+
+        urls = {finding.url for finding in findings}
+        self.assertIn("https://www.google.com/search?q=site%3Avk.com+intext%3A%2279516566591%22", urls)
+        self.assertIn("https://cse.google.com/cse?cx=example", urls)
+        self.assertIn("https://example.com/profile", urls)
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("normalized-value", "+79516566591"), entities)
+        self.assertIn(("country", "russian federation"), entities)
+        self.assertIn(("country-code", "ru"), entities)
+        self.assertIn(("location", "saint petersburg and leningrad oblast"), entities)
 
     def test_parse_maigret_ndjson_report(self):
         findings = parse_adapter_output(
