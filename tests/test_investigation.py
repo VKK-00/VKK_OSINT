@@ -168,6 +168,43 @@ class InvestigationTests(unittest.TestCase):
         self.assertIn(("username", "bellingcat", "produced_url", "url", "https://github.com/bellingcat"), edges)
         self.assertIn(("username", "bellingcat", "name_hint", "name", "bellingcat"), edges)
 
+    def test_execute_h8mail_adapter_reads_report_into_entities_and_edges(self):
+        def fake_run(args, **kwargs):
+            output_file = Path(args[args.index("-j") + 1])
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.write_text(
+                '{"targets":[{"target":"target@example.com","pwn_num":1,'
+                '"data":[["HUNTER_RELATED:admin@example.com"],["SNUS_PASSWORD:secret-value","SNUS_SOURCE:combo-db"]]}]}',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="JSON report saved\n", stderr="")
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="h8mail"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            result = run_investigation(
+                (ScanTarget(kind="email", value="target@example.com"),),
+                include_adapters=True,
+                execute_adapters=True,
+                adapter_repositories=("khast3x/h8mail",),
+            )
+
+        parsed = [finding for finding in result.adapter_findings if finding.module == "external-adapter-parser"]
+        self.assertTrue(any(finding.metadata.get("parser") == "h8mail" for finding in parsed))
+        self.assertFalse(any("secret-value" in finding.evidence for finding in parsed))
+
+        entities = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("email", "admin@example.com"), entities)
+        self.assertIn(("domain", "example.com"), entities)
+
+        edges = {
+            (edge.source_kind, edge.source_value.lower(), edge.relation, edge.target_kind, edge.target_value.lower())
+            for edge in result.edges
+        }
+        self.assertIn(("email", "target@example.com", "related_email", "email", "admin@example.com"), edges)
+        self.assertNotIn(("email", "target@example.com", "related_email", "email", "target@example.com"), edges)
+
     def test_person_target_expands_to_username_scan_edges(self):
         result = run_investigation((ScanTarget(kind="person", value="Ivan Petrenko"),))
 

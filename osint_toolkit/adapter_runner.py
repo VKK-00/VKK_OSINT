@@ -96,7 +96,12 @@ def run_adapter_findings(
     if adapter.generated_output_patterns:
         output_dir_context = tempfile.TemporaryDirectory(prefix="osint-toolkit-adapter-")
         output_dir = output_dir_context.name
-        command = (*command, *adapter.render_output_dir_args(output_dir))
+        output_file = str(Path(output_dir) / "adapter-output.json")
+        command = (
+            *command,
+            *adapter.render_output_dir_args(output_dir),
+            *adapter.render_output_file_args(output_file),
+        )
         command_text = format_command(command)
 
     try:

@@ -235,6 +235,53 @@ class AdapterParserTests(unittest.TestCase):
         self.assertEqual(envato.url, "")
         self.assertEqual(envato.metadata["checked_url"], "https://account.envato.com")
 
+    def test_parse_h8mail_json_report_redacts_sensitive_values(self):
+        findings = parse_adapter_output(
+            "khast3x/h8mail",
+            ScanTarget(kind="email", value="target@example.com"),
+            """
+            {
+              "targets": [
+                {
+                  "target": "target@example.com",
+                  "pwn_num": 3,
+                  "data": [
+                    ["HIBP3:Adobe", "HIBP3:LinkedIn"],
+                    ["HUNTER_RELATED:admin@example.com"],
+                    ["SNUS_USERNAME:targetuser", "SNUS_PASSWORD:secret-value", "SNUS_SOURCE:combo-db"],
+                    ["HIBP3_PASTE:https://pastebin.com/abc123"]
+                  ]
+                }
+              ]
+            }
+            """,
+        )
+
+        self.assertTrue(any(finding.metadata.get("parser") == "h8mail" for finding in findings))
+        summary = next(finding for finding in findings if finding.metadata.get("category") == "breach-summary")
+        self.assertEqual(summary.status, "candidate")
+        self.assertEqual(summary.metadata["breach_count"], "3")
+
+        related = next(finding for finding in findings if finding.metadata.get("category") == "related-email")
+        self.assertEqual(related.metadata["email"], "admin@example.com")
+        self.assertEqual(related.metadata["domain"], "example.com")
+
+        username = next(finding for finding in findings if finding.metadata.get("username") == "targetuser")
+        self.assertEqual(username.metadata["category"], "username")
+
+        secret = next(finding for finding in findings if finding.metadata.get("category") == "credential-exposure")
+        self.assertEqual(secret.metadata["sensitive_value_redacted"], "true")
+        self.assertNotIn("secret-value", secret.evidence)
+        self.assertFalse(any(value == "secret-value" for value in secret.metadata.values()))
+
+        paste = next(finding for finding in findings if finding.url == "https://pastebin.com/abc123")
+        self.assertEqual(paste.metadata["domain"], "pastebin.com")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("email", "admin@example.com"), entities)
+        self.assertIn(("username", "targetuser"), entities)
+        self.assertIn(("domain", "pastebin.com"), entities)
+
     def test_parse_snoop_csv_report(self):
         findings = parse_adapter_output(
             "snooppr/snoop",
@@ -340,6 +387,35 @@ class AdapterParserTests(unittest.TestCase):
         self.assertIn("--folderoutput", findings[0].metadata["command"])
         self.assertTrue(any(finding.metadata.get("parser") == "maigret" for finding in findings[1:]))
         self.assertTrue(any(finding.url == "https://github.com/bellingcat" for finding in findings[1:]))
+
+    def test_run_h8mail_adapter_reads_generated_json_report_after_execution(self):
+        def fake_run(args, **kwargs):
+            self.assertIn("--hide", args)
+            output_file = Path(args[args.index("-j") + 1])
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.write_text(
+                '{"targets":[{"target":"target@example.com","pwn_num":1,'
+                '"data":[["HUNTER_RELATED:admin@example.com"],["SNUS_PASSWORD:secret-value","SNUS_SOURCE:combo-db"]]}]}',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="JSON report saved\n", stderr="")
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="h8mail"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            findings = run_adapter_findings(
+                "khast3x/h8mail",
+                ScanTarget(kind="email", value="target@example.com"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertEqual(findings[0].metadata["generated_output_files"], "1")
+        self.assertIn("-j", findings[0].metadata["command"])
+        self.assertTrue(any(finding.metadata.get("parser") == "h8mail" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
+        self.assertFalse(any("secret-value" in finding.evidence for finding in findings))
 
     def test_run_user_scanner_adapter_adds_parsed_json_results_after_execution(self):
         completed = subprocess.CompletedProcess(

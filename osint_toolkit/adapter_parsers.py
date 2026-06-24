@@ -35,6 +35,7 @@ PARSER_REPOSITORIES = {
     "thewhiteh4t/nexfil",
     "snooppr/snoop",
     "alpkeskin/mosint",
+    "khast3x/h8mail",
     "sundowndev/phoneinfoga",
     "kaifcodec/user-scanner",
 }
@@ -74,6 +75,8 @@ def parse_adapter_output(
         return _snoop_findings(repository, target, text)
     if repository == "soxoj/maigret":
         return _maigret_findings(repository, target, text)
+    if repository == "khast3x/h8mail":
+        return _h8mail_findings(repository, target, text)
 
     findings: list[Finding] = []
     seen: set[tuple[str, str, str]] = set()
@@ -88,6 +91,301 @@ def parse_adapter_output(
         if key_value:
             findings.append(key_value)
     return tuple(findings)
+
+
+def _h8mail_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    structured = _h8mail_json_findings(repository, target, text)
+    if structured:
+        return structured
+
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact:
+            continue
+        findings.extend(_url_findings(repository, target, compact, seen))
+        findings.extend(_email_findings(repository, target, compact, seen))
+        findings.extend(_phone_findings(repository, target, compact, seen))
+        key_value = _key_value_finding(repository, target, compact, seen)
+        if key_value:
+            findings.append(key_value)
+    return tuple(findings)
+
+
+def _h8mail_json_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    payload = _load_json_payload(text)
+    if payload is None:
+        return ()
+
+    records = _h8mail_records(payload)
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+    for record in records:
+        target_value = _first_scalar(record.get("target")) or target.value
+        pwn_num = _first_scalar(record.get("pwn_num"))
+        summary = _h8mail_summary_finding(repository, target, target_value, pwn_num, seen)
+        if summary:
+            findings.append(summary)
+
+        for group in _h8mail_data_groups(record.get("data")):
+            source_label = _h8mail_source_label(group)
+            for result_type, value in group:
+                finding = _h8mail_entry_finding(
+                    repository=repository,
+                    target=target,
+                    h8mail_target=target_value,
+                    result_type=result_type,
+                    value=value,
+                    source_label=source_label,
+                    seen=seen,
+                )
+                if finding:
+                    findings.append(finding)
+    return tuple(findings)
+
+
+def _h8mail_records(payload: object) -> tuple[dict[str, Any], ...]:
+    if isinstance(payload, dict) and isinstance(payload.get("targets"), list):
+        return tuple(record for record in payload["targets"] if isinstance(record, dict))
+    if isinstance(payload, list):
+        return tuple(record for record in payload if isinstance(record, dict))
+    if isinstance(payload, dict) and "target" in payload:
+        return (payload,)
+    return ()
+
+
+def _h8mail_data_groups(value: object) -> tuple[tuple[tuple[str, str], ...], ...]:
+    groups: list[tuple[tuple[str, str], ...]] = []
+    if not isinstance(value, list):
+        return ()
+
+    for raw_group in value:
+        raw_items = raw_group if isinstance(raw_group, list) else [raw_group]
+        parsed: list[tuple[str, str]] = []
+        for item in raw_items:
+            entry = _h8mail_entry(item)
+            if entry:
+                parsed.append(entry)
+        if parsed:
+            groups.append(tuple(parsed))
+    return tuple(groups)
+
+
+def _h8mail_entry(item: object) -> tuple[str, str] | None:
+    if isinstance(item, dict):
+        result_type = _first_scalar(item.get("type") or item.get("key") or item.get("name"))
+        value = _first_scalar(item.get("data") or item.get("value") or item.get("result"))
+        if result_type and value:
+            return result_type.strip(), value.strip()
+        return None
+    if isinstance(item, (list, tuple)) and len(item) >= 2:
+        result_type = _first_scalar(item[0])
+        value = _first_scalar(item[1])
+        if result_type and value:
+            return result_type.strip(), value.strip()
+        return None
+    if isinstance(item, str) and ":" in item:
+        result_type, value = item.split(":", 1)
+        result_type = result_type.strip()
+        value = value.strip()
+        if result_type and value:
+            return result_type, value
+    return None
+
+
+def _h8mail_summary_finding(
+    repository: str,
+    target: ScanTarget,
+    h8mail_target: str,
+    pwn_num: str,
+    seen: set[tuple[str, str, str]],
+) -> Finding | None:
+    if not pwn_num:
+        return None
+    key = ("h8mail-summary", h8mail_target.lower(), pwn_num)
+    if key in seen:
+        return None
+    seen.add(key)
+
+    count = _safe_int(pwn_num)
+    status = "candidate" if count and count > 0 else "not_found"
+    confidence = "medium" if status == "candidate" else "low"
+    metadata = {
+        "repository": repository,
+        "parser": "h8mail",
+        "target_kind": target.kind,
+        "h8mail_target": h8mail_target,
+        "breach_count": pwn_num,
+        "category": "breach-summary",
+    }
+    if EMAIL_RE.fullmatch(h8mail_target):
+        metadata["email"] = h8mail_target
+        metadata["domain"] = h8mail_target.rsplit("@", 1)[1].lower()
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status=status,
+        confidence=confidence,
+        evidence=f"h8mail {h8mail_target}: {pwn_num} breach-related result(s)",
+        metadata=metadata,
+    )
+
+
+def _h8mail_entry_finding(
+    *,
+    repository: str,
+    target: ScanTarget,
+    h8mail_target: str,
+    result_type: str,
+    value: str,
+    source_label: str,
+    seen: set[tuple[str, str, str]],
+) -> Finding | None:
+    if value.upper() == "N/A":
+        return None
+
+    normalized_type = result_type.upper()
+    sensitive = _h8mail_sensitive_type(normalized_type)
+    category = _h8mail_category(normalized_type, value, sensitive)
+    key = ("h8mail-entry", h8mail_target.lower(), normalized_type, "" if sensitive else value.lower())
+    if key in seen:
+        return None
+    seen.add(key)
+
+    metadata = _h8mail_metadata(
+        repository=repository,
+        target=target,
+        h8mail_target=h8mail_target,
+        result_type=result_type,
+        value=value,
+        source_label=source_label,
+        category=category,
+        sensitive=sensitive,
+    )
+    url = value if category == "url" and value.startswith(("http://", "https://")) else ""
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="candidate" if category not in {"service-info", "breach-source"} else "observed",
+        url=url,
+        confidence="high" if sensitive or category in {"related-email", "username", "url"} else "medium",
+        evidence=_short(_h8mail_evidence(h8mail_target, result_type, value, category, sensitive, source_label)),
+        metadata=metadata,
+    )
+
+
+def _h8mail_metadata(
+    *,
+    repository: str,
+    target: ScanTarget,
+    h8mail_target: str,
+    result_type: str,
+    value: str,
+    source_label: str,
+    category: str,
+    sensitive: bool,
+) -> dict[str, str]:
+    metadata = {
+        "repository": repository,
+        "parser": "h8mail",
+        "target_kind": target.kind,
+        "h8mail_target": h8mail_target,
+        "result_type": result_type,
+        "category": category,
+    }
+    if source_label:
+        metadata["source_label"] = source_label
+    if EMAIL_RE.fullmatch(h8mail_target):
+        metadata["email"] = h8mail_target
+        metadata["domain"] = h8mail_target.rsplit("@", 1)[1].lower()
+
+    if sensitive:
+        metadata["sensitive_value_redacted"] = "true"
+        metadata["credential_signal"] = _metadata_key(result_type)
+        return metadata
+
+    if category == "related-email" and EMAIL_RE.fullmatch(value):
+        metadata["email"] = value
+        metadata["domain"] = value.rsplit("@", 1)[1].lower()
+    elif category == "username":
+        metadata["username"] = value
+    elif category == "url":
+        domain = (urlparse(value).hostname or "").lower()
+        if domain:
+            metadata["domain"] = domain
+    elif category == "name":
+        metadata["name"] = value
+    elif category == "phone":
+        metadata["phone"] = value
+    elif category == "breach-source":
+        metadata["source_label"] = value
+    elif category == "count":
+        metadata["count"] = value
+    else:
+        metadata[f"extra_{_metadata_key(result_type)}"] = value
+    return metadata
+
+
+def _h8mail_source_label(group: tuple[tuple[str, str], ...]) -> str:
+    for result_type, value in group:
+        normalized_type = result_type.upper()
+        if "SOURCE" in normalized_type or normalized_type.endswith("_SRC") or normalized_type.endswith("_EXTSRC"):
+            return value.strip()
+    return ""
+
+
+def _h8mail_sensitive_type(normalized_type: str) -> bool:
+    tokens = {token for token in re.split(r"[^A-Z0-9]+", normalized_type) if token}
+    sensitive_tokens = {"PASSWORD", "PASS", "PWD", "HASH", "HASHSALT", "MD5", "SALT", "TOKEN", "SECRET", "KEY"}
+    return bool(tokens & sensitive_tokens)
+
+
+def _h8mail_category(normalized_type: str, value: str, sensitive: bool) -> str:
+    if sensitive:
+        return "credential-exposure"
+    if value.startswith(("http://", "https://")):
+        return "url"
+    if "SOURCE" in normalized_type or normalized_type.endswith("_SRC") or normalized_type.endswith("_EXTSRC"):
+        return "breach-source"
+    if "RELATED" in normalized_type or normalized_type.endswith("_EMAIL") or normalized_type == "EMAIL":
+        return "related-email" if EMAIL_RE.fullmatch(value) else "service-info"
+    if "USERNAME" in normalized_type:
+        return "username"
+    if "NAME" in normalized_type:
+        return "name"
+    if "PHONE" in normalized_type or "MOBILE" in normalized_type:
+        return "phone"
+    if normalized_type.endswith("_TOTAL") or normalized_type.endswith("_PUB") or normalized_type in {"HIBP3"}:
+        return "count" if _safe_int(value) is not None else "service-info"
+    return "service-info"
+
+
+def _h8mail_evidence(
+    h8mail_target: str,
+    result_type: str,
+    value: str,
+    category: str,
+    sensitive: bool,
+    source_label: str,
+) -> str:
+    source = f" from {source_label}" if source_label and source_label.upper() != "N/A" else ""
+    if sensitive:
+        return f"h8mail {h8mail_target}: {result_type}{source} observed; sensitive value redacted"
+    if category == "related-email":
+        return f"h8mail {h8mail_target}: related email {value}{source}"
+    if category == "breach-source":
+        return f"h8mail {h8mail_target}: breach source {value}"
+    return f"h8mail {h8mail_target}: {result_type}={value}{source}"
+
+
+def _safe_int(value: str) -> int | None:
+    try:
+        return int(str(value).strip())
+    except ValueError:
+        return None
 
 
 def _maigret_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:

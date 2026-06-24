@@ -258,6 +258,8 @@ def _edges_from_findings(
             relation, target_kind = mapped
             if not _has_entity(entity_keys, target_kind, value):
                 continue
+            if source_kind == target_kind and source_value.lower() == value.lower():
+                continue
             edges.append(
                 GraphEdge(
                     source_kind=source_kind,
@@ -295,6 +297,7 @@ def _target_entity(target: ScanTarget) -> tuple[str, str]:
 def _metadata_edge(key: str) -> tuple[str, str] | None:
     mapping = {
         "domain": ("has_domain", "domain"),
+        "email": ("related_email", "email"),
         "normalized": ("normalized_as", "normalized-value"),
         "country": ("country_hint", "country"),
         "region": ("region_hint", "region"),

@@ -91,13 +91,14 @@ Gap до полного 1:1:
 - MX/TXT lookup через системный `nslookup` по явному `--live`;
 - SPF classifier поверх доменного TXT: наличие записи, multiple-record warning, `all` policy и include/redirect counts;
 - DMARC classifier через `_dmarc.<domain>` TXT: наличие записи, multiple-record warning, `p=`, `sp=`, alignment, percent и report URI tags;
-- executable adapter target для `khast3x/h8mail`: `h8mail -t <email>`;
+- executable adapter target для `khast3x/h8mail`: `h8mail -t <email> --hide -j <temp.json>`;
+- parser для h8mail upstream JSON `{targets: [{target, pwn_num, data}]}`: breach count, related emails, usernames, source labels и paste URLs нормализуются в `Finding`/entities, password/hash/token-like values редактируются и не попадают в evidence;
 - executable target-specific adapter для `kaifcodec/user-scanner`: `user-scanner -e <email> -f json`;
 - parser для `user-scanner` JSON/verbose results: `Registered`/`Found` -> `candidate`, `Available`/`Not Found`/`Not Registered` -> `not_found`, `Error` -> `error`.
 
 Gap:
 
-- нет breach lookup;
+- breach lookup пока выполняется только через внешний h8mail adapter, если upstream CLI установлен и оператор явно запускает `--execute`;
 - нет API enrichment;
 - нет локального кэша;
 - нет NS/additional TXT classifiers;
@@ -248,7 +249,8 @@ python -m osint_toolkit adapter-setup <repository>
 - restricted adapter guard via `--allow-restricted`;
 - `run_adapter_findings()` returns summary + parsed findings;
 - stdout parser for common URL/email/phone/key-value lines from Sherlock/Maigret/Nexfil/Mosint/PhoneInfoga-like output;
-- generated report ingestion: adapters can run with a temporary output folder and feed generated files back into `parse_adapter_output()`;
+- generated report ingestion: adapters can run with a temporary output folder or temporary output file and feed generated files back into `parse_adapter_output()`;
+- adapter-specific parser for h8mail JSON report rows with credential-value redaction;
 - adapter-specific parser for Maigret NDJSON/simple JSON and CSV report rows;
 - adapter-specific parser for `user-scanner` JSON and verbose line output;
 - adapter-specific parser for Snoop stdout and CSV report rows;
@@ -258,7 +260,7 @@ python -m osint_toolkit adapter-setup <repository>
 Gap:
 
 - нет автоматической установки upstream CLI;
-- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Maigret JSON/CSV, `user-scanner` JSON/verbose и Snoop stdout/CSV;
+- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose и Snoop stdout/CSV;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.
 

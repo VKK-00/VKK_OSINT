@@ -24,6 +24,7 @@ class AdapterSpec:
     optional_env: tuple[str, ...] = ()
     command_templates: tuple[tuple[str, tuple[str, ...]], ...] = ()
     generated_output_dir_args: tuple[str, ...] = ()
+    generated_output_file_args: tuple[str, ...] = ()
     generated_output_patterns: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, str]:
@@ -45,6 +46,7 @@ class AdapterSpec:
             "required_env": ", ".join(self.required_env),
             "optional_env": ", ".join(self.optional_env),
             "generated_output_dir_args": " ".join(self.generated_output_dir_args),
+            "generated_output_file_args": " ".join(self.generated_output_file_args),
             "generated_output_patterns": ", ".join(self.generated_output_patterns),
         }
 
@@ -96,6 +98,16 @@ class AdapterSpec:
         rendered: list[str] = []
         for part in self.generated_output_dir_args:
             value = part.format(output_dir=output_dir)
+            if value:
+                rendered.append(value)
+        return tuple(rendered)
+
+    def render_output_file_args(self, output_file: str) -> tuple[str, ...]:
+        if not self.generated_output_file_args:
+            return ()
+        rendered: list[str] = []
+        for part in self.generated_output_file_args:
+            value = part.format(output_file=output_file)
             if value:
                 rendered.append(value)
         return tuple(rendered)
@@ -217,15 +229,17 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "external_cli",
         "BSD-3-Clause",
         "planned",
-        "h8mail -t <email>",
-        "External adapter target for h8mail-style breach counts, local breach search and related-email chasing.",
+        "h8mail -t <email> --hide -j <output.json>",
+        "External adapter target for h8mail breach counts, local breach search and related-email chasing through upstream JSON output.",
         ("email",),
-        ("h8mail", "-t", "{target_value}"),
+        ("h8mail", "-t", "{target_value}", "--hide"),
         "pip",
         ("python", "-m", "pip", "install", "h8mail"),
         "API-backed checks require upstream config/API keys; local breach searches need operator-provided breach files.",
         "https://github.com/khast3x/h8mail",
         optional_env=("HIBP_API_KEY", "HUNTERIO_API_KEY", "EMAILREP_API_KEY"),
+        generated_output_file_args=("-j", "{output_file}"),
+        generated_output_patterns=("*.json",),
     ),
     AdapterSpec(
         "thewhiteh4t/pwnedOrNot",

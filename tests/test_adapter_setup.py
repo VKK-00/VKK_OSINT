@@ -46,8 +46,10 @@ class AdapterSetupTests(unittest.TestCase):
         self.assertEqual(setup.install_command, "python -m pip install h8mail")
         self.assertEqual(
             adapter.render_command(ScanTarget(kind="email", value="person@example.com")),
-            ("h8mail", "-t", "person@example.com"),
+            ("h8mail", "-t", "person@example.com", "--hide"),
         )
+        self.assertEqual(adapter.render_output_file_args("C:\\tmp\\h8mail.json"), ("-j", "C:\\tmp\\h8mail.json"))
+        self.assertEqual(adapter.generated_output_patterns, ("*.json",))
 
     def test_user_scanner_setup_uses_target_specific_command_templates(self):
         adapter = find_adapter("kaifcodec/user-scanner")
