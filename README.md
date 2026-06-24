@@ -27,6 +27,7 @@
 - получать безопасный workflow под задачу;
 - генерировать Markdown-brief для кейса.
 - сохранять расследования в SQLite и анализировать graph edges сохранённого кейса.
+- строить cross-case индекс сущностей по сохранённым расследованиям.
 
 ## Быстрый старт
 
@@ -52,6 +53,8 @@ python -m osint_toolkit cases --case-db cases.sqlite
 python -m osint_toolkit case-show --case-db cases.sqlite case-one --format markdown
 python -m osint_toolkit case-graph --case-db cases.sqlite case-one
 python -m osint_toolkit case-graph --case-db cases.sqlite case-one --entity-kind email --entity-value person@example.com
+python -m osint_toolkit case-index --case-db cases.sqlite --kind domain --min-cases 2
+python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value person@example.com
 python -m osint_toolkit recommend username --region ru --limit 8
 python -m osint_toolkit brief --task telegram --region ua --target-value "public channel" --out reports/telegram_ua.md
 ```
@@ -179,9 +182,9 @@ python -m osint_toolkit investigate --title "saved case" --email person@example.
 
 Отчёт содержит `Entity Summary` и `Graph Edges`: нормализованные сущности и связи между ними, например `email -> domain`, `url -> domain`, `telegram -> url`, `phone -> country`.
 
-Если указан `--case-db`, кейс сохраняется в SQLite: targets, findings, entities и graph edges можно открыть позже через `cases`, `case-show` и `case-graph`.
+Если указан `--case-db`, кейс сохраняется в SQLite: targets, findings, entities и graph edges можно открыть позже через `cases`, `case-show`, `case-graph` и `case-index`.
 
-### `cases`, `case-show` и `case-graph`
+### `cases`, `case-show`, `case-graph` и `case-index`
 
 Работа с сохранёнными расследованиями.
 
@@ -192,9 +195,14 @@ python -m osint_toolkit case-show --case-db cases.sqlite case-001
 python -m osint_toolkit case-show --case-db cases.sqlite case-001 --format markdown
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001 --entity-kind telegram --entity-value "@durov" --format json
+python -m osint_toolkit case-index --case-db cases.sqlite
+python -m osint_toolkit case-index --case-db cases.sqlite --kind domain --min-cases 2 --format markdown
+python -m osint_toolkit case-index --case-db cases.sqlite --kind telegram --value "@durov" --format json
 ```
 
 `case-graph` строит summary по сохранённым `entities` и `edges`: число узлов и связей, счётчики типов отношений, счётчики типов сущностей и самые связанные узлы. Если указать `--entity-kind` и `--entity-value`, команда покажет соседей выбранной сущности.
+
+`case-index` строит индекс сущностей по всем сохранённым кейсам. Без `--value` команда показывает сущности и количество кейсов, где они встречались; с `--kind` и `--value` показывает конкретные кейсы, содержащие эту сущность.
 
 Статусы:
 

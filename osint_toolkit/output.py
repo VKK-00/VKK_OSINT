@@ -7,7 +7,7 @@ from typing import Iterable
 
 from .adapter_setup import AdapterSetup
 from .adapters import AdapterSpec
-from .case_store import CaseRecord
+from .case_store import CaseEntityHit, CaseEntityRecord, CaseRecord
 from .engine import Finding
 from .graph import GraphAnalysis
 from .models import OsintProject
@@ -443,6 +443,75 @@ def format_case_graph_analysis(analysis: GraphAnalysis, *, output_format: str = 
     raise ValueError(f"Unsupported output format: {output_format}")
 
 
+def format_case_entity_index(records: Iterable[CaseEntityRecord], *, output_format: str = "table") -> str:
+    record_list = tuple(records)
+    if output_format == "json":
+        return json.dumps([record.to_dict() for record in record_list], ensure_ascii=False, indent=2)
+    if output_format == "csv":
+        return _case_entity_index_csv(record_list)
+    if output_format == "markdown":
+        lines = [
+            "| Kind | Value | Cases | Case IDs |",
+            "|---|---|---:|---|",
+        ]
+        for record in record_list:
+            lines.append(
+                f"| {record.kind} | {_escape_md(record.value)} | "
+                f"{record.case_count} | {_escape_md(', '.join(record.cases))} |"
+            )
+        return "\n".join(lines)
+    if output_format == "table":
+        return _format_table(
+            ("Kind", "Value", "Cases", "Case IDs"),
+            [
+                (
+                    record.kind,
+                    _short(record.value, 48),
+                    str(record.case_count),
+                    _short(", ".join(record.cases), 70),
+                )
+                for record in record_list
+            ],
+        )
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
+def format_case_entity_hits(hits: Iterable[CaseEntityHit], *, output_format: str = "table") -> str:
+    hit_list = tuple(hits)
+    if output_format == "json":
+        return json.dumps([hit.to_dict() for hit in hit_list], ensure_ascii=False, indent=2)
+    if output_format == "csv":
+        return _case_entity_hits_csv(hit_list)
+    if output_format == "markdown":
+        lines = [
+            "| Case ID | Title | Saved | Entity | Confidence | Source |",
+            "|---|---|---|---|---|---|",
+        ]
+        for hit in hit_list:
+            entity = f"{hit.kind}:{hit.value}"
+            lines.append(
+                f"| {hit.case_id} | {_escape_md(hit.title)} | {hit.saved_at} | "
+                f"{_escape_md(entity)} | {hit.confidence} | {_escape_md(hit.source)} |"
+            )
+        return "\n".join(lines)
+    if output_format == "table":
+        return _format_table(
+            ("Case ID", "Title", "Saved", "Entity", "Confidence", "Source"),
+            [
+                (
+                    hit.case_id,
+                    _short(hit.title, 34),
+                    hit.saved_at,
+                    _short(f"{hit.kind}:{hit.value}", 48),
+                    hit.confidence,
+                    _short(hit.source, 34),
+                )
+                for hit in hit_list
+            ],
+        )
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
 def format_stats(stats: dict[str, object]) -> str:
     lines = [
         "OSINT Toolkit catalog stats",
@@ -545,6 +614,39 @@ def _findings_csv(findings: tuple[Finding, ...]) -> str:
                 "evidence": finding.evidence,
             }
         )
+    return buffer.getvalue().strip()
+
+
+def _case_entity_index_csv(records: tuple[CaseEntityRecord, ...]) -> str:
+    buffer = io.StringIO()
+    writer = csv.DictWriter(
+        buffer,
+        fieldnames=("kind", "value", "case_count", "cases"),
+        lineterminator="\n",
+    )
+    writer.writeheader()
+    for record in records:
+        writer.writerow(
+            {
+                "kind": record.kind,
+                "value": record.value,
+                "case_count": record.case_count,
+                "cases": ";".join(record.cases),
+            }
+        )
+    return buffer.getvalue().strip()
+
+
+def _case_entity_hits_csv(hits: tuple[CaseEntityHit, ...]) -> str:
+    buffer = io.StringIO()
+    writer = csv.DictWriter(
+        buffer,
+        fieldnames=("case_id", "title", "saved_at", "kind", "value", "source", "confidence", "note"),
+        lineterminator="\n",
+    )
+    writer.writeheader()
+    for hit in hits:
+        writer.writerow(hit.to_dict())
     return buffer.getvalue().strip()
 
 

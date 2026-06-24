@@ -43,6 +43,46 @@ class CaseRecord:
         }
 
 
+@dataclass(frozen=True)
+class CaseEntityRecord:
+    kind: str
+    value: str
+    case_count: int
+    cases: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "kind": self.kind,
+            "value": self.value,
+            "case_count": self.case_count,
+            "cases": list(self.cases),
+        }
+
+
+@dataclass(frozen=True)
+class CaseEntityHit:
+    case_id: str
+    title: str
+    saved_at: str
+    kind: str
+    value: str
+    source: str
+    confidence: str
+    note: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "case_id": self.case_id,
+            "title": self.title,
+            "saved_at": self.saved_at,
+            "kind": self.kind,
+            "value": self.value,
+            "source": self.source,
+            "confidence": self.confidence,
+            "note": self.note,
+        }
+
+
 class CaseStore:
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -240,6 +280,106 @@ class CaseStore:
             "edges": [dict(row) for row in edges],
             "findings": [_finding_row_to_dict(row) for row in findings],
         }
+
+    def list_entity_index(
+        self,
+        *,
+        kind: str = "",
+        min_cases: int = 1,
+        limit: int = 50,
+    ) -> tuple[CaseEntityRecord, ...]:
+        normalized_kind = kind.strip()
+        if min_cases < 1:
+            raise CaseStoreError("min_cases must be greater than zero.")
+        if limit < 1:
+            raise CaseStoreError("limit must be greater than zero.")
+
+        where = ""
+        params: list[object] = []
+        if normalized_kind:
+            where = "WHERE lower(kind) = lower(?)"
+            params.append(normalized_kind)
+
+        with self._open() as conn:
+            _ensure_schema(conn)
+            rows = conn.execute(
+                f"""
+                SELECT kind, value, COUNT(DISTINCT case_id) AS case_count
+                FROM entities
+                {where}
+                GROUP BY kind, lower(value)
+                HAVING case_count >= ?
+                ORDER BY case_count DESC, kind ASC, lower(value) ASC
+                LIMIT ?
+                """,
+                (*params, min_cases, limit),
+            ).fetchall()
+
+            records: list[CaseEntityRecord] = []
+            for row in rows:
+                cases = conn.execute(
+                    """
+                    SELECT DISTINCT cases.case_id, cases.saved_at
+                    FROM entities
+                    JOIN cases ON cases.case_id = entities.case_id
+                    WHERE lower(entities.kind) = lower(?)
+                      AND lower(entities.value) = lower(?)
+                    ORDER BY cases.saved_at DESC, cases.case_id DESC
+                    """,
+                    (row["kind"], row["value"]),
+                ).fetchall()
+                records.append(
+                    CaseEntityRecord(
+                        kind=row["kind"],
+                        value=row["value"],
+                        case_count=row["case_count"],
+                        cases=tuple(case["case_id"] for case in cases),
+                    )
+                )
+        return tuple(records)
+
+    def find_cases_by_entity(self, *, kind: str, value: str) -> tuple[CaseEntityHit, ...]:
+        normalized_kind = kind.strip()
+        normalized_value = value.strip()
+        if not normalized_kind:
+            raise CaseStoreError("kind cannot be empty.")
+        if not normalized_value:
+            raise CaseStoreError("value cannot be empty.")
+
+        with self._open() as conn:
+            _ensure_schema(conn)
+            rows = conn.execute(
+                """
+                SELECT
+                    cases.case_id,
+                    cases.title,
+                    cases.saved_at,
+                    entities.kind,
+                    entities.value,
+                    entities.source,
+                    entities.confidence,
+                    entities.note
+                FROM entities
+                JOIN cases ON cases.case_id = entities.case_id
+                WHERE lower(entities.kind) = lower(?)
+                  AND lower(entities.value) = lower(?)
+                ORDER BY cases.saved_at DESC, cases.case_id DESC
+                """,
+                (normalized_kind, normalized_value),
+            ).fetchall()
+        return tuple(
+            CaseEntityHit(
+                case_id=row["case_id"],
+                title=row["title"],
+                saved_at=row["saved_at"],
+                kind=row["kind"],
+                value=row["value"],
+                source=row["source"],
+                confidence=row["confidence"],
+                note=row["note"],
+            )
+            for row in rows
+        )
 
     @contextmanager
     def _open(self) -> Iterator[sqlite3.Connection]:

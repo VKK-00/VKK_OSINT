@@ -20,6 +20,8 @@ from .investigation import (
 from .output import (
     format_adapters,
     format_adapter_setups,
+    format_case_entity_hits,
+    format_case_entity_index,
     format_case_graph_analysis,
     format_case_detail,
     format_cases,
@@ -164,6 +166,15 @@ def build_parser() -> argparse.ArgumentParser:
     case_graph.add_argument("--format", choices=("table", "markdown", "json"), default="table")
     case_graph.set_defaults(handler=handle_case_graph)
 
+    case_index = subparsers.add_parser("case-index", help="Index and search entities across saved cases.")
+    case_index.add_argument("--case-db", required=True, help="SQLite database path.")
+    case_index.add_argument("--kind", default="", help="Optional entity kind filter, for example email or domain.")
+    case_index.add_argument("--value", default="", help="Exact entity value to find saved cases.")
+    case_index.add_argument("--min-cases", type=int, default=1)
+    case_index.add_argument("--limit", type=int, default=50)
+    case_index.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
+    case_index.set_defaults(handler=handle_case_index)
+
     return parser
 
 
@@ -307,6 +318,19 @@ def handle_case_graph(args: argparse.Namespace) -> int:
         limit=args.limit,
     )
     print(format_case_graph_analysis(analysis, output_format=args.format))
+    return 0
+
+
+def handle_case_index(args: argparse.Namespace) -> int:
+    store = CaseStore(args.case_db)
+    if args.value:
+        if not args.kind:
+            raise ValueError("--value requires --kind.")
+        hits = store.find_cases_by_entity(kind=args.kind, value=args.value)
+        print(format_case_entity_hits(hits, output_format=args.format))
+        return 0
+    records = store.list_entity_index(kind=args.kind, min_cases=args.min_cases, limit=args.limit)
+    print(format_case_entity_index(records, output_format=args.format))
     return 0
 
 

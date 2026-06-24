@@ -53,6 +53,51 @@ class CaseStoreTests(unittest.TestCase):
             with self.assertRaises(CaseStoreError):
                 store.list_cases(limit=0)
 
+    def test_entity_index_and_exact_entity_search(self):
+        first = run_investigation(
+            (
+                ScanTarget(kind="email", value="person@example.com"),
+                ScanTarget(kind="telegram", value="@durov"),
+            ),
+            title="first case",
+        )
+        second = run_investigation(
+            (
+                ScanTarget(kind="domain", value="example.com"),
+                ScanTarget(kind="url", value="https://example.com/profile"),
+            ),
+            title="second case",
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = CaseStore(Path(tmpdir) / "cases.sqlite")
+            store.save(first, case_id="case-1")
+            store.save(second, case_id="case-2")
+
+            records = store.list_entity_index(kind="domain", min_cases=2)
+            hits = store.find_cases_by_entity(kind="domain", value="example.com")
+
+        index = {(record.kind, record.value.lower()): record for record in records}
+        self.assertIn(("domain", "example.com"), index)
+        self.assertEqual(index[("domain", "example.com")].case_count, 2)
+        self.assertEqual(set(index[("domain", "example.com")].cases), {"case-1", "case-2"})
+
+        self.assertEqual({hit.case_id for hit in hits}, {"case-1", "case-2"})
+        self.assertEqual({hit.title for hit in hits}, {"first case", "second case"})
+
+    def test_entity_index_rejects_invalid_arguments(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = CaseStore(Path(tmpdir) / "cases.sqlite")
+
+            with self.assertRaises(CaseStoreError):
+                store.list_entity_index(min_cases=0)
+            with self.assertRaises(CaseStoreError):
+                store.list_entity_index(limit=0)
+            with self.assertRaises(CaseStoreError):
+                store.find_cases_by_entity(kind="", value="example.com")
+            with self.assertRaises(CaseStoreError):
+                store.find_cases_by_entity(kind="domain", value="")
+
 
 if __name__ == "__main__":
     unittest.main()

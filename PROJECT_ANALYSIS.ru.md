@@ -32,6 +32,7 @@ CLI работает в трёх режимах:
 - investigation runner: один кейс, несколько seed-типов, entity summary, graph edges, единый Markdown/JSON отчёт;
 - SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges и findings;
 - saved case graph analysis: счётчики связей/типов сущностей, top connected nodes и focus-запрос соседей сущности;
+- cross-case entity index: поиск повторяющихся email/domain/telegram/url и других сущностей между сохранёнными кейсами;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
 
@@ -101,6 +102,8 @@ CLI работает в трёх режимах:
   - `save()` — сохраняет `InvestigationResult` в таблицы `cases`, `targets`, `entities`, `edges`, `findings`.
   - `list_cases()` — список сохранённых кейсов.
   - `load_case()` — выгрузка одного кейса для CLI output.
+  - `list_entity_index()` — cross-case индекс сущностей с количеством кейсов.
+  - `find_cases_by_entity()` — поиск сохранённых кейсов по точной сущности.
 - `osint_toolkit/investigation.py`
   - `run_investigation()` — multi-target native scan + optional adapter dry-runs + entity summary.
   - `render_investigation_markdown()` — единый отчёт по кейсу.
@@ -110,7 +113,7 @@ CLI работает в трёх режимах:
 - `osint_toolkit/output.py`
   - форматирование таблиц, Markdown, CSV и JSON.
 - `osint_toolkit/cli.py`
-  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `run-adapter`, `investigate`, `cases`, `case-show`, `case-graph`, `recommend`, `brief`.
+  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `run-adapter`, `investigate`, `cases`, `case-show`, `case-graph`, `case-index`, `recommend`, `brief`.
 
 ## Как система работает end-to-end
 
@@ -164,6 +167,8 @@ Case-store поток:
 4. `CaseStore.load_case()` возвращает targets, entities, edges и findings в table/Markdown/JSON формате.
 5. Пользователь запускает `python -m osint_toolkit case-graph --case-db <path> <case_id>`.
 6. `analyze_case_graph()` строит summary сохранённого графа и, при указанном фокусе, возвращает соседей конкретной сущности.
+7. Пользователь запускает `python -m osint_toolkit case-index --case-db <path>`.
+8. `CaseStore.list_entity_index()` строит индекс сущностей по всем сохранённым кейсам; `find_cases_by_entity()` показывает кейсы для точной сущности.
 
 ## Поток данных
 
@@ -193,7 +198,7 @@ Investigation:
 
 Сохранённые кейсы:
 
-`InvestigationResult -> CaseStore(SQLite) -> cases/case-show/case-graph -> table/Markdown/CSV/JSON`
+`InvestigationResult -> CaseStore(SQLite) -> cases/case-show/case-graph/case-index -> table/Markdown/CSV/JSON`
 
 ## Внешние интеграции
 
@@ -225,6 +230,10 @@ SQLite используется локально через стандартну
 - `investigate --case-id` — стабильный ID кейса, если нужен повторяемый ключ.
 - `case-graph --entity-kind` и `case-graph --entity-value` — focus-сущность для поиска соседей в сохранённом графе.
 - `case-graph --limit` — ограничение top nodes и списка соседей.
+- `case-index --kind` — фильтр типа сущности в cross-case индексе.
+- `case-index --value` — точное значение сущности для поиска кейсов; требует `--kind`.
+- `case-index --min-cases` — минимальное число кейсов для строки индекса.
+- `case-index --limit` — максимальное число строк индекса.
 - `run-adapter --execute` — явный запуск внешнего CLI; для поддерживаемых stdout formats добавляет parsed findings.
 - `adapter-setup` — показать install/config/readiness plan для adapters.
 
@@ -253,6 +262,8 @@ python -m osint_toolkit cases --case-db cases.sqlite
 python -m osint_toolkit case-show --case-db cases.sqlite case-001 --format json
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001 --entity-kind email --entity-value person@example.com --format json
+python -m osint_toolkit case-index --case-db cases.sqlite --kind domain --min-cases 2
+python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value person@example.com --format json
 python -m osint_toolkit recommend username --region ru
 python -m osint_toolkit brief --task username --target-value example --out reports/example.md
 ```
@@ -280,6 +291,7 @@ osint-toolkit stats
 - `Entity` отделён от `Finding`: finding описывает источник и сигнал, entity описывает нормализованный объект, а `GraphEdge` описывает связь между объектами.
 - SQLite case store отделён от engine: сканирование можно использовать без записи на диск, а сохранение включается явно через `--case-db`.
 - Graph analysis отделён от case store: SQLite хранит факты кейса, а `analyze_case_graph()` вычисляет summary и neighbors без изменения схемы БД.
+- Cross-case entity index использует уже сохранённую таблицу `entities`; новая таблица не добавлена, потому что индекс пока вычисляется read-only запросами и не требует миграции.
 - Dry-run используется по умолчанию для scan-команд. Live-сетевые проверки требуют явного `--live`.
 - Лицензионно сложные или большие проекты подключаются adapters вместо прямого копирования кода.
 - Password recovery flows, email-to-account и phone-to-account механики не переносятся в native-код без restricted-режима.
@@ -303,7 +315,7 @@ osint-toolkit stats
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
 - Adapter parser покрывает только общие URL/email/phone/key-value patterns; сложные JSON/CSV/HTML exports каждого upstream ещё не разобраны.
-- Graph edges пока покрывают базовые отношения; есть summary/focus-neighbor analytics, но нет weighted path finding, cross-case graph и визуального UI.
+- Graph edges пока покрывают базовые отношения; есть summary/focus-neighbor analytics и cross-case entity index, но нет weighted path finding, cross-case edge graph и визуального UI.
 - SQLite schema сейчас версии 2; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
@@ -318,6 +330,7 @@ osint-toolkit stats
 - При изменении схемы сущностей обновлять `entities.py`, `investigation.py`, README и тесты JSON/Markdown.
 - При изменении graph relations обновлять `graph.py`, `case_store.py`, README и тесты.
 - При изменении SQLite-схемы обновлять `case_store.py`, schema version, тесты сохранения и документацию.
+- При изменении cross-case индекса обновлять `case_store.py`, `output.py`, CLI-тесты и README.
 - При добавлении команд обновлять `README.md` и этот анализ.
 - При изменении safety-границ обновлять `README.md`, `workflows.py` и тесты brief/recommend.
 - При новом snapshot обновлять дату в `catalog.py` или добавить явный выбор snapshot.
@@ -332,3 +345,4 @@ osint-toolkit stats
 - 2026-06-24: добавлен adapter setup/readiness layer и CLI-команда `adapter-setup`.
 - 2026-06-24: добавлены `GraphEdge`, report-level graph edges и сохранение edges в SQLite case store.
 - 2026-06-24: добавлены `analyze_case_graph()` и CLI-команда `case-graph` для summary сохранённого графа и запроса соседей сущности.
+- 2026-06-24: добавлены `case-index`, `list_entity_index()` и `find_cases_by_entity()` для cross-case поиска повторяющихся сущностей.

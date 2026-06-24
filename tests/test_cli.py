@@ -208,6 +208,70 @@ class CliTests(unittest.TestCase):
             }
             self.assertIn(("domain", "example.com", "email_domain"), neighbors)
 
+    def test_case_index_can_find_shared_entities(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "cases.sqlite"
+            first = self.run_cli(
+                "investigate",
+                "--title",
+                "first case",
+                "--email",
+                "person@example.com",
+                "--case-db",
+                str(db_path),
+                "--case-id",
+                "case-1",
+                "--out",
+                str(Path(tmpdir) / "first.md"),
+            )
+            self.assertEqual(first.returncode, 0, first.stderr)
+            second = self.run_cli(
+                "investigate",
+                "--title",
+                "second case",
+                "--domain",
+                "example.com",
+                "--case-db",
+                str(db_path),
+                "--case-id",
+                "case-2",
+                "--out",
+                str(Path(tmpdir) / "second.md"),
+            )
+            self.assertEqual(second.returncode, 0, second.stderr)
+
+            index_result = self.run_cli(
+                "case-index",
+                "--case-db",
+                str(db_path),
+                "--kind",
+                "domain",
+                "--min-cases",
+                "2",
+                "--format",
+                "json",
+            )
+            self.assertEqual(index_result.returncode, 0, index_result.stderr)
+            index_payload = json.loads(index_result.stdout)
+            records = {(record["kind"], record["value"].lower()): record for record in index_payload}
+            self.assertIn(("domain", "example.com"), records)
+            self.assertEqual(records[("domain", "example.com")]["case_count"], 2)
+
+            search_result = self.run_cli(
+                "case-index",
+                "--case-db",
+                str(db_path),
+                "--kind",
+                "domain",
+                "--value",
+                "example.com",
+                "--format",
+                "json",
+            )
+            self.assertEqual(search_result.returncode, 0, search_result.stderr)
+            hits = json.loads(search_result.stdout)
+            self.assertEqual({hit["case_id"] for hit in hits}, {"case-1", "case-2"})
+
     def test_brief_command_writes_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "brief.md"

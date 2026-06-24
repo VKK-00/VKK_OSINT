@@ -249,6 +249,8 @@ python -m osint_toolkit cases --case-db cases.sqlite
 python -m osint_toolkit case-show --case-db cases.sqlite case-001
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001 --entity-kind email --entity-value person@example.com
+python -m osint_toolkit case-index --case-db cases.sqlite --kind domain --min-cases 2
+python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value person@example.com
 ```
 
 Уже реализовано:
@@ -263,11 +265,12 @@ python -m osint_toolkit case-graph --case-db cases.sqlite case-001 --entity-kind
 - list/show saved cases through CLI;
 - saved graph summary: node/edge counts, relation counts, entity kind counts and top connected nodes;
 - focus-neighbor query for one saved entity;
+- cross-case entity index and exact saved-case lookup by entity;
 - review checklist in every Markdown report.
 
 Gap:
 
-- graph edges пока базовые, без weighted path finding и cross-case graph;
+- graph edges пока базовые, без weighted path finding и full cross-case edge graph;
 - parsed executed adapter outputs пока доступны через `run-adapter`; `investigate --include-adapters` пока остаётся dry-run by design;
 - нет UI для просмотра кейса и интерактивного графа.
 
