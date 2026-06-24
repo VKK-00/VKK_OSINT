@@ -128,6 +128,7 @@ def format_adapters(adapters: Iterable[AdapterSpec], *, output_format: str = "ta
                 "command_hint",
                 "target_kinds",
                 "command_template",
+                "command_templates",
                 "install_kind",
                 "install_command",
                 "install_note",

@@ -300,6 +300,21 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].status, "planned")
 
+    def test_adapter_runner_renders_target_specific_user_scanner_commands(self):
+        email = run_adapter(
+            "kaifcodec/user-scanner",
+            ScanTarget(kind="email", value="person@example.com"),
+        )
+        username = run_adapter(
+            "kaifcodec/user-scanner",
+            ScanTarget(kind="username", value="example_user"),
+        )
+
+        self.assertEqual(email.status, "planned")
+        self.assertIn("user-scanner -e person@example.com", email.evidence)
+        self.assertEqual(username.status, "planned")
+        self.assertIn("user-scanner -u example_user", username.evidence)
+
     def test_adapter_runner_blocks_restricted_by_default(self):
         finding = run_adapter(
             "megadose/holehe",

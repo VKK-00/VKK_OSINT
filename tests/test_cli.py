@@ -111,6 +111,15 @@ class CliTests(unittest.TestCase):
         self.assertIn("planned", result.stdout)
         self.assertIn("sherlock example_user", result.stdout)
 
+    def test_run_adapter_user_scanner_target_specific_commands(self):
+        email = self.run_cli("run-adapter", "kaifcodec/user-scanner", "email", "person@example.com", "--format", "json")
+        username = self.run_cli("run-adapter", "kaifcodec/user-scanner", "username", "example_user", "--format", "json")
+
+        self.assertEqual(email.returncode, 0, email.stderr)
+        self.assertEqual(json.loads(email.stdout)[0]["metadata"]["command"], "user-scanner -e person@example.com")
+        self.assertEqual(username.returncode, 0, username.stderr)
+        self.assertEqual(json.loads(username.stdout)[0]["metadata"]["command"], "user-scanner -u example_user")
+
     def test_run_adapter_restricted_command(self):
         result = self.run_cli("run-adapter", "megadose/holehe", "email", "person@example.com")
         self.assertEqual(result.returncode, 0, result.stderr)

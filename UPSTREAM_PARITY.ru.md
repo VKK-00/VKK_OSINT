@@ -37,6 +37,7 @@ python -m osint_toolkit scan username <username> --live
 - live HTTP checks по явному `--live`;
 - единый результат `Finding`;
 - RU-фильтр для VK/OK/Habr и глобальных платформ.
+- executable target-specific adapter для `kaifcodec/user-scanner`: `user-scanner -u <username>`;
 - `investigate --person` автоматически прогоняет derived username targets через native username scan и совместимые adapters при `--include-adapters`.
 
 Связанные upstream-проекты:
@@ -85,7 +86,7 @@ Gap до полного 1:1:
 - SPF classifier поверх доменного TXT: наличие записи, multiple-record warning, `all` policy и include/redirect counts;
 - DMARC classifier через `_dmarc.<domain>` TXT: наличие записи, multiple-record warning, `p=`, `sp=`, alignment, percent и report URI tags;
 - executable adapter target для `khast3x/h8mail`: `h8mail -t <email>`;
-- setup-only parity target для `kaifcodec/user-scanner`, пока adapter model не поддерживает разные флаги `-e`/`-u`.
+- executable target-specific adapter для `kaifcodec/user-scanner`: `user-scanner -e <email>`.
 
 Gap:
 
@@ -93,7 +94,6 @@ Gap:
 - нет API enrichment;
 - нет локального кэша;
 - нет NS/additional TXT classifiers;
-- нет per-target-kind adapter command templates для `user-scanner`;
 - нет restricted account-enumeration режима.
 
 План:
@@ -233,7 +233,7 @@ python -m osint_toolkit adapter-setup <repository>
 
 Уже реализовано:
 
-- dry-run command rendering from `AdapterSpec.command_template`;
+- dry-run command rendering from `AdapterSpec.command_template` and target-specific `AdapterSpec.command_templates`;
 - explicit `--execute`;
 - executable lookup in `PATH`;
 - no shell execution;

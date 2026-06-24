@@ -22,6 +22,7 @@ class AdapterSpec:
     docs_url: str = ""
     required_env: tuple[str, ...] = ()
     optional_env: tuple[str, ...] = ()
+    command_templates: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
     def to_dict(self) -> dict[str, str]:
         return {
@@ -34,6 +35,7 @@ class AdapterSpec:
             "note": self.note,
             "target_kinds": ", ".join(self.target_kinds),
             "command_template": " ".join(self.command_template),
+            "command_templates": self.render_command_templates(),
             "install_kind": self.install_kind,
             "install_command": " ".join(self.install_command),
             "install_note": self.install_note,
@@ -45,10 +47,33 @@ class AdapterSpec:
     def render_command(self, target: ScanTarget) -> tuple[str, ...]:
         if self.target_kinds and target.kind not in self.target_kinds:
             return ()
+        command_template = self.command_template_for(target.kind)
+        if not command_template:
+            return ()
         return tuple(
             part.format(target_value=target.value, target_kind=target.kind, region=target.region)
-            for part in self.command_template
+            for part in command_template
         )
+
+    def command_template_for(self, target_kind: str) -> tuple[str, ...]:
+        for kind, template in self.command_templates:
+            if kind == target_kind:
+                return template
+        return self.command_template
+
+    def executable_names(self) -> tuple[str, ...]:
+        names: list[str] = []
+        if self.command_template:
+            names.append(self.command_template[0])
+        for _, template in self.command_templates:
+            if template:
+                names.append(template[0])
+        return _dedupe_strings(tuple(names))
+
+    def render_command_templates(self) -> str:
+        if not self.command_templates:
+            return ""
+        return "; ".join(f"{kind}: {' '.join(template)}" for kind, template in self.command_templates)
 
 
 @dataclass(frozen=True)
@@ -197,10 +222,15 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "MIT",
         "planned",
         "user-scanner -e <email> / user-scanner -u <username>",
-        "Parity target for 100+ email and 185+ username scan vectors; executable template needs per-target-kind flags.",
+        "Parity target for 100+ email and 185+ username scan vectors through target-specific CLI flags.",
+        ("email", "username"),
+        command_templates=(
+            ("email", ("user-scanner", "-e", "{target_value}")),
+            ("username", ("user-scanner", "-u", "{target_value}")),
+        ),
         install_kind="pip",
         install_command=("python", "-m", "pip", "install", "user-scanner"),
-        install_note="Current adapter manifest records setup, but execution waits for target-specific command templates.",
+        install_note="Install from PyPI; use explicit --execute only after checking lawful scope and platform terms.",
         docs_url="https://github.com/kaifcodec/user-scanner",
     ),
     AdapterSpec(
@@ -323,6 +353,7 @@ ADAPTER_PROFILES: tuple[AdapterProfile, ...] = (
             "thewhiteh4t/nexfil",
             "snooppr/snoop",
             "instaloader/instaloader",
+            "kaifcodec/user-scanner",
         ),
         note="Dry-run by default. Execute only installed CLI tools after scope review.",
     ),
@@ -347,6 +378,7 @@ ADAPTER_PROFILES: tuple[AdapterProfile, ...] = (
             "alpkeskin/mosint",
             "khast3x/h8mail",
             "thewhiteh4t/pwnedOrNot",
+            "kaifcodec/user-scanner",
         ),
         note="Restricted email-to-account and email-to-phone adapters are intentionally excluded.",
     ),
@@ -415,6 +447,18 @@ def _dedupe_repositories(repositories: tuple[str, ...]) -> tuple[str, ...]:
         key = normalized.lower()
         if normalized and key not in seen:
             find_adapter(normalized)
+            seen.add(key)
+            deduped.append(normalized)
+    return tuple(deduped)
+
+
+def _dedupe_strings(values: tuple[str, ...]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in values:
+        normalized = value.strip()
+        key = normalized.lower()
+        if normalized and key not in seen:
             seen.add(key)
             deduped.append(normalized)
     return tuple(deduped)

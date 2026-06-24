@@ -168,7 +168,7 @@ python -m osint_toolkit adapter-profiles
 python -m osint_toolkit adapter-profiles --format json
 ```
 
-Текущие профили включают `username-full`, `username-ru-ua`, `email-safe`, `phone-safe` и `url-archive`. `email-safe` включает `mosint`, `h8mail` и `pwnedOrNot`; restricted email-to-account/email-to-phone adapters в профиль не входят.
+Текущие профили включают `username-full`, `username-ru-ua`, `email-safe`, `phone-safe` и `url-archive`. `username-full` и `email-safe` включают `user-scanner` через target-specific команды `user-scanner -u <username>` и `user-scanner -e <email>`. Restricted email-to-account/email-to-phone adapters в `email-safe` не входят.
 
 ### `run-adapter`
 
@@ -177,6 +177,8 @@ Dry-run или явный запуск настроенного upstream CLI ada
 ```powershell
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user --execute
+python -m osint_toolkit run-adapter kaifcodec/user-scanner email person@example.com
+python -m osint_toolkit run-adapter kaifcodec/user-scanner username example_user
 python -m osint_toolkit run-adapter sundowndev/phoneinfoga phone +380441234567
 ```
 

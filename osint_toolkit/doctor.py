@@ -12,12 +12,12 @@ def inspect_adapters(status: str | None = None) -> tuple[Finding, ...]:
 
 def _adapter_to_finding(adapter: AdapterSpec) -> Finding:
     setup = build_adapter_setup(adapter)
-    command = adapter.command_template
+    executables = adapter.executable_names()
     if adapter.status == "restricted":
         status = "restricted"
         confidence = "not_checked"
         evidence = setup.install_note or "Restricted adapter; execution requires explicit scope review and --allow-restricted."
-    elif not command:
+    elif not executables:
         status = "not_configured"
         confidence = "high"
         evidence = setup.install_note or "No executable command template is configured yet."
@@ -36,7 +36,7 @@ def _adapter_to_finding(adapter: AdapterSpec) -> Finding:
             confidence = "high"
             setup_hint = setup.install_command or setup.install_note
             install_hint = f" Setup: {setup_hint}" if setup_hint else ""
-            evidence = f"Executable is not available on PATH: {command[0]}.{install_hint}"
+            evidence = f"Executable is not available on PATH: {', '.join(executables)}.{install_hint}"
 
     return Finding(
         module="adapter-doctor",

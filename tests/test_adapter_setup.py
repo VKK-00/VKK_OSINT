@@ -42,13 +42,23 @@ class AdapterSetupTests(unittest.TestCase):
             ("h8mail", "-t", "person@example.com"),
         )
 
-    def test_user_scanner_setup_waits_for_target_specific_command_template(self):
-        setup = build_adapter_setup(find_adapter("kaifcodec/user-scanner"))
+    def test_user_scanner_setup_uses_target_specific_command_templates(self):
+        adapter = find_adapter("kaifcodec/user-scanner")
 
-        self.assertEqual(setup.readiness, "not_configured")
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "missing")
+        self.assertEqual(setup.executable, "user-scanner")
         self.assertEqual(setup.install_command, "python -m pip install user-scanner")
-        self.assertIn("-e", setup.command_hint)
-        self.assertIn("-u", setup.command_hint)
+        self.assertEqual(
+            adapter.render_command(ScanTarget(kind="email", value="person@example.com")),
+            ("user-scanner", "-e", "person@example.com"),
+        )
+        self.assertEqual(
+            adapter.render_command(ScanTarget(kind="username", value="example_user")),
+            ("user-scanner", "-u", "example_user"),
+        )
 
     def test_setup_reports_not_configured_for_dataset_adapter(self):
         setup = build_adapter_setup(find_adapter("WebBreacher/WhatsMyName"))

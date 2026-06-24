@@ -43,12 +43,15 @@ class AdapterSetup:
 
 
 def build_adapter_setup(adapter: AdapterSpec) -> AdapterSetup:
-    executable = adapter.command_template[0] if adapter.command_template else ""
-    executable_path = ""
-    if executable:
-        executable_path = shutil.which(executable) or ""
+    executables = adapter.executable_names()
+    executable_paths = tuple(shutil.which(executable) or "" for executable in executables)
+    executable = ", ".join(executables)
+    executable_path = ", ".join(path for path in executable_paths if path)
+    missing_executables = tuple(
+        executable for executable, path in zip(executables, executable_paths) if not path
+    )
     missing_env = tuple(key for key in adapter.required_env if not os.environ.get(key))
-    readiness = _readiness(adapter, executable, executable_path, missing_env)
+    readiness = _readiness(adapter, executables, missing_executables, missing_env)
 
     return AdapterSetup(
         repository=adapter.repository,
@@ -73,15 +76,15 @@ def build_adapter_setups(adapters: tuple[AdapterSpec, ...]) -> tuple[AdapterSetu
 
 def _readiness(
     adapter: AdapterSpec,
-    executable: str,
-    executable_path: str,
+    executables: tuple[str, ...],
+    missing_executables: tuple[str, ...],
     missing_env: tuple[str, ...],
 ) -> str:
     if adapter.status == "restricted":
         return "restricted"
-    if not executable:
+    if not executables:
         return "not_configured"
-    if not executable_path:
+    if missing_executables:
         return "missing"
     if missing_env:
         return "config_missing"
