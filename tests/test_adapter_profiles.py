@@ -19,6 +19,7 @@ class AdapterProfileTests(unittest.TestCase):
         self.assertIn("projectdiscovery/httpx", profiles["domain-recon"].repositories)
         self.assertIn("laramies/theHarvester", profiles["domain-recon"].repositories)
         self.assertIn("blacklanternsecurity/bbot", profiles["domain-recon"].repositories)
+        self.assertIn("smicallef/spiderfoot", profiles["domain-recon"].repositories)
 
     def test_expand_adapter_repositories_dedupes_profiles_and_explicit_adapters(self):
         repositories = expand_adapter_repositories(

@@ -48,6 +48,7 @@ PARSER_REPOSITORIES = {
     "owasp-amass/amass",
     "laramies/theHarvester",
     "blacklanternsecurity/bbot",
+    "smicallef/spiderfoot",
 }
 
 PHONE_KEYS = {
@@ -105,6 +106,8 @@ def parse_adapter_output(
         return _theharvester_findings(repository, target, text)
     if repository == "blacklanternsecurity/bbot":
         return _bbot_findings(repository, target, text)
+    if repository == "smicallef/spiderfoot":
+        return _spiderfoot_findings(repository, target, text)
 
     findings: list[Finding] = []
     seen: set[tuple[str, str, str]] = set()
@@ -257,6 +260,7 @@ def _subdomain_finding(
         "amass": "Amass",
         "theharvester": "theHarvester",
         "bbot": "BBOT",
+        "spiderfoot": "SpiderFoot",
     }.get(parser, parser)
     evidence = f"{label} reported subdomain: {normalized}"
     if source_label:
@@ -968,6 +972,372 @@ def _bbot_host_port(data_text: str, record: dict[str, Any]) -> tuple[str, str]:
         host_part, port_part = value.rsplit(":", 1)
         return _normalize_hostname(host_part) or host_part.strip(), port_part.strip()
     return host, port
+
+
+def _spiderfoot_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    seen: set[tuple[str, str]] = set()
+    seen_subdomains: set[tuple[str, str]] = set()
+    root_domain = _target_domain(target)
+
+    for record in _spiderfoot_event_records(text):
+        event_type = _first_scalar(record.get("type") or record.get("event_type")).upper()
+        if not event_type:
+            continue
+        finding = _spiderfoot_event_finding(
+            repository=repository,
+            target=target,
+            record=record,
+            event_type=event_type,
+            root_domain=root_domain,
+            seen=seen,
+            seen_subdomains=seen_subdomains,
+        )
+        if finding:
+            findings.append(finding)
+
+    if findings:
+        return tuple(findings)
+
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact:
+            continue
+        event_match = re.match(r"^\[(?P<type>[A-Z0-9_]+)\]\s+(?P<data>.+?)\s*$", compact)
+        if not event_match:
+            continue
+        finding = _spiderfoot_event_finding(
+            repository=repository,
+            target=target,
+            record={"type": event_match.group("type"), "data": event_match.group("data"), "module": "stdout"},
+            event_type=event_match.group("type").upper(),
+            root_domain=root_domain,
+            seen=seen,
+            seen_subdomains=seen_subdomains,
+        )
+        if finding:
+            findings.append(finding)
+    return tuple(findings)
+
+
+def _spiderfoot_event_records(text: str) -> tuple[dict[str, Any], ...]:
+    records: list[dict[str, Any]] = []
+    payload = _load_json_payload(text)
+    records.extend(_spiderfoot_payload_records(payload))
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if not stripped.startswith(("{", "[")):
+            start = stripped.find("{")
+            end = stripped.rfind("}")
+            if start == -1 or end <= start:
+                continue
+            stripped = stripped[start : end + 1]
+        try:
+            line_payload = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        records.extend(_spiderfoot_payload_records(line_payload))
+
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        key = json.dumps(record, sort_keys=True, ensure_ascii=False, default=str)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(record)
+    return tuple(deduped)
+
+
+def _spiderfoot_payload_records(payload: object | None) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        if _first_scalar(payload.get("type") or payload.get("event_type")) and "data" in payload:
+            return [payload]
+        records: list[dict[str, Any]] = []
+        for key in ("events", "results", "data"):
+            nested = payload.get(key)
+            if isinstance(nested, (list, tuple)):
+                records.extend(_spiderfoot_payload_records(list(nested)))
+        return records
+    if isinstance(payload, list):
+        records = []
+        for item in payload:
+            if isinstance(item, dict):
+                records.extend(_spiderfoot_payload_records(item))
+        return records
+    return []
+
+
+def _spiderfoot_event_finding(
+    *,
+    repository: str,
+    target: ScanTarget,
+    record: dict[str, Any],
+    event_type: str,
+    root_domain: str,
+    seen: set[tuple[str, str]],
+    seen_subdomains: set[tuple[str, str]],
+) -> Finding | None:
+    data = record.get("data")
+    data_text = _spiderfoot_data_text(data)
+    if not data_text:
+        return None
+
+    if event_type in {"INTERNET_NAME", "INTERNET_NAME_UNRESOLVED", "DNS_NAME", "DOMAIN_NAME"}:
+        host = _normalize_hostname(data_text)
+        if root_domain and host != root_domain and host.endswith(f".{root_domain}"):
+            return _subdomain_finding(
+                repository=repository,
+                parser="spiderfoot",
+                target=target,
+                root_domain=root_domain,
+                subdomain=host,
+                source_label=_spiderfoot_source_label(record),
+                ip="",
+                raw_line="",
+                seen=seen_subdomains,
+            )
+        return _spiderfoot_observed_finding(repository, target, record, event_type, "domain", host, seen)
+
+    if _spiderfoot_is_url_event(event_type) or data_text.startswith(("http://", "https://")):
+        return _spiderfoot_url_finding(repository, target, record, event_type, data_text, seen)
+
+    if "EMAIL" in event_type:
+        return _spiderfoot_observed_finding(repository, target, record, event_type, "email", data_text.lower(), seen)
+
+    if event_type in {"IP_ADDRESS", "IPV6_ADDRESS"}:
+        return _spiderfoot_observed_finding(repository, target, record, event_type, "ip", data_text, seen)
+
+    if event_type in {"IP_NETBLOCK", "NETBLOCK"}:
+        return _spiderfoot_observed_finding(repository, target, record, event_type, "ip_range", data_text, seen)
+
+    if event_type in {"TCP_PORT_OPEN", "UDP_PORT_OPEN", "OPEN_TCP_PORT"}:
+        host, port = _spiderfoot_host_port(data_text, record)
+        metadata = _spiderfoot_base_metadata(repository, record, event_type)
+        _set_metadata(metadata, "host", host)
+        _set_metadata(metadata, "port", port)
+        return _spiderfoot_custom_finding(
+            repository=repository,
+            target=target,
+            record=record,
+            event_type=event_type,
+            value=data_text,
+            metadata=metadata,
+            seen=seen,
+            status="candidate",
+        )
+
+    if event_type in {"USERNAME", "ACCOUNT_EXTERNAL_OWNED"}:
+        return _spiderfoot_observed_finding(repository, target, record, event_type, "username", data_text.strip().lstrip("@"), seen)
+
+    if event_type in {"HUMAN_NAME", "PERSON_NAME", "COMPANY_NAME"}:
+        return _spiderfoot_observed_finding(repository, target, record, event_type, "name", data_text, seen)
+
+    if "PHONE" in event_type:
+        return _spiderfoot_observed_finding(repository, target, record, event_type, "phone", data_text, seen)
+
+    if "TECHNOLOGY" in event_type:
+        return _spiderfoot_observed_finding(repository, target, record, event_type, "technology", data_text, seen)
+
+    if event_type in {"BGP_AS_MEMBER", "BGP_AS_OWNER", "ASN"}:
+        return _spiderfoot_observed_finding(repository, target, record, event_type, "asn", data_text, seen)
+
+    if event_type.startswith("VULNERABILITY") or event_type in {"FINDING", "LEAKSITE_DOMAIN", "MALICIOUS_IPADDR"}:
+        metadata = _spiderfoot_base_metadata(repository, record, event_type)
+        metadata["value"] = data_text
+        return _spiderfoot_custom_finding(
+            repository=repository,
+            target=target,
+            record=record,
+            event_type=event_type,
+            value=data_text,
+            metadata=metadata,
+            seen=seen,
+            status="candidate",
+            confidence="high",
+        )
+
+    metadata = _spiderfoot_base_metadata(repository, record, event_type)
+    metadata["value"] = data_text
+    return _spiderfoot_custom_finding(
+        repository=repository,
+        target=target,
+        record=record,
+        event_type=event_type,
+        value=data_text,
+        metadata=metadata,
+        seen=seen,
+        status="observed",
+    )
+
+
+def _spiderfoot_observed_finding(
+    repository: str,
+    target: ScanTarget,
+    record: dict[str, Any],
+    event_type: str,
+    metadata_key: str,
+    value: str,
+    seen: set[tuple[str, str]],
+) -> Finding | None:
+    normalized = " ".join(str(value).split())
+    if not normalized:
+        return None
+    if metadata_key == "email" and not EMAIL_RE.fullmatch(normalized):
+        return None
+    if metadata_key == "domain":
+        normalized = _normalize_hostname(normalized)
+        if not normalized:
+            return None
+    key = (event_type, normalized.lower())
+    if key in seen:
+        return None
+    seen.add(key)
+    metadata = _spiderfoot_base_metadata(repository, record, event_type)
+    metadata[metadata_key] = normalized
+    if metadata_key == "email":
+        metadata["domain"] = normalized.rsplit("@", 1)[1].lower()
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="candidate" if metadata_key in {"email", "domain", "phone"} else "observed",
+        confidence=_spiderfoot_confidence(record),
+        evidence=_short(f"SpiderFoot {event_type}: {normalized}"),
+        metadata=metadata,
+    )
+
+
+def _spiderfoot_url_finding(
+    repository: str,
+    target: ScanTarget,
+    record: dict[str, Any],
+    event_type: str,
+    url: str,
+    seen: set[tuple[str, str]],
+) -> Finding | None:
+    value = url.strip()
+    if not value.startswith(("http://", "https://")):
+        return None
+    key = (event_type, value.lower())
+    if key in seen:
+        return None
+    seen.add(key)
+    metadata = _spiderfoot_base_metadata(repository, record, event_type)
+    domain = (urlparse(value).hostname or "").lower()
+    if domain:
+        metadata["domain"] = domain
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="candidate",
+        url=value,
+        confidence=_spiderfoot_confidence(record),
+        evidence=_short(f"SpiderFoot {event_type}: {value}"),
+        metadata=metadata,
+    )
+
+
+def _spiderfoot_custom_finding(
+    *,
+    repository: str,
+    target: ScanTarget,
+    record: dict[str, Any],
+    event_type: str,
+    value: str,
+    metadata: dict[str, str],
+    seen: set[tuple[str, str]],
+    status: str,
+    confidence: str = "",
+) -> Finding | None:
+    normalized = " ".join(value.split())
+    if not normalized:
+        return None
+    key = (event_type, normalized.lower())
+    if key in seen:
+        return None
+    seen.add(key)
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status=status,
+        confidence=confidence or _spiderfoot_confidence(record),
+        evidence=_short(f"SpiderFoot {event_type}: {normalized}"),
+        metadata=metadata,
+    )
+
+
+def _spiderfoot_base_metadata(repository: str, record: dict[str, Any], event_type: str) -> dict[str, str]:
+    metadata = {
+        "repository": repository,
+        "parser": "spiderfoot",
+        "event_type": event_type,
+    }
+    for source_key, metadata_key in (
+        ("module", "spiderfoot_module"),
+        ("sourceModule", "spiderfoot_module"),
+        ("source", "spiderfoot_source"),
+        ("sourceEvent", "spiderfoot_source_event"),
+        ("confidence", "spiderfoot_confidence"),
+        ("visibility", "spiderfoot_visibility"),
+        ("risk", "spiderfoot_risk"),
+    ):
+        value = record.get(source_key)
+        if source_key == "sourceEvent" and isinstance(value, dict):
+            value = value.get("type") or value.get("data")
+        _set_metadata(metadata, metadata_key, _first_scalar(value))
+    return metadata
+
+
+def _spiderfoot_data_text(value: object) -> str:
+    if isinstance(value, dict):
+        for key in ("url", "email", "host", "name", "title", "description", "value", "data"):
+            scalar = _first_scalar(value.get(key))
+            if scalar:
+                return scalar
+        return _short(json.dumps(value, sort_keys=True, ensure_ascii=False, default=str), limit=200)
+    return _first_scalar(value)
+
+
+def _spiderfoot_is_url_event(event_type: str) -> bool:
+    return event_type in {
+        "URL",
+        "WEBLINK",
+        "LINKED_URL_INTERNAL",
+        "LINKED_URL_EXTERNAL",
+        "AFFILIATE_LINK",
+        "SOCIAL_MEDIA",
+    } or event_type.endswith("_URL")
+
+
+def _spiderfoot_confidence(record: dict[str, Any]) -> str:
+    confidence = _int_value(record.get("confidence"))
+    if confidence is not None:
+        if confidence >= 80:
+            return "high"
+        if confidence < 40:
+            return "low"
+    return "medium"
+
+
+def _spiderfoot_source_label(record: dict[str, Any]) -> str:
+    return _first_scalar(record.get("module") or record.get("sourceModule") or record.get("source"))
+
+
+def _spiderfoot_host_port(data_text: str, record: dict[str, Any]) -> tuple[str, str]:
+    host = _first_scalar(record.get("host"))
+    port = _first_scalar(record.get("port"))
+    if host and port:
+        return host, port
+    if ":" in data_text:
+        host_part, port_part = data_text.rsplit(":", 1)
+        return _normalize_hostname(host_part) or host_part.strip(), port_part.strip()
+    return host, port or data_text.strip()
 
 
 def _mosint_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:

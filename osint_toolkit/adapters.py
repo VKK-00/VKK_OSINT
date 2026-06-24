@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -70,6 +71,7 @@ class AdapterSpec:
             "region_tags_flag": _region_tags_flag(target.region),
             "instagram_profile": _instagram_profile_value(target.value),
             "bbot_target": _bbot_target_value(target),
+            "spiderfoot_script": _spiderfoot_script_value(),
         }
         rendered: list[str] = []
         for part in command_template:
@@ -481,14 +483,17 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
     AdapterSpec(
         "smicallef/spiderfoot",
         "multi-source OSINT framework",
-        "external_api",
+        "external_cli",
         "MIT",
         "planned",
-        "spiderfoot -l 127.0.0.1:5001",
-        "Best integrated through SpiderFoot API/web server due broad module scope.",
+        "python <SPIDERFOOT_SF_PATH> -s <target> -u passive -o json -q",
+        "SpiderFoot CLI adapter in passive use-case mode; execute mode ingests JSON stdout events without running the web/API server.",
+        ("domain", "url", "email", "username", "phone"),
+        ("python", "{spiderfoot_script}", "-s", "{target_value}", "-u", "passive", "-o", "json", "-q"),
         install_kind="manual",
-        install_note="Run upstream SpiderFoot server/API and configure a dedicated connector before executing scans.",
+        install_note="Clone upstream SpiderFoot, install its requirements, then set SPIDERFOOT_SF_PATH to the local sf.py path.",
         docs_url="https://github.com/smicallef/spiderfoot",
+        required_env=("SPIDERFOOT_SF_PATH",),
     ),
     AdapterSpec(
         "snooppr/snoop",
@@ -588,8 +593,9 @@ ADAPTER_PROFILES: tuple[AdapterProfile, ...] = (
             "owasp-amass/amass",
             "laramies/theHarvester",
             "blacklanternsecurity/bbot",
+            "smicallef/spiderfoot",
         ),
-        note="Default profile stays passive; active/bruteforce Amass, broader BBOT presets and screenshot/API endpoint scans are separate scope decisions.",
+        note="Default profile stays passive; active/bruteforce Amass, broader BBOT/SpiderFoot use cases and screenshot/API endpoint scans are separate scope decisions.",
     ),
 )
 
@@ -689,3 +695,7 @@ def _bbot_target_value(target: ScanTarget) -> str:
     if target.kind == "username":
         return f"USER:{target.value.strip().lstrip('@')}"
     return target.value.strip()
+
+
+def _spiderfoot_script_value() -> str:
+    return os.environ.get("SPIDERFOOT_SF_PATH", "<SPIDERFOOT_SF_PATH>").strip() or "<SPIDERFOOT_SF_PATH>"

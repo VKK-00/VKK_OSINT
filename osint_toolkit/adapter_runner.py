@@ -78,6 +78,21 @@ def run_adapter_findings(
             ),
         )
 
+    missing_env = tuple(key for key in adapter.required_env if not os.environ.get(key))
+    if missing_env:
+        missing = ", ".join(missing_env)
+        return (
+            Finding(
+                module="external-adapter",
+                source=adapter.repository,
+                target=target.value,
+                status="config_missing",
+                confidence="high",
+                evidence=f"Required environment variable(s) are not set: {missing}",
+                metadata={**adapter.to_dict(), "command": command_text, "missing_env": missing},
+            ),
+        )
+
     executable = shutil.which(command[0])
     if not executable:
         return (

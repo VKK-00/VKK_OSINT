@@ -1,3 +1,4 @@
+import os
 import subprocess
 import unittest
 from pathlib import Path
@@ -383,6 +384,54 @@ class InvestigationTests(unittest.TestCase):
         self.assertIn(("domain", "example.com", "resolved_ip", "ip", "93.184.216.34"), edges)
         self.assertIn(("domain", "example.com", "open_port", "port", "443"), edges)
         self.assertIn(("domain", "example.com", "uses_technology", "technology", "nginx"), edges)
+
+    def test_execute_spiderfoot_adapter_adds_entities_and_edges(self):
+        completed = subprocess.CompletedProcess(
+            args=["python", "sf.py", "-s", "example.com", "-u", "passive", "-o", "json", "-q"],
+            returncode=0,
+            stdout=(
+                '[{"type":"INTERNET_NAME","data":"api.example.com","module":"sfp_dnsresolve","confidence":100},'
+                '{"type":"EMAILADDR","data":"admin@example.com","module":"sfp_email","confidence":80},'
+                '{"type":"WEBLINK","data":"https://www.example.com/login","module":"sfp_spider","confidence":80},'
+                '{"type":"IP_ADDRESS","data":"93.184.216.34","module":"sfp_dnsresolve","confidence":80},'
+                '{"type":"TCP_PORT_OPEN","data":"api.example.com:443","module":"sfp_portscan","confidence":80},'
+                '{"type":"PHONE_NUMBER","data":"+380441234567","module":"sfp_phone","confidence":80}]'
+            ),
+            stderr="",
+        )
+
+        with patch.dict(os.environ, {"SPIDERFOOT_SF_PATH": "C:\\tools\\spiderfoot\\sf.py"}), patch(
+            "osint_toolkit.adapter_runner.shutil.which",
+            return_value="C:\\Python\\python.exe",
+        ), patch("osint_toolkit.adapter_runner.subprocess.run", return_value=completed):
+            result = run_investigation(
+                (ScanTarget(kind="domain", value="example.com"),),
+                include_adapters=True,
+                execute_adapters=True,
+                adapter_repositories=("smicallef/spiderfoot",),
+            )
+
+        parsed = [finding for finding in result.adapter_findings if finding.module == "external-adapter-parser"]
+        self.assertTrue(any(finding.metadata.get("parser") == "spiderfoot" for finding in parsed))
+
+        entities = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("email", "admin@example.com"), entities)
+        self.assertIn(("subdomain", "api.example.com"), entities)
+        self.assertIn(("url", "https://www.example.com/login"), entities)
+        self.assertIn(("ip", "93.184.216.34"), entities)
+        self.assertIn(("port", "443"), entities)
+        self.assertIn(("phone", "+380441234567"), entities)
+
+        edges = {
+            (edge.source_kind, edge.source_value.lower(), edge.relation, edge.target_kind, edge.target_value.lower())
+            for edge in result.edges
+        }
+        self.assertIn(("domain", "example.com", "related_email", "email", "admin@example.com"), edges)
+        self.assertIn(("domain", "example.com", "related_phone", "phone", "+380441234567"), edges)
+        self.assertIn(("domain", "example.com", "discovered_subdomain", "subdomain", "api.example.com"), edges)
+        self.assertIn(("domain", "example.com", "produced_url", "url", "https://www.example.com/login"), edges)
+        self.assertIn(("domain", "example.com", "resolved_ip", "ip", "93.184.216.34"), edges)
+        self.assertIn(("domain", "example.com", "open_port", "port", "443"), edges)
 
     def test_person_target_expands_to_username_scan_edges(self):
         result = run_investigation((ScanTarget(kind="person", value="Ivan Petrenko"),))

@@ -1,3 +1,4 @@
+import os
 import subprocess
 import unittest
 from pathlib import Path
@@ -770,6 +771,57 @@ class AdapterParserTests(unittest.TestCase):
         self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings))
         self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings))
 
+    def test_parse_spiderfoot_json_events(self):
+        findings = parse_adapter_output(
+            "smicallef/spiderfoot",
+            ScanTarget(kind="domain", value="example.com"),
+            """
+            [
+              {"type":"INTERNET_NAME","data":"api.example.com","module":"sfp_dnsresolve","confidence":100},
+              {"type":"EMAILADDR","data":"Admin@Example.com","module":"sfp_email","confidence":80},
+              {"type":"WEBLINK","data":"https://www.example.com/login","module":"sfp_spider","confidence":80},
+              {"type":"IP_ADDRESS","data":"93.184.216.34","module":"sfp_dnsresolve","confidence":80},
+              {"type":"TCP_PORT_OPEN","data":"api.example.com:443","module":"sfp_portscan","confidence":80},
+              {"type":"PHONE_NUMBER","data":"+380441234567","module":"sfp_phone","confidence":80},
+              {"type":"HUMAN_NAME","data":"Example Person","module":"sfp_names","confidence":80}
+            ]
+            """,
+        )
+
+        metadata = [finding.metadata for finding in findings]
+        self.assertTrue(any(item.get("parser") == "spiderfoot" for item in metadata))
+        self.assertTrue(any(item.get("subdomain") == "api.example.com" for item in metadata))
+        self.assertTrue(any(item.get("email") == "admin@example.com" for item in metadata))
+        self.assertTrue(any(item.get("ip") == "93.184.216.34" for item in metadata))
+        self.assertTrue(any(item.get("port") == "443" for item in metadata))
+        self.assertTrue(any(item.get("phone") == "+380441234567" for item in metadata))
+        self.assertTrue(any(item.get("name") == "Example Person" for item in metadata))
+        self.assertIn("https://www.example.com/login", {finding.url for finding in findings})
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("subdomain", "api.example.com"), entities)
+        self.assertIn(("email", "admin@example.com"), entities)
+        self.assertIn(("url", "https://www.example.com/login"), entities)
+        self.assertIn(("ip", "93.184.216.34"), entities)
+        self.assertIn(("port", "443"), entities)
+        self.assertIn(("phone", "+380441234567"), entities)
+        self.assertIn(("name", "example person"), entities)
+
+    def test_parse_spiderfoot_stdout_events(self):
+        findings = parse_adapter_output(
+            "smicallef/spiderfoot",
+            ScanTarget(kind="domain", value="example.com"),
+            """
+            [INTERNET_NAME] api.example.com
+            [EMAILADDR] admin@example.com
+            [WEBLINK] https://www.example.com/login
+            """,
+        )
+
+        self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings))
+        self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings))
+        self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings))
+
     def test_run_adapter_findings_adds_parsed_results_after_execution(self):
         completed = subprocess.CompletedProcess(
             args=["sherlock", "example_user"],
@@ -993,6 +1045,50 @@ class AdapterParserTests(unittest.TestCase):
         self.assertEqual(findings[0].metadata["generated_output_files"], "1")
         self.assertIn("-f", findings[0].metadata["command"])
         self.assertTrue(any(finding.metadata.get("parser") == "theharvester" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings[1:]))
+        self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings[1:]))
+
+    def test_run_spiderfoot_adapter_requires_script_path_before_execution(self):
+        with patch.dict(os.environ, {}, clear=True), patch("osint_toolkit.adapter_runner.subprocess.run") as run:
+            findings = run_adapter_findings(
+                "smicallef/spiderfoot",
+                ScanTarget(kind="domain", value="example.com"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "config_missing")
+        self.assertEqual(findings[0].metadata["missing_env"], "SPIDERFOOT_SF_PATH")
+        run.assert_not_called()
+
+    def test_run_spiderfoot_adapter_parses_json_stdout_after_execution(self):
+        completed = subprocess.CompletedProcess(
+            args=["python", "sf.py", "-s", "example.com", "-u", "passive", "-o", "json", "-q"],
+            returncode=0,
+            stdout=(
+                '[{"type":"INTERNET_NAME","data":"api.example.com","module":"sfp_dnsresolve","confidence":100},'
+                '{"type":"EMAILADDR","data":"admin@example.com","module":"sfp_email","confidence":80},'
+                '{"type":"WEBLINK","data":"https://www.example.com/login","module":"sfp_spider","confidence":80}]'
+            ),
+            stderr="",
+        )
+
+        with patch.dict(os.environ, {"SPIDERFOOT_SF_PATH": "C:\\tools\\spiderfoot\\sf.py"}), patch(
+            "osint_toolkit.adapter_runner.shutil.which",
+            return_value="C:\\Python\\python.exe",
+        ), patch("osint_toolkit.adapter_runner.subprocess.run", return_value=completed) as run:
+            findings = run_adapter_findings(
+                "smicallef/spiderfoot",
+                ScanTarget(kind="domain", value="example.com"),
+                execute=True,
+            )
+
+        args = run.call_args.args[0]
+        self.assertEqual(args[:3], ["C:\\Python\\python.exe", "C:\\tools\\spiderfoot\\sf.py", "-s"])
+        self.assertIn("-u", args)
+        self.assertIn("passive", args)
+        self.assertEqual(findings[0].status, "completed")
+        self.assertTrue(any(finding.metadata.get("parser") == "spiderfoot" for finding in findings[1:]))
         self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
         self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings[1:]))
         self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings[1:]))

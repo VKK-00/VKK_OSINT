@@ -306,6 +306,7 @@ def _metadata_edge(key: str) -> tuple[str, str] | None:
     mapping = {
         "domain": ("has_domain", "domain"),
         "email": ("related_email", "email"),
+        "phone": ("related_phone", "phone"),
         "emails": ("page_contact_email", "email"),
         "phones": ("page_contact_phone", "phone"),
         "crawled_urls": ("crawled_url", "url"),

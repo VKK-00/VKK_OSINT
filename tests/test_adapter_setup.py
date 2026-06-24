@@ -1,3 +1,4 @@
+import os
 import unittest
 from unittest.mock import patch
 
@@ -128,6 +129,7 @@ class AdapterSetupTests(unittest.TestCase):
         amass = find_adapter("owasp-amass/amass")
         theharvester = find_adapter("laramies/theHarvester")
         bbot = find_adapter("blacklanternsecurity/bbot")
+        spiderfoot = find_adapter("smicallef/spiderfoot")
 
         self.assertEqual(
             subfinder.render_command(ScanTarget(kind="domain", value="example.com")),
@@ -159,6 +161,12 @@ class AdapterSetupTests(unittest.TestCase):
         self.assertEqual(bbot.render_output_dir_args("C:\\tmp\\bbot"), ("--output", "C:\\tmp\\bbot", "--name", "osint-toolkit"))
         self.assertEqual(bbot.generated_output_patterns, ("*.json",))
 
+        with patch.dict(os.environ, {"SPIDERFOOT_SF_PATH": "C:\\tools\\spiderfoot\\sf.py"}):
+            self.assertEqual(
+                spiderfoot.render_command(ScanTarget(kind="domain", value="example.com")),
+                ("python", "C:\\tools\\spiderfoot\\sf.py", "-s", "example.com", "-u", "passive", "-o", "json", "-q"),
+            )
+
         with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
             setup = build_adapter_setup(subfinder)
 
@@ -178,6 +186,21 @@ class AdapterSetupTests(unittest.TestCase):
         self.assertEqual(bbot_setup.readiness, "missing")
         self.assertEqual(bbot_setup.install_kind, "pipx")
         self.assertEqual(bbot_setup.install_command, "pipx install bbot")
+
+        with patch.dict(os.environ, {}, clear=True), patch("osint_toolkit.adapter_setup.shutil.which", return_value="C:\\Python\\python.exe"):
+            spiderfoot_missing_config = build_adapter_setup(spiderfoot)
+
+        self.assertEqual(spiderfoot_missing_config.readiness, "config_missing")
+        self.assertEqual(spiderfoot_missing_config.missing_env, ("SPIDERFOOT_SF_PATH",))
+
+        with patch.dict(os.environ, {"SPIDERFOOT_SF_PATH": "C:\\tools\\spiderfoot\\sf.py"}), patch(
+            "osint_toolkit.adapter_setup.shutil.which",
+            return_value="C:\\Python\\python.exe",
+        ):
+            spiderfoot_ready = build_adapter_setup(spiderfoot)
+
+        self.assertEqual(spiderfoot_ready.readiness, "ready")
+        self.assertEqual(spiderfoot_ready.install_kind, "manual")
 
     def test_setup_reports_not_configured_for_dataset_adapter(self):
         setup = build_adapter_setup(find_adapter("WebBreacher/WhatsMyName"))
