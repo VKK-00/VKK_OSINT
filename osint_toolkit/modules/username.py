@@ -50,7 +50,8 @@ class UsernameScanModule:
                 findings.append(_skipped_finding(self.name, target.value, username, site, skip_reason))
                 continue
             url = site.url_for(username)
-            result = client.check(url, fetch_title=True)
+            headers = dict(site.request_headers)
+            result = client.check(url, fetch_title=True, headers=headers or None)
             classification = classify_username_http_result(site, username, result)
             findings.append(
                 Finding(
@@ -71,6 +72,7 @@ class UsernameScanModule:
                         "content_marker": classification.content_marker,
                         "source_projects": ", ".join(site.source_projects),
                         "requested_url": url,
+                        "custom_headers": "yes" if headers else "no",
                     },
                 )
             )
@@ -94,23 +96,43 @@ def classify_username_http_result(
     result: HttpResult,
 ) -> UsernameHttpClassification:
     content_rule, content_marker = site.match_content(username, result.title, result.body_text)
-    if result.status_code and result.status_code < 400:
-        if content_rule == "not_found_marker":
-            return UsernameHttpClassification(
-                status="not_found",
-                confidence="high",
-                evidence=f"HTTP {result.status_code}; matched {site.name} not-found marker.",
-                content_rule=content_rule,
-                content_marker=content_marker,
-            )
-        if content_rule == "profile_marker":
-            return UsernameHttpClassification(
-                status="candidate",
-                confidence="high",
-                evidence=f"HTTP {result.status_code}; matched {site.name} profile marker.",
-                content_rule=content_rule,
-                content_marker=content_marker,
-            )
+    if content_rule == "not_found_marker":
+        return UsernameHttpClassification(
+            status="not_found",
+            confidence="high",
+            evidence=f"HTTP {result.status_code}; matched {site.name} not-found marker.",
+            content_rule=content_rule,
+            content_marker=content_marker,
+        )
+    if content_rule == "profile_marker":
+        return UsernameHttpClassification(
+            status="candidate",
+            confidence="high",
+            evidence=f"HTTP {result.status_code}; matched {site.name} profile marker.",
+            content_rule=content_rule,
+            content_marker=content_marker,
+        )
+
+    if result.status_code in site.not_found_status_codes and (
+        result.status_code >= 300 or not site.not_found_markers
+    ):
+        return UsernameHttpClassification(
+            status="not_found",
+            confidence="high",
+            evidence=f"HTTP {result.status_code}; matched {site.name} not-found status rule.",
+            content_rule=content_rule or "not_found_status",
+            content_marker="",
+        )
+    if result.status_code in site.candidate_status_codes and (
+        result.status_code >= 400 or not site.profile_markers
+    ):
+        return UsernameHttpClassification(
+            status="candidate",
+            confidence="medium",
+            evidence=f"HTTP {result.status_code}; matched {site.name} candidate status rule.",
+            content_rule=content_rule or "candidate_status",
+            content_marker="",
+        )
 
     status, confidence = _classify_status(result.status_code)
     return UsernameHttpClassification(

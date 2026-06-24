@@ -26,18 +26,21 @@ class HttpClient:
         self.user_agent = user_agent
         self.context = ssl.create_default_context()
 
-    def check(self, url: str, *, fetch_title: bool = False) -> HttpResult:
-        head = self._request(url, method="HEAD", read_body=False)
+    def check(self, url: str, *, fetch_title: bool = False, headers: dict[str, str] | None = None) -> HttpResult:
+        head = self._request(url, method="HEAD", read_body=False, headers=headers)
         if head.status_code and head.status_code not in {405, 403}:
             if fetch_title and head.status_code < 400:
-                return self._request(url, method="GET", read_body=True)
+                return self._request(url, method="GET", read_body=True, headers=headers)
             return head
-        return self._request(url, method="GET", read_body=fetch_title)
+        return self._request(url, method="GET", read_body=fetch_title, headers=headers)
 
-    def _request(self, url: str, *, method: str, read_body: bool) -> HttpResult:
+    def _request(self, url: str, *, method: str, read_body: bool, headers: dict[str, str] | None = None) -> HttpResult:
+        request_headers = {"User-Agent": self.user_agent, "Accept": "text/html,application/xhtml+xml"}
+        if headers:
+            request_headers.update(headers)
         request = urllib.request.Request(
             url,
-            headers={"User-Agent": self.user_agent, "Accept": "text/html,application/xhtml+xml"},
+            headers=request_headers,
             method=method,
         )
         try:

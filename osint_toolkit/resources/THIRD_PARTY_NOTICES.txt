@@ -7,3 +7,13 @@ License: MIT
 The copied dataset is used as a native username profile URL template source.
 Curated local site rules in osint_toolkit/sites.py take precedence over
 upstream-imported entries.
+
+WhatsMyName site dataset
+Source: https://github.com/WebBreacher/WhatsMyName
+File: wmn-data.json
+Snapshot commit: 7c44595
+License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+
+The copied dataset is used as a native username check template source.
+GET-compatible entries are loaded into osint_toolkit/sites.py with attribution.
+POST-specific behavior is documented as remaining parity work.

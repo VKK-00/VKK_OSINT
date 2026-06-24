@@ -21,7 +21,7 @@ CLI работает в трёх режимах:
 Первый native-слой уже выполняет:
 
 - person-name expansion: нормализация имени, RU/UA transliteration и username-кандидаты;
-- username public profile checks по 479 активным URL-шаблонам: 38 curated правил плюс импорт Sherlock `data.json`, совместимые по классу задачи с Sherlock/Maigret/WhatsMyName/Nexfil;
+- username public profile checks по 1071 активному URL/check-шаблону: 38 curated правил, импорт Sherlock `data.json` и импорт GET-compatible WhatsMyName `wmn-data.json`, совместимые по классу задачи с Sherlock/Maigret/WhatsMyName/Nexfil;
 - platform-specific username rules: несовместимые site checks возвращаются как `skipped`, без построения заведомо неверного URL;
 - content marker rules для live username checks: profile markers повышают confidence, soft-404 markers дают `not_found`;
 - email baseline checks: синтаксис, live domain resolution, MX/TXT lookup, SPF и DMARC policy classification;
@@ -60,6 +60,7 @@ CLI работает в трёх режимах:
 - `osint_toolkit/` — Python-пакет CLI.
 - `osint_toolkit/modules/` — native scan-модули.
 - `osint_toolkit/resources/sherlock_data.json` — встроенный snapshot Sherlock `sherlock_project/resources/data.json`, commit `206068d`, MIT license.
+- `osint_toolkit/resources/whatsmyname_wmn_data.json` — встроенный snapshot WhatsMyName `wmn-data.json`, commit `7c44595`, CC BY-SA 4.0 license.
 - `osint_toolkit/resources/THIRD_PARTY_NOTICES.txt` — notice по скопированному upstream dataset.
 - `tests/` — unittest-тесты.
 - `README.md` — пользовательская инструкция.
@@ -84,10 +85,12 @@ CLI работает в трёх режимах:
   - `classify_username_http_result()` — status/content classifier для live username checks.
 - `osint_toolkit/sites.py`
   - `UsernameSite` — URL template, регион, upstream source projects и platform-specific username rule.
+  - `UsernameSite.candidate_status_codes`, `not_found_status_codes`, `request_headers` — перенос WhatsMyName `e_code`, `m_code` и per-site headers в native live checks.
   - `match_content()` — сопоставление title/body с profile/not-found markers.
   - `CURATED_USERNAME_SITES` — локально уточнённые 38 public profile templates.
   - `SHERLOCK_USERNAME_SITES` — импортированные из Sherlock `data.json` templates.
-  - `USERNAME_SITES` — merged native dataset; curated правила идут первыми и вытесняют upstream-дубли по имени или URL.
+  - `WHATSMYNAME_USERNAME_SITES` — импортированные GET-compatible entries из WhatsMyName `wmn-data.json`.
+  - `USERNAME_SITES` — merged native dataset; curated правила идут первыми, одинаковые URL дедуплицируются, одноимённые альтернативные checks получают суффикс источника.
 - `osint_toolkit/http_client.py`
   - `HttpResult.body_text` — ограниченный текст ответа для content marker checks.
 - `osint_toolkit/modules/person.py`
@@ -177,7 +180,7 @@ Scan-поток:
 2. CLI создаёт `ScanTarget` и `RunConfig`.
 3. `Engine` выбирает native-модули по `target.kind`.
 4. В dry-run модуль возвращает planned findings без сетевых запросов или `skipped`, если username не проходит правило конкретной платформы.
-5. В live-режиме модуль выполняет публичные HTTP checks, читает title/body excerpt и возвращает `Finding` с `content_rule` metadata.
+5. В live-режиме модуль выполняет публичные HTTP checks, применяет site-specific headers, читает title/body excerpt и возвращает `Finding` с `content_rule` metadata.
 
 Adapter-поток:
 
@@ -364,7 +367,7 @@ osint-toolkit stats
 - Система строится вокруг единого `Finding`, чтобы результаты native-модулей и external adapters можно было объединять.
 - Person-name expansion выдаёт только низкоуверенные username-кандидаты; подтверждение делается отдельными username checks/adapters.
 - Username module проверяет platform-specific syntax до URL check, чтобы не превращать несовместимый username в ложный planned URL.
-- Username live classifier сначала учитывает HTTP status, затем title/body markers: soft-404 marker сильнее HTTP 200, profile marker повышает confidence.
+- Username live classifier сначала учитывает title/body markers, затем site-specific status rules из WhatsMyName: soft-404 marker сильнее HTTP status, profile marker повышает confidence, а `m_code`/`e_code` помогают классифицировать сайты без body marker.
 - Adapter parser не считается источником истины: он нормализует stdout уже запущенного upstream CLI, а не заменяет native logic upstream-проекта.
 - Generated report files читаются из временной директории или временного файла и удаляются после parsing; постоянное хранение остаётся задачей case store/report output.
 - Investigation adapter execution является opt-in: `--include-adapters` остаётся dry-run, а запуск внешнего кода требует отдельного `--execute-adapters`.
@@ -392,7 +395,7 @@ osint-toolkit stats
 - Каталог основан на snapshot от 2026-06-24; GitHub stars и актуальность проектов меняются.
 - Качество и безопасность внешних репозиториев не аудированы.
 - Native person-name expansion пока использует базовые шаблоны имени/фамилии и RU/UA transliteration; нет словарей никнеймов, исторических alias и platform-specific username rules.
-- Первый native username module уже импортирует Sherlock site dataset и покрывает URL-template/status-code слой, часть platform syntax rules и часть content marker rules, но не всю логику Sherlock/Maigret/WhatsMyName: Maigret/WhatsMyName datasets ещё не встроены, нет полного набора custom `errorType`/`errorUrl`/response-url/WAF rules, rate-limit logic и enrichment.
+- Первый native username module уже импортирует Sherlock site dataset и GET-compatible WhatsMyName dataset, покрывает URL-template/status-code слой, часть platform syntax rules, custom headers и часть content marker rules, но не всю логику Sherlock/Maigret/WhatsMyName: Maigret dataset и 22 WhatsMyName POST entries ещё не встроены, нет полного набора custom `errorType`/`errorUrl`/response-url/WAF rules, rate-limit logic и enrichment.
 - Native email module делает MX/TXT lookup и SPF/DMARC classifier, но пока не делает native breach lookup, NS/additional TXT classifiers или own API enrichment; Mosint/h8mail покрывают часть enrichment через external adapters.
 - Native phone module пока не делает carrier lookup, reputation lookup или external API enrichment.
 - Telegram module пока не использует Telegram API и не получает private/group data.
@@ -444,6 +447,7 @@ osint-toolkit stats
 - 2026-06-24: добавлены `PersonNameScanModule`, `scan person` и `investigate --person` с derived username scan/adapters и graph-связью `person -> username`.
 - 2026-06-24: расширен native username dataset до 38 URL-шаблонов и добавлены platform-specific username rules со статусом `skipped`.
 - 2026-06-24: импортирован Sherlock `data.json` как native package resource; активный username dataset расширен до 479 URL-шаблонов после дедупликации curated и upstream-записей.
+- 2026-06-24: импортирован WhatsMyName `wmn-data.json` как native package resource; активный username dataset расширен до 1071 check-шаблона с WMN `e_string`/`m_string`, `e_code`/`m_code` и custom headers.
 - 2026-06-24: добавлены `HttpResult.body_text`, username content marker rules и `classify_username_http_result()` для soft-404/profile confidence в live checks.
 - 2026-06-24: добавлен `dns_lookup.py`; `EmailScanModule` теперь планирует и выполняет MX/TXT lookup через `nslookup` в live-режиме.
 - 2026-06-24: добавлен `email_auth.py`; `EmailScanModule` теперь классифицирует SPF и DMARC, а adapter manifest расширен executable target для `h8mail`.

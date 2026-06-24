@@ -19,7 +19,7 @@
 - находить проекты, связанные с OSINT по лицам;
 - находить проекты и ресурсы, связанные с РФ, Украиной и русскоязычными платформами;
 - разворачивать имя человека в username-кандидаты с RU/UA transliteration;
-- выполнять native username profile checks по 479 активным URL-шаблонам: 38 curated правил плюс встроенный Sherlock `data.json` dataset с platform-specific username rules и content markers;
+- выполнять native username profile checks по 1071 активному URL/check-шаблону: 38 curated правил, встроенный Sherlock `data.json` dataset и GET-compatible WhatsMyName `wmn-data.json` entries с platform-specific username rules, content/status markers и custom headers;
 - выполнять baseline email checks: синтаксис, live domain resolution, MX/TXT lookup, SPF и DMARC policy classification;
 - выполнять baseline phone checks: E.164-like нормализация и префикс региона;
 - выполнять baseline domain recon: DNS resolution, HTTP/HTTPS metadata и security header presence;
@@ -138,7 +138,7 @@ python -m osint_toolkit scan url https://example.com --live --format json
 
 Native person module делает safe username expansion: нормализует имя, транслитерирует RU/UA/кириллические символы и генерирует кандидаты вроде `ivanpetrenko`, `ivan.petrenko`, `ipetrenko`. Это не подтверждение аккаунтов, а список кандидатов для проверки через username scan и adapters.
 
-Сейчас native username module покрывает Sherlock/Maigret/WhatsMyName-подобный слой публичных profile URL checks: 38 curated URL-шаблонов и 478 валидных записей из Sherlock `data.json`; после дедупликации активно 479 шаблонов. Curated правила имеют приоритет над upstream-дублями, поэтому более точные локальные GitHub/Instagram/Telegram/RU правила не вытесняются импортом. Если username не подходит конкретной платформе, finding получает `status=skipped`, а не строит заведомо неверный URL. В `--live` режиме title/body markers могут повысить confidence до `high` для profile marker или перевести soft-404 страницу в `not_found`. Оставшийся gap до полного 1:1: импорт Maigret/WhatsMyName datasets, полная Sherlock `errorType`/`errorUrl` логика, richer per-site rules и rate-limit/backoff logic либо запуск внешних CLI через adapters.
+Сейчас native username module покрывает Sherlock/Maigret/WhatsMyName-подобный слой публичных profile URL checks: 38 curated URL-шаблонов, 478 валидных записей из Sherlock `data.json` и 696 GET-compatible entries из WhatsMyName `wmn-data.json`; после дедупликации одинаковых URL активно 1071 check-шаблонов. Curated правила идут первыми. Одинаковые URL удаляются, а альтернативные проверки одного сайта сохраняются с суффиксом источника, например `GitLab (WhatsMyName)`. Если username не подходит конкретной платформе, finding получает `status=skipped`, а не строит заведомо неверный URL. В `--live` режиме title/body markers, WMN `e_string`/`m_string`, WMN `e_code`/`m_code` и WMN custom headers используются для более близкой к upstream классификации. Оставшийся gap до полного 1:1: импорт Maigret dataset, 22 WhatsMyName POST entries, полная Sherlock `errorType`/`errorUrl` логика, richer per-site rules и rate-limit/backoff logic либо запуск внешних CLI через adapters.
 
 Native email/phone modules являются baseline-слоем для Mosint/h8mail/pwnedOrNot/user-scanner/PhoneInfoga-подобных adapters. Email module в `--live` режиме делает domain resolution, MX/TXT lookup через системный `nslookup`, SPF classification по доменному TXT и DMARC classification через `_dmarc.<domain>`. Он не делает breach lookup, account-enumeration и не запускает password recovery flows.
 
@@ -301,6 +301,7 @@ python -m osint_toolkit brief --task username --target-value "example_user" --re
 Встроенные package resources:
 
 - `osint_toolkit/resources/sherlock_data.json` — snapshot Sherlock `sherlock_project/resources/data.json`, commit `206068d`, MIT license.
+- `osint_toolkit/resources/whatsmyname_wmn_data.json` — snapshot WhatsMyName `wmn-data.json`, commit `7c44595`, CC BY-SA 4.0 license.
 - `osint_toolkit/resources/THIRD_PARTY_NOTICES.txt` — notice по скопированному upstream dataset.
 
 Можно указать другую папку:

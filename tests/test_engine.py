@@ -16,7 +16,12 @@ from osint_toolkit.modules.phone import detect_country, is_e164_like, normalize_
 from osint_toolkit.modules.ru_ua_sources import RuUaSourcePackModule
 from osint_toolkit.modules.telegram import TelegramScanModule, normalize_telegram_target
 from osint_toolkit.modules.username import classify_username_http_result, normalize_username
-from osint_toolkit.sites import SHERLOCK_IMPORTED_SITE_COUNT, USERNAME_SITES, UsernameSite
+from osint_toolkit.sites import (
+    SHERLOCK_IMPORTED_SITE_COUNT,
+    USERNAME_SITES,
+    WHATSMYNAME_IMPORTED_SITE_COUNT,
+    UsernameSite,
+)
 
 
 class EngineTests(unittest.TestCase):
@@ -74,6 +79,22 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(github.url_template, "https://github.com/{username}")
         self.assertEqual(github.source_projects, ("sherlock", "maigret", "whatsmyname"))
 
+    def test_username_site_dataset_imports_whatsmyname_resource(self):
+        names = {site.name for site in USERNAME_SITES}
+        gitlab_api = next(site for site in USERNAME_SITES if site.name == "GitLab (WhatsMyName)")
+        ctf = next(site for site in USERNAME_SITES if site.name == "247CTF")
+
+        self.assertGreaterEqual(WHATSMYNAME_IMPORTED_SITE_COUNT, 650)
+        self.assertGreaterEqual(len(USERNAME_SITES), 1000)
+        self.assertIn("Reddit (WhatsMyName)", names)
+        self.assertEqual(gitlab_api.url_template, "https://gitlab.com/api/v4/users?username={username}")
+        self.assertEqual(gitlab_api.profile_markers, ('"id":',))
+        self.assertEqual(gitlab_api.not_found_markers, ("[]",))
+        self.assertEqual(gitlab_api.candidate_status_codes, (200,))
+        self.assertEqual(gitlab_api.not_found_status_codes, (200,))
+        self.assertEqual(ctf.source_projects, ("whatsmyname",))
+        self.assertEqual(ctf.not_found_status_codes, (302,))
+
     def test_username_live_classifier_uses_not_found_marker(self):
         site = UsernameSite(
             "Example",
@@ -96,6 +117,30 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(classification.confidence, "high")
         self.assertEqual(classification.content_rule, "not_found_marker")
 
+    def test_username_live_scan_passes_site_specific_headers(self):
+        site = UsernameSite(
+            "Example",
+            "https://example.com/{username}",
+            request_headers=(("User-Agent", "WhatsMyName-Test"),),
+        )
+        with patch("osint_toolkit.modules.username.HttpClient.check") as check:
+            check.return_value = HttpResult(
+                url="https://example.com/realuser",
+                final_url="https://example.com/realuser",
+                status_code=200,
+            )
+            findings = Engine([UsernameScanModule(sites=(site,))]).scan(
+                ScanTarget(kind="username", value="realuser"),
+                RunConfig(live=True),
+            )
+
+        check.assert_called_once_with(
+            "https://example.com/realuser",
+            fetch_title=True,
+            headers={"User-Agent": "WhatsMyName-Test"},
+        )
+        self.assertEqual(findings[0].metadata["custom_headers"], "yes")
+
     def test_username_live_classifier_handles_literal_braces_in_marker(self):
         site = UsernameSite(
             "Example",
@@ -117,6 +162,49 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(classification.status, "not_found")
         self.assertEqual(classification.confidence, "high")
         self.assertEqual(classification.content_rule, "not_found_marker")
+
+    def test_username_live_classifier_uses_site_specific_not_found_status(self):
+        site = UsernameSite(
+            "Example",
+            "https://example.com/{username}",
+            not_found_status_codes=(302,),
+        )
+        classification = classify_username_http_result(
+            site,
+            "missinguser",
+            HttpResult(
+                url="https://example.com/missinguser",
+                final_url="https://example.com/login",
+                status_code=302,
+            ),
+        )
+
+        self.assertEqual(classification.status, "not_found")
+        self.assertEqual(classification.confidence, "high")
+        self.assertEqual(classification.content_rule, "not_found_status")
+
+    def test_username_live_classifier_does_not_use_ambiguous_200_missing_status_without_marker(self):
+        site = UsernameSite(
+            "Example",
+            "https://example.com/{username}",
+            not_found_markers=("not found",),
+            not_found_status_codes=(200,),
+        )
+        classification = classify_username_http_result(
+            site,
+            "maybeuser",
+            HttpResult(
+                url="https://example.com/maybeuser",
+                final_url="https://example.com/maybeuser",
+                status_code=200,
+                title="Generic",
+                body_text="Generic page",
+            ),
+        )
+
+        self.assertEqual(classification.status, "candidate")
+        self.assertEqual(classification.confidence, "medium")
+        self.assertEqual(classification.content_rule, "unmatched")
 
     def test_username_live_classifier_uses_profile_marker(self):
         site = UsernameSite(
@@ -319,6 +407,7 @@ class EngineTests(unittest.TestCase):
         restricted = filter_adapters("restricted")
 
         self.assertTrue(any(adapter.repository == "sherlock-project/sherlock" for adapter in partial))
+        self.assertTrue(any(adapter.repository == "WebBreacher/WhatsMyName" for adapter in partial))
         self.assertTrue(any(adapter.repository == "alpkeskin/mosint" for adapter in partial))
         self.assertTrue(any(adapter.repository == "sundowndev/phoneinfoga" for adapter in partial))
         self.assertTrue(any(adapter.repository == "megadose/holehe" for adapter in restricted))

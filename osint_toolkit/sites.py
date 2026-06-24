@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import resources
 from typing import Any
 
@@ -11,6 +11,12 @@ DEFAULT_USERNAME_PATTERN = r"(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]{0,62}[A-Za
 DEFAULT_USERNAME_RULE_NOTE = "letters, numbers, dot, underscore or dash; no leading/trailing separator"
 SHERLOCK_DATA_RESOURCE = "sherlock_data.json"
 SHERLOCK_SOURCE_PROJECT = "sherlock"
+WHATSMYNAME_DATA_RESOURCE = "whatsmyname_wmn_data.json"
+WHATSMYNAME_SOURCE_PROJECT = "whatsmyname"
+SOURCE_NAME_SUFFIXES = {
+    SHERLOCK_SOURCE_PROJECT: "Sherlock",
+    WHATSMYNAME_SOURCE_PROJECT: "WhatsMyName",
+}
 
 
 @dataclass(frozen=True)
@@ -23,6 +29,9 @@ class UsernameSite:
     rule_note: str = DEFAULT_USERNAME_RULE_NOTE
     profile_markers: tuple[str, ...] = ()
     not_found_markers: tuple[str, ...] = ()
+    candidate_status_codes: tuple[int, ...] = ()
+    not_found_status_codes: tuple[int, ...] = ()
+    request_headers: tuple[tuple[str, str], ...] = ()
 
     def url_for(self, username: str) -> str:
         return self.url_template.format(username=username)
@@ -209,6 +218,18 @@ def _load_sherlock_sites() -> tuple[UsernameSite, ...]:
     )
 
 
+def _load_whatsmyname_sites() -> tuple[UsernameSite, ...]:
+    data = _read_whatsmyname_data()
+    sites = data.get("sites")
+    if not isinstance(sites, list):
+        return ()
+    return tuple(
+        site
+        for entry in sites
+        if (site := _whatsmyname_entry_to_username_site(entry)) is not None
+    )
+
+
 def _render_marker(marker: str, username: str) -> str:
     try:
         return marker.format(username=username)
@@ -217,8 +238,16 @@ def _render_marker(marker: str, username: str) -> str:
 
 
 def _read_sherlock_data() -> dict[str, Any]:
+    return _read_json_resource(SHERLOCK_DATA_RESOURCE)
+
+
+def _read_whatsmyname_data() -> dict[str, Any]:
+    return _read_json_resource(WHATSMYNAME_DATA_RESOURCE)
+
+
+def _read_json_resource(resource_name: str) -> dict[str, Any]:
     try:
-        resource = resources.files(__package__).joinpath("resources", SHERLOCK_DATA_RESOURCE)
+        resource = resources.files(__package__).joinpath("resources", resource_name)
         raw = resource.read_text(encoding="utf-8")
     except (FileNotFoundError, ModuleNotFoundError, OSError):
         return {}
@@ -253,6 +282,31 @@ def _sherlock_entry_to_username_site(name: str, entry: Any) -> UsernameSite | No
     )
 
 
+def _whatsmyname_entry_to_username_site(entry: Any) -> UsernameSite | None:
+    if not isinstance(entry, dict) or entry.get("valid") is False:
+        return None
+
+    name = entry.get("name")
+    url = entry.get("uri_check")
+    if not isinstance(name, str) or not name or not isinstance(url, str) or "{account}" not in url:
+        return None
+
+    # Current native HTTP checks are GET-only; POST entries remain documented parity gaps.
+    if entry.get("post_body"):
+        return None
+
+    return UsernameSite(
+        name=name,
+        url_template=url.replace("{account}", "{username}"),
+        source_projects=(WHATSMYNAME_SOURCE_PROJECT,),
+        profile_markers=_string_tuple(entry.get("e_string")),
+        not_found_markers=_string_tuple(entry.get("m_string")),
+        candidate_status_codes=_int_tuple(entry.get("e_code")),
+        not_found_status_codes=_int_tuple(entry.get("m_code")),
+        request_headers=_header_tuple(entry.get("headers")),
+    )
+
+
 def _valid_regex(value: Any) -> str:
     if not isinstance(value, str) or not value:
         return ""
@@ -271,26 +325,67 @@ def _string_tuple(value: Any) -> tuple[str, ...]:
     return ()
 
 
+def _int_tuple(value: Any) -> tuple[int, ...]:
+    return (value,) if isinstance(value, int) else ()
+
+
+def _header_tuple(value: Any) -> tuple[tuple[str, str], ...]:
+    if not isinstance(value, dict):
+        return ()
+    return tuple(
+        (key, header_value)
+        for key, header_value in value.items()
+        if isinstance(key, str) and isinstance(header_value, str)
+    )
+
+
 def _merge_username_sites(
-    curated_sites: tuple[UsernameSite, ...],
-    imported_sites: tuple[UsernameSite, ...],
+    *site_groups: tuple[UsernameSite, ...],
 ) -> tuple[UsernameSite, ...]:
     merged: list[UsernameSite] = []
     seen_names: set[str] = set()
     seen_templates: set[str] = set()
 
-    for site in (*curated_sites, *imported_sites):
-        name_key = site.name.casefold()
-        template_key = site.url_template.casefold()
-        if name_key in seen_names or template_key in seen_templates:
-            continue
-        merged.append(site)
-        seen_names.add(name_key)
-        seen_templates.add(template_key)
+    for group in site_groups:
+        for site in group:
+            template_key = site.url_template.casefold()
+            if template_key in seen_templates:
+                continue
+
+            site = _rename_duplicate_site(site, seen_names)
+            merged.append(site)
+            seen_names.add(site.name.casefold())
+            seen_templates.add(template_key)
 
     return tuple(merged)
 
 
+def _rename_duplicate_site(site: UsernameSite, seen_names: set[str]) -> UsernameSite:
+    name_key = site.name.casefold()
+    if name_key not in seen_names:
+        return site
+
+    suffix = _source_name_suffix(site)
+    base_name = f"{site.name} ({suffix})"
+    candidate = base_name
+    index = 2
+    while candidate.casefold() in seen_names:
+        candidate = f"{base_name} {index}"
+        index += 1
+    return replace(site, name=candidate)
+
+
+def _source_name_suffix(site: UsernameSite) -> str:
+    for source in site.source_projects:
+        if source in SOURCE_NAME_SUFFIXES:
+            return SOURCE_NAME_SUFFIXES[source]
+    if site.source_projects:
+        return site.source_projects[0]
+    return "imported"
+
+
 SHERLOCK_USERNAME_SITES = _load_sherlock_sites()
 SHERLOCK_IMPORTED_SITE_COUNT = len(SHERLOCK_USERNAME_SITES)
-USERNAME_SITES = _merge_username_sites(CURATED_USERNAME_SITES, SHERLOCK_USERNAME_SITES)
+WHATSMYNAME_USERNAME_SITES = _load_whatsmyname_sites()
+WHATSMYNAME_IMPORTED_SITE_COUNT = len(WHATSMYNAME_USERNAME_SITES)
+USERNAME_SITES = _merge_username_sites(CURATED_USERNAME_SITES, SHERLOCK_USERNAME_SITES, WHATSMYNAME_USERNAME_SITES)
