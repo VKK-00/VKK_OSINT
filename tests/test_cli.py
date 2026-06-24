@@ -34,6 +34,23 @@ class CliTests(unittest.TestCase):
         self.assertIn("GitHub", result.stdout)
         self.assertIn("planned", result.stdout)
 
+    def test_scan_username_reports_site_rule_skip(self):
+        result = self.run_cli("scan", "username", "example_user", "--limit", "1", "--format", "json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(payload[0]["source"], "GitHub")
+        self.assertEqual(payload[0]["status"], "skipped")
+        self.assertEqual(payload[0]["metadata"]["rule_status"], "skipped")
+
+    def test_scan_username_normalizes_at_prefix(self):
+        result = self.run_cli("scan", "username", "@durov", "--limit", "1", "--format", "json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(payload[0]["url"], "https://github.com/durov")
+        self.assertEqual(payload[0]["metadata"]["normalized_username"], "durov")
+
     def test_scan_person_dry_run_command(self):
         result = self.run_cli("scan", "person", "Ivan Petrenko", "--limit", "3", "--format", "json")
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -28,7 +28,8 @@ python -m osint_toolkit scan username <username> --live
 
 - person-name expansion в username-кандидаты;
 - RU/UA/кириллическая transliteration для username candidates;
-- публичные URL-шаблоны профилей;
+- 38 публичных URL-шаблонов профилей;
+- platform-specific username rules и `skipped` findings для заведомо несовместимых платформ;
 - dry-run без сетевых запросов;
 - live HTTP checks по явному `--live`;
 - единый результат `Finding`;
@@ -50,8 +51,8 @@ python -m osint_toolkit scan username <username> --live
 
 Gap до полного 1:1:
 
-- нет полного upstream site dataset;
-- нет per-site error rules;
+- site dataset расширен до 38 шаблонов, но это ещё не полный upstream dataset Sherlock/Maigret/WhatsMyName;
+- per-site rules пока покрывают username syntax/length, но не все upstream error rules;
 - нет rate-limit/backoff правил;
 - username permutation/alias strategy пока базовая: нет словарей никнеймов, исторических alias и platform-specific username rules;
 - нет confidence model на основе контента страницы;

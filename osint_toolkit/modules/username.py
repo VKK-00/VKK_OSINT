@@ -14,16 +14,33 @@ class UsernameScanModule:
     supported_targets: tuple[str, ...] = ("username",)
 
     def scan(self, target: ScanTarget, config: RunConfig) -> tuple[Finding, ...]:
+        username = normalize_username(target.value)
+        if not username:
+            return (
+                Finding(
+                    module=self.name,
+                    source="normalizer",
+                    target=target.value,
+                    status="invalid",
+                    confidence="high",
+                    evidence="Username is empty after normalization.",
+                ),
+            )
+
         sites = _filter_sites(self.sites, target.region)
         if config.limit is not None:
             sites = sites[: config.limit]
         if not config.live:
-            return tuple(_planned_finding(self.name, target.value, site) for site in sites)
+            return tuple(_planned_or_skipped_finding(self.name, target.value, username, site) for site in sites)
 
         client = HttpClient(timeout=config.timeout, user_agent=config.user_agent)
         findings: list[Finding] = []
         for site in sites:
-            url = site.url_for(target.value)
+            skip_reason = site.validate_username(username)
+            if skip_reason:
+                findings.append(_skipped_finding(self.name, target.value, username, site, skip_reason))
+                continue
+            url = site.url_for(username)
             result = client.check(url, fetch_title=True)
             status, confidence = _classify_status(result.status_code)
             findings.append(
@@ -39,6 +56,8 @@ class UsernameScanModule:
                     evidence=result.error or f"HTTP {result.status_code}",
                     metadata={
                         "region": site.region,
+                        "normalized_username": username,
+                        "rule_status": "matched",
                         "source_projects": ", ".join(site.source_projects),
                         "requested_url": url,
                     },
@@ -58,16 +77,49 @@ def _filter_sites(sites: tuple[UsernameSite, ...], region: str) -> tuple[Usernam
     return sites
 
 
-def _planned_finding(module: str, username: str, site: UsernameSite) -> Finding:
+def normalize_username(value: str) -> str:
+    return value.strip().lstrip("@").strip()
+
+
+def _planned_or_skipped_finding(module: str, original: str, username: str, site: UsernameSite) -> Finding:
+    skip_reason = site.validate_username(username)
+    if skip_reason:
+        return _skipped_finding(module, original, username, site, skip_reason)
+    return _planned_finding(module, original, username, site)
+
+
+def _planned_finding(module: str, original: str, username: str, site: UsernameSite) -> Finding:
     return Finding(
         module=module,
         source=site.name,
-        target=username,
+        target=original,
         status="planned",
         url=site.url_for(username),
         confidence="not_checked",
         evidence="Dry run only. Pass --live to perform public HTTP checks.",
-        metadata={"region": site.region, "source_projects": ", ".join(site.source_projects)},
+        metadata={
+            "region": site.region,
+            "normalized_username": username,
+            "rule_status": "matched",
+            "source_projects": ", ".join(site.source_projects),
+        },
+    )
+
+
+def _skipped_finding(module: str, original: str, username: str, site: UsernameSite, reason: str) -> Finding:
+    return Finding(
+        module=module,
+        source=site.name,
+        target=original,
+        status="skipped",
+        confidence="high",
+        evidence=reason,
+        metadata={
+            "region": site.region,
+            "normalized_username": username,
+            "rule_status": "skipped",
+            "source_projects": ", ".join(site.source_projects),
+        },
     )
 
 
@@ -83,4 +135,3 @@ def _classify_status(status_code: int | None) -> tuple[str, str]:
     if 500 <= status_code:
         return "unknown", "low"
     return "unknown", "low"
-

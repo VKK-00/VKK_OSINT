@@ -11,17 +11,46 @@ from osint_toolkit.modules.person import generate_username_candidates, normalize
 from osint_toolkit.modules.phone import detect_country, is_e164_like, normalize_phone
 from osint_toolkit.modules.ru_ua_sources import RuUaSourcePackModule
 from osint_toolkit.modules.telegram import TelegramScanModule, normalize_telegram_target
+from osint_toolkit.modules.username import normalize_username
 
 
 class EngineTests(unittest.TestCase):
     def test_username_scan_dry_run_returns_planned_profile_urls(self):
         engine = Engine([UsernameScanModule()])
-        findings = engine.scan(ScanTarget(kind="username", value="example_user"), RunConfig(limit=3))
+        findings = engine.scan(ScanTarget(kind="username", value="example-user"), RunConfig(limit=3))
 
         self.assertEqual(len(findings), 3)
         self.assertTrue(all(finding.status == "planned" for finding in findings))
         self.assertEqual(findings[0].source, "GitHub")
-        self.assertEqual(findings[0].url, "https://github.com/example_user")
+        self.assertEqual(findings[0].url, "https://github.com/example-user")
+
+    def test_username_scan_applies_platform_rules(self):
+        engine = Engine([UsernameScanModule()])
+        findings = engine.scan(ScanTarget(kind="username", value="example_user"), RunConfig(limit=3))
+
+        self.assertEqual(findings[0].source, "GitHub")
+        self.assertEqual(findings[0].status, "skipped")
+        self.assertEqual(findings[0].metadata["rule_status"], "skipped")
+        self.assertIn("GitHub username rule", findings[0].evidence)
+        self.assertEqual(findings[1].status, "planned")
+
+    def test_username_scan_normalizes_at_prefix(self):
+        engine = Engine([UsernameScanModule()])
+        findings = engine.scan(ScanTarget(kind="username", value="@durov"), RunConfig(limit=1))
+
+        self.assertEqual(normalize_username("@durov"), "durov")
+        self.assertEqual(findings[0].url, "https://github.com/durov")
+        self.assertEqual(findings[0].metadata["normalized_username"], "durov")
+
+    def test_username_site_dataset_includes_extra_social_and_dev_sources(self):
+        engine = Engine([UsernameScanModule()])
+        findings = engine.scan(ScanTarget(kind="username", value="exampleuser"), RunConfig())
+        sources = {finding.source for finding in findings}
+
+        self.assertIn("NPM", sources)
+        self.assertIn("Docker Hub", sources)
+        self.assertIn("Linktree", sources)
+        self.assertIn("Threads", sources)
 
     def test_username_scan_region_ru_includes_ru_sources(self):
         engine = Engine([UsernameScanModule()])

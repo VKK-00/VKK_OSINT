@@ -19,7 +19,8 @@ CLI работает в трёх режимах:
 Первый native-слой уже выполняет:
 
 - person-name expansion: нормализация имени, RU/UA transliteration и username-кандидаты;
-- username public profile checks по URL-шаблонам, совместимые по классу задачи с Sherlock/Maigret/WhatsMyName/Nexfil;
+- username public profile checks по 38 URL-шаблонам, совместимые по классу задачи с Sherlock/Maigret/WhatsMyName/Nexfil;
+- platform-specific username rules: несовместимые site checks возвращаются как `skipped`, без построения заведомо неверного URL;
 - email baseline checks: синтаксис и live domain resolution;
 - phone baseline checks: нормализация, E.164-like validation и country-prefix signal;
 - domain baseline recon: DNS resolution, HTTP/HTTPS metadata и presence security headers;
@@ -66,6 +67,10 @@ CLI работает в трёх режимах:
   - `Engine` — запуск подходящих модулей.
 - `osint_toolkit/modules/username.py`
   - `UsernameScanModule` — Sherlock/Maigret/WhatsMyName-подобные проверки публичных профилей.
+  - `normalize_username()` — нормализация leading `@` для username inputs.
+- `osint_toolkit/sites.py`
+  - `UsernameSite` — URL template, регион, upstream source projects и platform-specific username rule.
+  - `USERNAME_SITES` — текущий native dataset из 38 public profile templates.
 - `osint_toolkit/modules/person.py`
   - `PersonNameScanModule` — safe person-name expansion в username-кандидаты.
   - `generate_username_candidates()` — стабильные варианты `firstlast`, `first.last`, `first_initial_last` и RU/UA transliteration.
@@ -138,7 +143,7 @@ Scan-поток:
 1. Пользователь запускает `python -m osint_toolkit scan <kind> <value>`.
 2. CLI создаёт `ScanTarget` и `RunConfig`.
 3. `Engine` выбирает native-модули по `target.kind`.
-4. В dry-run модуль возвращает planned findings без сетевых запросов.
+4. В dry-run модуль возвращает planned findings без сетевых запросов или `skipped`, если username не проходит правило конкретной платформы.
 5. В live-режиме модуль выполняет публичные HTTP checks и возвращает `Finding`.
 
 Adapter-поток:
@@ -192,7 +197,7 @@ Case-store поток:
 
 Сканирование:
 
-`CLI target -> ScanTarget -> Engine -> ScanModule[] -> Finding[] -> table/Markdown/CSV/JSON`
+`CLI target -> ScanTarget -> Engine -> ScanModule[] -> Finding[] planned/skipped/live -> table/Markdown/CSV/JSON`
 
 Person expansion:
 
@@ -265,8 +270,8 @@ SQLite используется локально через стандартну
 python -m osint_toolkit stats
 python -m osint_toolkit catalog --kind people --direct-only --limit 10
 python -m osint_toolkit scan person "Ivan Petrenko" --limit 10
-python -m osint_toolkit scan username example_user --limit 10
-python -m osint_toolkit scan username example_user --region ru --live --limit 5
+python -m osint_toolkit scan username exampleuser --limit 10
+python -m osint_toolkit scan username exampleuser --region ru --live --limit 5
 python -m osint_toolkit scan email person@example.com --live
 python -m osint_toolkit scan phone +380441234567
 python -m osint_toolkit scan domain example.com --live
@@ -313,6 +318,7 @@ osint-toolkit stats
 - CLI читает уже проверенные CSV, а не тянет актуальные данные из GitHub. Это делает результаты воспроизводимыми.
 - Система строится вокруг единого `Finding`, чтобы результаты native-модулей и external adapters можно было объединять.
 - Person-name expansion выдаёт только низкоуверенные username-кандидаты; подтверждение делается отдельными username checks/adapters.
+- Username module проверяет platform-specific syntax до URL check, чтобы не превращать несовместимый username в ложный planned URL.
 - Adapter parser не считается источником истины: он нормализует stdout уже запущенного upstream CLI, а не заменяет native logic upstream-проекта.
 - Investigation adapter execution является opt-in: `--include-adapters` остаётся dry-run, а запуск внешнего кода требует отдельного `--execute-adapters`.
 - Investigation adapter allowlist выбирается оператором через повторяемый `--adapter`; без allowlist система использует совместимые adapters из `AdapterSpec`.
@@ -338,7 +344,7 @@ osint-toolkit stats
 - Каталог основан на snapshot от 2026-06-24; GitHub stars и актуальность проектов меняются.
 - Качество и безопасность внешних репозиториев не аудированы.
 - Native person-name expansion пока использует базовые шаблоны имени/фамилии и RU/UA transliteration; нет словарей никнеймов, исторических alias и platform-specific username rules.
-- Первый native username module покрывает только URL-template/status-code слой, а не всю логику Sherlock/Maigret: нет полного upstream site dataset, custom error rules, rate-limit logic и enrichment.
+- Первый native username module покрывает URL-template/status-code слой и часть platform syntax rules, но не всю логику Sherlock/Maigret: нет полного upstream site dataset, custom content error rules, rate-limit logic и enrichment.
 - Native email module пока не делает MX lookup, breach lookup или external API enrichment.
 - Native phone module пока не делает carrier lookup, reputation lookup или external API enrichment.
 - Telegram module пока не использует Telegram API и не получает private/group data.
@@ -356,6 +362,7 @@ osint-toolkit stats
 
 - При изменении CSV-схемы обновлять `Catalog.load()` и тесты.
 - При добавлении native-модуля обновлять `engine.py`, `cli.py`, README и тесты.
+- При изменении username site dataset/rules обновлять `sites.py`, username tests, README и parity-карту.
 - При изменении person-name expansion обновлять `modules/person.py`, graph/entity mapping, investigation tests и parity-карту.
 - При подключении upstream-проекта обновлять `adapters.py`, указать лицензию, режим интеграции и parity gap.
 - При изменении adapter profiles обновлять `adapters.py`, CLI-тесты, README и parity-карту.
@@ -384,3 +391,4 @@ osint-toolkit stats
 - 2026-06-24: добавлен повторяемый `investigate --adapter` allowlist для выбора конкретных upstream adapters в кейсе.
 - 2026-06-24: добавлены `AdapterProfile`, команда `adapter-profiles` и `investigate --adapter-profile` для готовых групп adapters.
 - 2026-06-24: добавлены `PersonNameScanModule`, `scan person` и `investigate --person` с derived username scan/adapters и graph-связью `person -> username`.
+- 2026-06-24: расширен native username dataset до 38 URL-шаблонов и добавлены platform-specific username rules со статусом `skipped`.

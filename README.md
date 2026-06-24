@@ -17,7 +17,7 @@
 - находить проекты, связанные с OSINT по лицам;
 - находить проекты и ресурсы, связанные с РФ, Украиной и русскоязычными платформами;
 - разворачивать имя человека в username-кандидаты с RU/UA transliteration;
-- выполнять native username profile checks по публичным URL-шаблонам;
+- выполнять native username profile checks по 38 публичным URL-шаблонам с platform-specific username rules;
 - выполнять baseline email checks: синтаксис и live domain resolution;
 - выполнять baseline phone checks: E.164-like нормализация и префикс региона;
 - выполнять baseline domain recon: DNS resolution, HTTP/HTTPS metadata и security header presence;
@@ -38,8 +38,8 @@ python -m osint_toolkit stats
 python -m osint_toolkit catalog --kind people --direct-only --limit 10
 python -m osint_toolkit catalog --kind ru-ua --level direct_ru_ua
 python -m osint_toolkit scan person "Ivan Petrenko" --limit 8
-python -m osint_toolkit scan username example_user --limit 8
-python -m osint_toolkit scan username example_user --region ru --live --limit 5
+python -m osint_toolkit scan username exampleuser --limit 8
+python -m osint_toolkit scan username exampleuser --region ru --live --limit 5
 python -m osint_toolkit scan email person@example.com --live
 python -m osint_toolkit scan phone +380441234567
 python -m osint_toolkit scan domain example.com --live
@@ -115,8 +115,8 @@ python -m osint_toolkit show sherlock-project/sherlock
 
 ```powershell
 python -m osint_toolkit scan person "Ivan Petrenko" --limit 10
-python -m osint_toolkit scan username example_user --limit 10
-python -m osint_toolkit scan username example_user --region ru --live --limit 10
+python -m osint_toolkit scan username exampleuser --limit 10
+python -m osint_toolkit scan username exampleuser --region ru --live --limit 10
 python -m osint_toolkit scan email person@example.com --live --format json
 python -m osint_toolkit scan phone +380441234567
 python -m osint_toolkit scan domain example.com --live
@@ -127,7 +127,7 @@ python -m osint_toolkit scan url https://example.com --live --format json
 
 Native person module делает safe username expansion: нормализует имя, транслитерирует RU/UA/кириллические символы и генерирует кандидаты вроде `ivanpetrenko`, `ivan.petrenko`, `ipetrenko`. Это не подтверждение аккаунтов, а список кандидатов для проверки через username scan и adapters.
 
-Сейчас native username module покрывает Sherlock/Maigret/WhatsMyName-подобный слой публичных profile URL checks. Полное 1:1 покрытие требует импорта upstream datasets и error rules либо подключения внешних CLI через adapters.
+Сейчас native username module покрывает Sherlock/Maigret/WhatsMyName-подобный слой публичных profile URL checks: 38 URL-шаблонов, RU-фильтр и platform-specific username rules. Если username не подходит конкретной платформе, finding получает `status=skipped`, а не строит заведомо неверный URL. Полное 1:1 покрытие требует импорта полного upstream dataset, richer error rules и content-based confidence либо подключения внешних CLI через adapters.
 
 Native email/phone modules являются baseline-слоем для Mosint/h8mail/pwnedOrNot/PhoneInfoga-подобных adapters. Они не делают account-enumeration и не запускают password recovery flows.
 
