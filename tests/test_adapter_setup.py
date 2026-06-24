@@ -90,6 +90,40 @@ class AdapterSetupTests(unittest.TestCase):
             ("user-scanner", "-u", "example_user", "-f", "json"),
         )
 
+    def test_social_analyzer_setup_uses_upstream_app_path_and_region_filter(self):
+        adapter = find_adapter("qeeqbox/social-analyzer")
+
+        with patch.dict(os.environ, {}, clear=True), patch("osint_toolkit.adapter_setup.shutil.which", return_value="C:\\node\\node.exe"):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "config_missing")
+        self.assertEqual(setup.missing_env, ("SOCIAL_ANALYZER_APP_JS",))
+        self.assertEqual(setup.install_kind, "manual")
+        self.assertIn("social-analyzer", setup.docs_url)
+
+        with patch.dict(os.environ, {"SOCIAL_ANALYZER_APP_JS": "C:\\tools\\social-analyzer\\app.js"}):
+            self.assertEqual(
+                adapter.render_command(ScanTarget(kind="username", value="example_user", region="ua")),
+                (
+                    "node",
+                    "C:\\tools\\social-analyzer\\app.js",
+                    "--username",
+                    "example_user",
+                    "--output",
+                    "json",
+                    "--mode",
+                    "fast",
+                    "--method",
+                    "all",
+                    "--filter",
+                    "good,maybe",
+                    "--profiles",
+                    "detected",
+                    "--countries",
+                    "ua",
+                ),
+            )
+
     def test_nexfil_setup_uses_isolated_workdir_reports(self):
         adapter = find_adapter("thewhiteh4t/nexfil")
 

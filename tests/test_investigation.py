@@ -115,6 +115,45 @@ class InvestigationTests(unittest.TestCase):
         }
         self.assertIn(("username", "kaifcodec", "produced_url", "url", "https://profiles.example.net/kaifcodec"), edges)
 
+    def test_execute_social_analyzer_adapter_adds_entities_and_edges(self):
+        completed = subprocess.CompletedProcess(
+            args=["node", "app.js", "--username", "example_user", "--output", "json"],
+            returncode=0,
+            stdout=(
+                '{"detected":[{"link":"https://github.com/example_user","status":"good","rate":"%100.00",'
+                '"country":"us"}]}'
+            ),
+            stderr="",
+        )
+
+        with patch.dict(os.environ, {"SOCIAL_ANALYZER_APP_JS": "C:\\tools\\social-analyzer\\app.js"}), patch(
+            "osint_toolkit.adapter_runner.shutil.which",
+            return_value="node",
+        ), patch("osint_toolkit.adapter_runner.subprocess.run", return_value=completed):
+            result = run_investigation(
+                (ScanTarget(kind="username", value="example_user", region="ru"),),
+                include_adapters=True,
+                execute_adapters=True,
+                adapter_repositories=("qeeqbox/social-analyzer",),
+            )
+
+        parsed = [finding for finding in result.adapter_findings if finding.module == "external-adapter-parser"]
+        self.assertEqual(parsed[0].metadata["parser"], "social-analyzer")
+        self.assertEqual(parsed[0].metadata["site_name"], "github.com")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("url", "https://github.com/example_user"), entities)
+        self.assertIn(("domain", "github.com"), entities)
+        self.assertIn(("username", "example_user"), entities)
+        self.assertIn(("country", "us"), entities)
+
+        edges = {
+            (edge.source_kind, edge.source_value.lower(), edge.relation, edge.target_kind, edge.target_value.lower())
+            for edge in result.edges
+        }
+        self.assertIn(("username", "example_user", "produced_url", "url", "https://github.com/example_user"), edges)
+        self.assertIn(("username", "example_user", "country_hint", "country", "us"), edges)
+
     def test_execute_snoop_adapter_adds_parsed_entities_and_edges(self):
         completed = subprocess.CompletedProcess(
             args=["snoop", "--no-func", "--found-print", "--include", "UA", "example_user"],

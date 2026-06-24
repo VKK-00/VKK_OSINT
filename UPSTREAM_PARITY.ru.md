@@ -48,6 +48,8 @@ python -m osint_toolkit scan username <username> --live
 - executable target-specific adapter для `kaifcodec/user-scanner`: `user-scanner -u <username> -f json`;
 - executable RU/UA-aware adapter для `snooppr/snoop`: `snoop --no-func --found-print [--include RU|UA] <username>`;
 - parser для Snoop stdout/CSV results: `найден!` -> `candidate`, `Увы!` -> `not_found`, `блок`/ошибки -> `error`;
+- executable adapter для `qeeqbox/social-analyzer`: `node <SOCIAL_ANALYZER_APP_JS> --username <username> --output json --mode fast --method all --filter good,maybe --profiles detected [--countries ru|ua]`;
+- parser для Social Analyzer JSON `detected`/`unknown`/`failed`: `detected` -> `candidate`, `unknown` -> `not_found`, `failed` -> `error`, с сохранением rate/status, site, profile URL, checked URL и public metadata;
 - executable adapter для `sherlock-project/sherlock`: при `--execute` добавляются `--no-color --print-all --csv --txt --folderoutput <tempdir>`;
 - parser для Sherlock stdout и CSV/TXT reports: `Claimed` -> `candidate`, `Available` -> `not_found`, `Unknown`/`WAF` -> `error`, `Illegal` -> `skipped`;
 - executable adapter для `thewhiteh4t/nexfil`: `nexfil -u <username>` запускается в isolated temporary workdir/HOME;
@@ -59,6 +61,7 @@ python -m osint_toolkit scan username <username> --live
 - `sherlock-project/sherlock`
 - `soxoj/maigret`
 - `WebBreacher/WhatsMyName`
+- `qeeqbox/social-analyzer`
 - `thewhiteh4t/nexfil`
 - `p1ngul1n0/blackbird`
 - `iojw/socialscan`
@@ -76,6 +79,7 @@ Gap до полного 1:1:
 - content-based confidence пока частичный: нет полного набора marker rules из upstream datasets;
 - Maigret подключён hybrid: sanitized site rules импортированы native, а web UI, PDF/HTML/XMind reports, recursive policy tuning, proxies/Tor/I2P и AI mode пока не перенесены в native UI;
 - Snoop подключён adapter-first, но локальная установка/обновление Snoop пока остаются операторским действием;
+- Social Analyzer подключён adapter-first через фактический upstream Node app.js и JSON output; локальная установка, Node >= 20.18.1, web/API UI, screenshots/OCR, slow/special modes и полный metadata/screenshot pipeline остаются операторским/upstream слоем;
 - нет сохранения истории запусков.
 
 ## Следующие native/adapters группы
@@ -324,6 +328,7 @@ python -m osint_toolkit adapter-setup <repository>
 - adapter-specific parser for Maigret NDJSON/simple JSON and CSV report rows;
 - adapter-specific parser for `user-scanner` JSON and verbose line output;
 - adapter-specific parser for Snoop stdout and CSV report rows;
+- adapter-specific parser for Social Analyzer JSON detected/unknown/failed profile rows;
 - adapter-specific parser for PhoneInfoga CLI sections and REST/API-like JSON scanner outputs;
 - adapter-specific parser for Subfinder JSONL/plain subdomain output;
 - adapter-specific parser for httpx JSONL/plain HTTP probe output;
@@ -340,7 +345,7 @@ python -m osint_toolkit adapter-setup <repository>
 Gap:
 
 - нет автоматической установки upstream CLI;
-- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output;
+- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, Social Analyzer JSON, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.
 
@@ -370,7 +375,7 @@ python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value p
 - person seed expansion into username candidates;
 - единый native scan через `Engine`;
 - optional adapter dry-runs;
-- reusable adapter profiles such as `username-full`, `email-safe`, `phone-safe` and `username-ru-ua`;
+- reusable adapter profiles such as `username-full`, `email-safe`, `phone-safe` and `username-ru-ua`; username profiles now include Social Analyzer alongside Sherlock, Maigret, Snoop and related username tools;
 - repeated `--adapter <repository>` allowlist for one case;
 - explicit executed adapter ingestion via `--execute-adapters`;
 - Markdown/JSON report;

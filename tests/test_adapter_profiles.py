@@ -13,7 +13,9 @@ class AdapterProfileTests(unittest.TestCase):
         self.assertIn("broad-recon", profiles)
         self.assertEqual(find_adapter_profile("USERNAME-FULL").name, "username-full")
         self.assertIn("sherlock-project/sherlock", profiles["username-full"].repositories)
+        self.assertIn("qeeqbox/social-analyzer", profiles["username-full"].repositories)
         self.assertIn("kaifcodec/user-scanner", profiles["username-full"].repositories)
+        self.assertIn("qeeqbox/social-analyzer", profiles["username-ru-ua"].repositories)
         self.assertIn("khast3x/h8mail", profiles["email-safe"].repositories)
         self.assertIn("kaifcodec/user-scanner", profiles["email-safe"].repositories)
         self.assertIn("projectdiscovery/subfinder", profiles["domain-recon"].repositories)
@@ -36,6 +38,7 @@ class AdapterProfileTests(unittest.TestCase):
             (
                 "snooppr/snoop",
                 "soxoj/maigret",
+                "qeeqbox/social-analyzer",
                 "sherlock-project/sherlock",
             ),
         )

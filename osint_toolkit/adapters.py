@@ -127,6 +127,9 @@ class AdapterSpec:
             "region_include_flag": _region_include_flag(target.region),
             "region_tag": _region_tag(target.region),
             "region_tags_flag": _region_tags_flag(target.region),
+            "social_analyzer_countries_flag": _social_analyzer_countries_flag(target.region),
+            "social_analyzer_country": _social_analyzer_country(target.region),
+            "social_analyzer_app": _social_analyzer_app_value(),
             "instagram_profile": _instagram_profile_value(target.value),
             "bbot_target": _bbot_target_value(target),
             "spiderfoot_script": _spiderfoot_script_value(),
@@ -199,6 +202,38 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         install_kind="dataset",
         install_note="Dataset snapshot is bundled as osint_toolkit/resources/whatsmyname_wmn_data.json; no executable adapter is configured.",
         docs_url="https://github.com/WebBreacher/WhatsMyName",
+    ),
+    AdapterSpec(
+        "qeeqbox/social-analyzer",
+        "social profile discovery with rating and metadata",
+        "external_cli",
+        "AGPL-3.0",
+        "planned",
+        "node <SOCIAL_ANALYZER_APP_JS> --username <username> --output json --filter good,maybe --profiles detected [--countries ru|ua]",
+        "High-priority person/profile upstream. Kept as an external adapter because of AGPL; execute mode ingests JSON detected/unknown/failed profiles.",
+        ("username",),
+        (
+            "node",
+            "{social_analyzer_app}",
+            "--username",
+            "{target_value}",
+            "--output",
+            "json",
+            "--mode",
+            "fast",
+            "--method",
+            "all",
+            "--filter",
+            "good,maybe",
+            "--profiles",
+            "detected",
+            "{social_analyzer_countries_flag}",
+            "{social_analyzer_country}",
+        ),
+        install_kind="manual",
+        install_note="Clone upstream social-analyzer, run npm install, and set SOCIAL_ANALYZER_APP_JS to its local app.js path.",
+        docs_url="https://github.com/qeeqbox/social-analyzer",
+        required_env=("SOCIAL_ANALYZER_APP_JS",),
     ),
     AdapterSpec(
         "instaloader/instaloader",
@@ -575,6 +610,7 @@ ADAPTER_PROFILES: tuple[AdapterProfile, ...] = (
         repositories=(
             "sherlock-project/sherlock",
             "soxoj/maigret",
+            "qeeqbox/social-analyzer",
             "thewhiteh4t/nexfil",
             "snooppr/snoop",
             "instaloader/instaloader",
@@ -590,6 +626,7 @@ ADAPTER_PROFILES: tuple[AdapterProfile, ...] = (
         repositories=(
             "snooppr/snoop",
             "soxoj/maigret",
+            "qeeqbox/social-analyzer",
             "sherlock-project/sherlock",
         ),
         note="Snoop is the primary RU/UA-oriented username adapter in the current manifest.",
@@ -730,6 +767,18 @@ def _region_tag(region: str) -> str:
 
 def _region_tags_flag(region: str) -> str:
     return "--tags" if _region_tag(region) else ""
+
+
+def _social_analyzer_country(region: str) -> str:
+    return {"ru": "ru", "ua": "ua"}.get(region.lower(), "")
+
+
+def _social_analyzer_countries_flag(region: str) -> str:
+    return "--countries" if _social_analyzer_country(region) else ""
+
+
+def _social_analyzer_app_value() -> str:
+    return os.environ.get("SOCIAL_ANALYZER_APP_JS", "<SOCIAL_ANALYZER_APP_JS>").strip() or "<SOCIAL_ANALYZER_APP_JS>"
 
 
 def _instagram_profile_value(value: str) -> str:

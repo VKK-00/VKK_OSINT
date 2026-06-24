@@ -856,6 +856,71 @@ class AdapterParserTests(unittest.TestCase):
         self.assertIn(("technology", "nginx"), entities)
         self.assertIn(("phone", "+380441234567"), entities)
 
+    def test_parse_social_analyzer_json_profiles(self):
+        findings = parse_adapter_output(
+            "qeeqbox/social-analyzer",
+            ScanTarget(kind="username", value="example_user"),
+            """
+            {
+              "detected": [
+                {
+                  "link": "https://github.com/example_user",
+                  "status": "good",
+                  "rate": "%100.00",
+                  "title": "Example User",
+                  "language": "en",
+                  "type": "coding",
+                  "country": "us",
+                  "metadata": [{"key": "bio"}]
+                },
+                {
+                  "link": "https://twitter.com/example_user",
+                  "status": "maybe",
+                  "rate": "%66.67"
+                }
+              ],
+              "unknown": [
+                {
+                  "site": "Missing Example",
+                  "link": "https://missing.example/example_user"
+                }
+              ],
+              "failed": [
+                {
+                  "site": "Broken Example",
+                  "link": "https://broken.example/example_user"
+                }
+              ]
+            }
+            """,
+        )
+
+        statuses = {finding.metadata.get("site_name"): finding.status for finding in findings}
+        self.assertEqual(statuses["github.com"], "candidate")
+        self.assertEqual(statuses["twitter.com"], "candidate")
+        self.assertEqual(statuses["Missing Example"], "not_found")
+        self.assertEqual(statuses["Broken Example"], "error")
+
+        github = next(finding for finding in findings if finding.url == "https://github.com/example_user")
+        self.assertEqual(github.confidence, "high")
+        self.assertEqual(github.metadata["parser"], "social-analyzer")
+        self.assertEqual(github.metadata["result_status"], "good")
+        self.assertEqual(github.metadata["rate"], "%100.00")
+        self.assertEqual(github.metadata["platform_domain"], "github.com")
+        self.assertEqual(github.metadata["social_username"], "example_user")
+        self.assertEqual(github.metadata["metadata_count"], "1")
+
+        missing = next(finding for finding in findings if finding.metadata.get("site_name") == "Missing Example")
+        self.assertEqual(missing.url, "")
+        self.assertEqual(missing.metadata["checked_url"], "https://missing.example/example_user")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("url", "https://github.com/example_user"), entities)
+        self.assertIn(("domain", "github.com"), entities)
+        self.assertIn(("domain", "twitter.com"), entities)
+        self.assertIn(("username", "example_user"), entities)
+        self.assertIn(("country", "us"), entities)
+
     def test_run_adapter_findings_adds_parsed_results_after_execution(self):
         completed = subprocess.CompletedProcess(
             args=["sherlock", "example_user"],
@@ -1160,6 +1225,34 @@ class AdapterParserTests(unittest.TestCase):
         self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
         self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings[1:]))
         self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings[1:]))
+
+    def test_run_social_analyzer_adapter_parses_json_stdout_after_execution(self):
+        def fake_run(args, **kwargs):
+            self.assertEqual(args[:4], ["C:\\node\\node.exe", "C:\\tools\\social-analyzer\\app.js", "--username", "example_user"])
+            self.assertIn("--output", args)
+            self.assertIn("json", args)
+            self.assertIn("--countries", args)
+            self.assertIn("ru", args)
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout='{"detected":[{"link":"https://github.com/example_user","status":"good","rate":"%100.00"}]}',
+                stderr="",
+            )
+
+        with patch.dict(os.environ, {"SOCIAL_ANALYZER_APP_JS": "C:\\tools\\social-analyzer\\app.js"}), patch(
+            "osint_toolkit.adapter_runner.shutil.which",
+            return_value="C:\\node\\node.exe",
+        ), patch("osint_toolkit.adapter_runner.subprocess.run", side_effect=fake_run):
+            findings = run_adapter_findings(
+                "qeeqbox/social-analyzer",
+                ScanTarget(kind="username", value="example_user", region="ru"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertTrue(any(finding.metadata.get("parser") == "social-analyzer" for finding in findings[1:]))
+        self.assertTrue(any(finding.url == "https://github.com/example_user" for finding in findings[1:]))
 
     def test_run_bbot_adapter_reads_generated_json_events_after_execution(self):
         def fake_run(args, **kwargs):

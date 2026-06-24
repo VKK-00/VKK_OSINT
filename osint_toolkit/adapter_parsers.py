@@ -39,6 +39,7 @@ PARSER_REPOSITORIES = {
     "sherlock-project/sherlock",
     "soxoj/maigret",
     "thewhiteh4t/nexfil",
+    "qeeqbox/social-analyzer",
     "snooppr/snoop",
     "alpkeskin/mosint",
     "khast3x/h8mail",
@@ -86,6 +87,8 @@ def parse_adapter_output(
         return _sherlock_findings(repository, target, text)
     if repository == "thewhiteh4t/nexfil":
         return _nexfil_findings(repository, target, text)
+    if repository == "qeeqbox/social-analyzer":
+        return _social_analyzer_findings(repository, target, text)
     if repository == "kaifcodec/user-scanner":
         return _user_scanner_findings(repository, target, text)
     if repository == "snooppr/snoop":
@@ -3877,6 +3880,187 @@ def _snoop_evidence(site_name: str, status_text: str, region: str, http_status: 
     if details:
         evidence += f" ({', '.join(details)})"
     return evidence
+
+
+def _social_analyzer_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    payload = _load_json_payload(text)
+    if isinstance(payload, dict):
+        findings: list[Finding] = []
+        seen: set[tuple[str, str, str]] = set()
+        for group in ("detected", "unknown", "failed"):
+            records = payload.get(group)
+            if not isinstance(records, list):
+                continue
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                finding = _social_analyzer_record_finding(repository, target, record, group, seen)
+                if finding:
+                    findings.append(finding)
+        return tuple(findings)
+
+    findings = []
+    seen_lines: set[tuple[str, str, str]] = set()
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact:
+            continue
+        findings.extend(_url_findings(repository, target, compact, seen_lines))
+    return tuple(findings)
+
+
+def _social_analyzer_record_finding(
+    repository: str,
+    target: ScanTarget,
+    record: dict[str, Any],
+    group: str,
+    seen: set[tuple[str, str, str]],
+) -> Finding | None:
+    profile_url = _first_scalar(record.get("link") or record.get("url") or record.get("profile_url"))
+    checked_url = profile_url if profile_url.startswith(("http://", "https://")) else ""
+    site_name = _social_analyzer_site_name(record, checked_url)
+    raw_status = _first_scalar(record.get("status"))
+    rate = _first_scalar(record.get("rate"))
+    status, confidence = _social_analyzer_status(group, raw_status, rate)
+    finding_url = checked_url if status == "candidate" else ""
+
+    if not site_name and not checked_url and not raw_status:
+        return None
+
+    key = (group, site_name.lower(), checked_url.lower() or json.dumps(record, sort_keys=True, default=str))
+    if key in seen:
+        return None
+    seen.add(key)
+
+    metadata = _social_analyzer_metadata(
+        repository=repository,
+        target=target,
+        record=record,
+        group=group,
+        raw_status=raw_status,
+        rate=rate,
+        site_name=site_name,
+        profile_url=finding_url,
+        checked_url="" if finding_url else checked_url,
+    )
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status=status,
+        url=finding_url,
+        confidence=confidence,
+        evidence=_short(_social_analyzer_evidence(site_name, group, raw_status, rate)),
+        metadata=metadata,
+    )
+
+
+def _social_analyzer_metadata(
+    *,
+    repository: str,
+    target: ScanTarget,
+    record: dict[str, Any],
+    group: str,
+    raw_status: str,
+    rate: str,
+    site_name: str,
+    profile_url: str,
+    checked_url: str,
+) -> dict[str, str]:
+    metadata = {
+        "repository": repository,
+        "parser": "social-analyzer",
+        "target_kind": target.kind,
+        "profile_group": group,
+    }
+    if site_name:
+        metadata["site_name"] = site_name
+    if raw_status:
+        metadata["result_status"] = raw_status
+    if rate:
+        metadata["rate"] = rate
+    if target.kind == "username":
+        metadata["social_username"] = target.value.strip().lstrip("@")
+    url = profile_url or checked_url
+    domain = (urlparse(url).hostname or "").lower()
+    if domain:
+        metadata["platform_domain"] = domain
+    if checked_url:
+        metadata["checked_url"] = checked_url
+    for source_key, metadata_key in (
+        ("title", "title"),
+        ("language", "language"),
+        ("type", "profile_type"),
+        ("country", "country"),
+    ):
+        value = _first_scalar(record.get(source_key))
+        if value:
+            metadata[metadata_key] = value
+    extracted = _metadata_list_text(record.get("extracted"))
+    if extracted:
+        metadata["extracted"] = extracted
+    metadata_count = _social_analyzer_metadata_count(record.get("metadata"))
+    if metadata_count:
+        metadata["metadata_count"] = metadata_count
+    return metadata
+
+
+def _social_analyzer_status(group: str, raw_status: str, rate: str) -> tuple[str, str]:
+    normalized_status = raw_status.strip().lower()
+    if group == "failed":
+        return "error", "low"
+    if group == "unknown":
+        return "not_found", "medium"
+    if normalized_status == "good":
+        return "candidate", "high"
+    if normalized_status == "maybe":
+        return "candidate", "medium"
+    if normalized_status == "bad":
+        return "candidate", "low"
+    numeric_rate = _social_analyzer_rate_number(rate)
+    if numeric_rate is not None:
+        if numeric_rate >= 90:
+            return "candidate", "high"
+        if numeric_rate >= 50:
+            return "candidate", "medium"
+        return "candidate", "low"
+    if group == "detected":
+        return "candidate", "medium"
+    return "observed", "medium"
+
+
+def _social_analyzer_rate_number(rate: str) -> float | None:
+    cleaned = rate.strip().strip("%")
+    if not cleaned:
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _social_analyzer_site_name(record: dict[str, Any], url: str) -> str:
+    for key in ("site", "site_name", "name", "website"):
+        value = _first_scalar(record.get(key))
+        if value:
+            return value
+    hostname = (urlparse(url).hostname or "").lower()
+    if hostname.startswith("www."):
+        hostname = hostname[4:]
+    return hostname
+
+
+def _social_analyzer_metadata_count(value: object) -> str:
+    if isinstance(value, (list, tuple, dict)):
+        return str(len(value))
+    return ""
+
+
+def _social_analyzer_evidence(site_name: str, group: str, raw_status: str, rate: str) -> str:
+    label = site_name or "profile"
+    details = [detail for detail in (raw_status, rate) if detail]
+    suffix = f" ({', '.join(details)})" if details else ""
+    return f"Social Analyzer {group}: {label}{suffix}"
 
 
 def _user_scanner_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
