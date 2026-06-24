@@ -25,6 +25,8 @@ CLI работает в двух режимах:
 - RU/UA source pack: curated карты, Telegram/RU platforms, geospatial и pastebin источники;
 - базовый web metadata scan по URL, совместимый с начальным web-check слоем;
 - external adapter dry-run/execute runner для настроенных upstream CLI;
+- adapter doctor: проверка фактической доступности upstream CLI в `PATH`;
+- investigation runner: один кейс, несколько seed-типов, единый Markdown/JSON отчёт;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
 
@@ -71,6 +73,11 @@ CLI работает в двух режимах:
   - `AdapterSpec` — карта upstream-проектов, лицензий, режима интеграции и текущего статуса.
 - `osint_toolkit/adapter_runner.py`
   - `run_adapter()` — dry-run или явный запуск внешнего CLI adapter без shell.
+- `osint_toolkit/doctor.py`
+  - `inspect_adapters()` — диагностика доступности upstream adapters.
+- `osint_toolkit/investigation.py`
+  - `run_investigation()` — multi-target native scan.
+  - `render_investigation_markdown()` — единый отчёт по кейсу.
 - `osint_toolkit/workflows.py`
   - `recommend_projects()` — подбор ресурсов под тип задачи.
   - `render_brief()` — генерация Markdown-brief.
@@ -123,6 +130,10 @@ Adapter-поток:
 
 `CLI adapter request -> AdapterSpec -> command_template -> dry-run/external process -> Finding`
 
+Investigation:
+
+`multiple CLI seeds -> ScanTarget[] -> Engine -> Finding[] -> optional adapter dry-runs -> Markdown/JSON report`
+
 ## Внешние интеграции
 
 В рантайме сетевые интеграции есть только в явном live-режиме scan-команд.
@@ -162,7 +173,9 @@ python -m osint_toolkit scan telegram "@durov"
 python -m osint_toolkit scan ru-ua all --region ua
 python -m osint_toolkit scan url https://example.com --live
 python -m osint_toolkit adapters
+python -m osint_toolkit doctor
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
+python -m osint_toolkit investigate --username example_user --domain example.com --telegram "@durov" --include-adapters
 python -m osint_toolkit recommend username --region ru
 python -m osint_toolkit brief --task username --target-value example --out reports/example.md
 ```
@@ -206,6 +219,7 @@ osint-toolkit stats
 - Telegram module пока не использует Telegram API и не получает private/group data.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
+- Investigation runner пока не хранит историю кейсов в базе данных; отчёт пишется в файл или stdout.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
 

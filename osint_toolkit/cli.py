@@ -6,17 +6,16 @@ import sys
 from .adapter_runner import run_adapter
 from .adapters import filter_adapters
 from .catalog import Catalog, CatalogError
-from .engine import Engine, RunConfig, ScanTarget
-from .modules import (
-    DomainScanModule,
-    EmailScanModule,
-    PhoneScanModule,
-    RuUaSourcePackModule,
-    TelegramScanModule,
-    UsernameScanModule,
-    WebMetadataModule,
+from .doctor import inspect_adapters
+from .engine import RunConfig, ScanTarget
+from .investigation import (
+    render_investigation_json,
+    render_investigation_markdown,
+    run_investigation,
+    write_investigation,
 )
 from .output import format_adapters, format_findings, format_project_detail, format_projects, format_stats
+from .runtime import build_default_engine
 from .workflows import TASK_PROFILES, recommend_projects, render_brief, render_recommendation, write_brief
 
 
@@ -73,6 +72,11 @@ def build_parser() -> argparse.ArgumentParser:
     adapters.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     adapters.set_defaults(handler=handle_adapters)
 
+    doctor = subparsers.add_parser("doctor", help="Check local readiness of configured upstream adapters.")
+    doctor.add_argument("--status", choices=("partial_native", "planned", "restricted"))
+    doctor.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
+    doctor.set_defaults(handler=handle_doctor)
+
     run = subparsers.add_parser("run-adapter", help="Dry-run or execute one configured upstream adapter.")
     run.add_argument("repository", help="Adapter repository, for example sherlock-project/sherlock.")
     run.add_argument("target_kind", choices=("username", "email", "phone", "domain", "url", "telegram", "ru-ua"))
@@ -99,6 +103,24 @@ def build_parser() -> argparse.ArgumentParser:
     brief.add_argument("--limit", type=int, default=10)
     brief.add_argument("--out", required=True, help="Output Markdown path.")
     brief.set_defaults(handler=handle_brief)
+
+    investigate = subparsers.add_parser("investigate", help="Run a multi-target OSINT case through native modules.")
+    investigate.add_argument("--title", default="OSINT investigation")
+    investigate.add_argument("--username", action="append", default=[])
+    investigate.add_argument("--email", action="append", default=[])
+    investigate.add_argument("--phone", action="append", default=[])
+    investigate.add_argument("--domain", action="append", default=[])
+    investigate.add_argument("--url", action="append", default=[])
+    investigate.add_argument("--telegram", action="append", default=[])
+    investigate.add_argument("--ru-ua", action="append", default=[])
+    investigate.add_argument("--region", choices=("all", "ru", "ua"), default="all")
+    investigate.add_argument("--live", action="store_true", help="Perform live checks for native modules.")
+    investigate.add_argument("--include-adapters", action="store_true", help="Add adapter dry-run commands.")
+    investigate.add_argument("--adapter-limit", type=int, default=20)
+    investigate.add_argument("--timeout", type=float, default=10.0)
+    investigate.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    investigate.add_argument("--out", help="Write investigation report to this path.")
+    investigate.set_defaults(handler=handle_investigate)
 
     return parser
 
@@ -130,17 +152,7 @@ def handle_show(args: argparse.Namespace) -> int:
 
 
 def handle_scan(args: argparse.Namespace) -> int:
-    engine = Engine(
-        [
-            UsernameScanModule(),
-            EmailScanModule(),
-            PhoneScanModule(),
-            DomainScanModule(),
-            WebMetadataModule(),
-            TelegramScanModule(),
-            RuUaSourcePackModule(),
-        ]
-    )
+    engine = build_default_engine()
     target = ScanTarget(kind=args.target_kind, value=args.target_value, region=args.region)
     config = RunConfig(live=args.live, timeout=args.timeout, limit=args.limit)
     findings = engine.scan(target, config)
@@ -150,6 +162,11 @@ def handle_scan(args: argparse.Namespace) -> int:
 
 def handle_adapters(args: argparse.Namespace) -> int:
     print(format_adapters(filter_adapters(args.status), output_format=args.format))
+    return 0
+
+
+def handle_doctor(args: argparse.Namespace) -> int:
+    print(format_findings(inspect_adapters(args.status), output_format=args.format))
     return 0
 
 
@@ -182,12 +199,47 @@ def handle_brief(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_investigate(args: argparse.Namespace) -> int:
+    targets = _targets_from_args(args)
+    if not targets:
+        raise ValueError("At least one investigation seed is required.")
+    result = run_investigation(
+        targets,
+        title=args.title,
+        live=args.live,
+        timeout=args.timeout,
+        include_adapters=args.include_adapters,
+        adapter_limit=args.adapter_limit,
+    )
+    content = (
+        render_investigation_json(result)
+        if args.format == "json"
+        else render_investigation_markdown(result)
+    )
+    if args.out:
+        path = write_investigation(args.out, content)
+        print(f"Wrote {path}")
+    else:
+        print(content)
+    return 0
+
+
 def _add_data_dir(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--data-dir", help="Directory with the OSINT snapshot CSV files.")
 
 
 def _load(args: argparse.Namespace) -> Catalog:
     return Catalog.load(args.data_dir)
+
+
+def _targets_from_args(args: argparse.Namespace) -> tuple[ScanTarget, ...]:
+    targets: list[ScanTarget] = []
+    for kind in ("username", "email", "phone", "domain", "url", "telegram"):
+        for value in getattr(args, kind):
+            targets.append(ScanTarget(kind=kind, value=value, region=args.region))
+    for value in getattr(args, "ru_ua"):
+        targets.append(ScanTarget(kind="ru-ua", value=value, region=args.region))
+    return tuple(targets)
 
 
 if __name__ == "__main__":

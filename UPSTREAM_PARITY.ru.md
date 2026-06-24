@@ -232,6 +232,44 @@ Gap:
 - нет нормализации complex outputs в сущности graph model;
 - нет per-adapter config/API key handling.
 
+## Case investigation runner
+
+Команда:
+
+```powershell
+python -m osint_toolkit investigate --username <name> --email <email> --domain <domain>
+python -m osint_toolkit investigate --username <name> --include-adapters --out reports/case.md
+```
+
+Уже реализовано:
+
+- несколько seed values в одном запуске;
+- единый native scan через `Engine`;
+- optional adapter dry-runs;
+- Markdown/JSON report;
+- review checklist in every Markdown report.
+
+Gap:
+
+- нет persistent case database;
+- нет graph/entity merge;
+- нет parser-слоя для executed adapter outputs;
+- нет UI для просмотра кейса.
+
+## Adapter doctor
+
+Команда:
+
+```powershell
+python -m osint_toolkit doctor
+```
+
+Уже реализовано:
+
+- executable lookup in `PATH`;
+- statuses: available, missing, not_configured, restricted;
+- table/Markdown/CSV/JSON output.
+
 ## Adapter statuses
 
 `python -m osint_toolkit adapters` is the executable status view. Keep `osint_toolkit/adapters.py` as the machine-readable source and this file as the human-readable roadmap.

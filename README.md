@@ -42,7 +42,9 @@ python -m osint_toolkit scan telegram "@durov"
 python -m osint_toolkit scan ru-ua all --region ua
 python -m osint_toolkit scan url https://example.com --live
 python -m osint_toolkit adapters
+python -m osint_toolkit doctor
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
+python -m osint_toolkit investigate --username example_user --domain example.com --telegram "@durov" --include-adapters
 python -m osint_toolkit recommend username --region ru --limit 8
 python -m osint_toolkit brief --task telegram --region ua --target-value "public channel" --out reports/telegram_ua.md
 ```
@@ -133,6 +135,25 @@ python -m osint_toolkit run-adapter sundowndev/phoneinfoga phone +380441234567
 ```
 
 Restricted adapters требуют дополнительный флаг `--allow-restricted`; без него возвращается `restricted`.
+
+### `doctor`
+
+Проверяет, какие upstream adapters реально готовы к запуску в текущей системе: есть ли executable в `PATH`, есть ли command template, restricted ли adapter.
+
+```powershell
+python -m osint_toolkit doctor
+python -m osint_toolkit doctor --status planned --format markdown
+```
+
+### `investigate`
+
+Запускает несколько native-модулей по одному кейсу и собирает единый Markdown/JSON отчёт. По умолчанию live-запросы не выполняются.
+
+```powershell
+python -m osint_toolkit investigate --title "example case" --username example_user --email person@example.com --domain example.com
+python -m osint_toolkit investigate --username example_user --telegram "@durov" --ru-ua all --region ua --include-adapters --out reports/example_case.md
+python -m osint_toolkit investigate --domain example.com --live --format json
+```
 
 Статусы:
 

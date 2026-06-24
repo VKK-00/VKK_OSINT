@@ -2,7 +2,9 @@ import unittest
 
 from osint_toolkit.adapters import filter_adapters
 from osint_toolkit.adapter_runner import run_adapter
+from osint_toolkit.doctor import inspect_adapters
 from osint_toolkit.engine import Engine, RunConfig, ScanTarget
+from osint_toolkit.investigation import render_investigation_markdown, run_investigation
 from osint_toolkit.modules import DomainScanModule, EmailScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
 from osint_toolkit.modules.domain import normalize_domain
 from osint_toolkit.modules.phone import detect_country, is_e164_like, normalize_phone
@@ -136,6 +138,31 @@ class EngineTests(unittest.TestCase):
         )
 
         self.assertEqual(finding.status, "restricted")
+
+    def test_doctor_reports_restricted_adapter(self):
+        findings = inspect_adapters("restricted")
+        statuses = {finding.source: finding.status for finding in findings}
+
+        self.assertEqual(statuses["megadose/holehe"], "restricted")
+
+    def test_investigation_runs_multiple_targets_and_adapter_dry_runs(self):
+        result = run_investigation(
+            (
+                ScanTarget(kind="username", value="example_user"),
+                ScanTarget(kind="domain", value="example.com"),
+            ),
+            title="test case",
+            include_adapters=True,
+            adapter_limit=3,
+        )
+
+        self.assertEqual(result.title, "test case")
+        self.assertTrue(any(finding.module == "username-public-profiles" for finding in result.findings))
+        self.assertTrue(any(finding.module == "domain-baseline" for finding in result.findings))
+        self.assertTrue(any(finding.module == "external-adapter" for finding in result.adapter_findings))
+        markdown = render_investigation_markdown(result)
+        self.assertIn("# test case", markdown)
+        self.assertIn("Adapter Dry Runs", markdown)
 
 
 if __name__ == "__main__":

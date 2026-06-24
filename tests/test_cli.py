@@ -80,6 +80,34 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("restricted", result.stdout)
 
+    def test_doctor_command(self):
+        result = self.run_cli("doctor", "--status", "restricted")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("megadose/holehe", result.stdout)
+        self.assertIn("restricted", result.stdout)
+
+    def test_investigate_command_writes_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "case.md"
+            result = self.run_cli(
+                "investigate",
+                "--title",
+                "example case",
+                "--username",
+                "example_user",
+                "--domain",
+                "example.com",
+                "--include-adapters",
+                "--out",
+                str(output),
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(output.exists())
+            content = output.read_text(encoding="utf-8")
+            self.assertIn("# example case", content)
+            self.assertIn("Native Findings", content)
+            self.assertIn("Adapter Dry Runs", content)
+
     def test_brief_command_writes_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "brief.md"
