@@ -67,6 +67,8 @@ class EngineTests(unittest.TestCase):
         sources = {site.name for site in USERNAME_SITES}
         imported_1337x = next(site for site in USERNAME_SITES if site.name == "1337x")
         anilist = next(site for site in USERNAME_SITES if site.name == "Anilist")
+        avizo = next(site for site in USERNAME_SITES if site.name == "Avizo")
+        wordpress = next(site for site in USERNAME_SITES if site.name == "WordPress")
 
         self.assertGreaterEqual(SHERLOCK_IMPORTED_SITE_COUNT, 450)
         self.assertGreaterEqual(len(USERNAME_SITES), 450)
@@ -78,6 +80,8 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(anilist.url_template, "https://graphql.anilist.co/")
         self.assertEqual(anilist.profile_url_template, "https://anilist.co/user/{username}/")
         self.assertIn('"variables":{"name":"{username}"}', anilist.request_body_template)
+        self.assertEqual(avizo.not_found_url_template, "https://www.avizo.cz/")
+        self.assertEqual(wordpress.not_found_url_template, "wordpress.com/typo/?subdomain=")
 
     def test_curated_username_sites_take_precedence_over_sherlock_duplicates(self):
         github = next(site for site in USERNAME_SITES if site.name == "GitHub")
@@ -284,6 +288,46 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(classification.status, "not_found")
         self.assertEqual(classification.confidence, "high")
         self.assertEqual(classification.content_rule, "not_found_status")
+
+    def test_username_live_classifier_uses_response_url_not_found_rule(self):
+        site = UsernameSite(
+            "Example",
+            "https://example.com/{username}",
+            not_found_url_template="https://example.com/not-found/{username}",
+        )
+        classification = classify_username_http_result(
+            site,
+            "missinguser",
+            HttpResult(
+                url="https://example.com/missinguser",
+                final_url="https://example.com/not-found/missinguser/",
+                status_code=200,
+            ),
+        )
+
+        self.assertEqual(classification.status, "not_found")
+        self.assertEqual(classification.confidence, "high")
+        self.assertEqual(classification.content_rule, "response_url")
+
+    def test_username_live_classifier_matches_scheme_less_response_url_prefix(self):
+        site = UsernameSite(
+            "Example",
+            "https://{username}.example.com/",
+            not_found_url_template="example.com/typo/?subdomain=",
+        )
+        classification = classify_username_http_result(
+            site,
+            "missinguser",
+            HttpResult(
+                url="https://missinguser.example.com/",
+                final_url="https://example.com/typo/?subdomain=missinguser",
+                status_code=200,
+            ),
+        )
+
+        self.assertEqual(classification.status, "not_found")
+        self.assertEqual(classification.confidence, "high")
+        self.assertEqual(classification.content_rule, "response_url")
 
     def test_username_live_classifier_does_not_use_ambiguous_200_missing_status_without_marker(self):
         site = UsernameSite(

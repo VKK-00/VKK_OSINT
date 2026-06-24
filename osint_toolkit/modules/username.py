@@ -127,6 +127,15 @@ def classify_username_http_result(
             content_rule=content_rule,
             content_marker=content_marker,
         )
+    not_found_url = site.not_found_url_for(username)
+    if _url_matches_rule(result.final_url, not_found_url):
+        return UsernameHttpClassification(
+            status="not_found",
+            confidence="high",
+            evidence=f"HTTP {result.status_code}; matched {site.name} response-url not-found rule.",
+            content_rule="response_url",
+            content_marker=not_found_url,
+        )
 
     if result.status_code in site.not_found_status_codes and (
         result.status_code >= 300 or not site.not_found_markers
@@ -166,6 +175,23 @@ def normalize_username(value: str) -> str:
 def _looks_like_json(value: str) -> bool:
     stripped = value.lstrip()
     return stripped.startswith("{") or stripped.startswith("[")
+
+
+def _url_matches_rule(actual_url: str, expected_url: str) -> bool:
+    if not actual_url or not expected_url:
+        return False
+    actual = actual_url.strip().rstrip("/").casefold()
+    expected = expected_url.strip().rstrip("/").casefold()
+    if actual == expected:
+        return True
+    if expected.endswith("=") and actual.startswith(expected):
+        return True
+    if "://" not in expected:
+        actual_without_scheme = actual.split("://", 1)[-1]
+        return actual_without_scheme == expected or (
+            expected.endswith("=") and actual_without_scheme.startswith(expected)
+        )
+    return False
 
 
 def _planned_or_skipped_finding(module: str, original: str, username: str, site: UsernameSite) -> Finding:

@@ -32,8 +32,8 @@ python -m osint_toolkit scan username <username> --live
 - RU/UA/кириллическая transliteration для username candidates;
 - 2014 активных публичных URL/check-шаблонов профилей: 38 curated правил, 479 валидных записей из Sherlock `data.json`, 718 WhatsMyName `wmn-data.json` GET/POST entries и 1423 sanitized Maigret site rules после дедупликации одинаковых URL;
 - platform-specific username rules и `skipped` findings для заведомо несовместимых платформ;
-- content markers для части live username checks: profile marker -> `candidate/high`, soft-404 marker -> `not_found/high`;
-- native import Sherlock `sherlock_project/resources/data.json` как package resource с MIT notice; 3 POST-checks используют `request_payload`; curated локальные правила имеют приоритет над upstream-дублями;
+- content markers и response-url rules для части live username checks: profile marker -> `candidate/high`, soft-404 marker или Sherlock `errorUrl` redirect -> `not_found/high`;
+- native import Sherlock `sherlock_project/resources/data.json` как package resource с MIT notice; 3 POST-checks используют `request_payload`, 27 `response_url` rules используют `errorUrl`; curated локальные правила имеют приоритет над upstream-дублями;
 - native import WhatsMyName `wmn-data.json` как package resource с CC BY-SA 4.0 notice; `e_string`, `m_string`, `e_code`, `m_code`, custom headers и POST bodies используются в live classifier;
 - native import sanitized Maigret site rules как package resource с MIT notice; `urlProbe`, public `profile_url`, regex rules, `presenseStrs`, `absenceStrs`, tags и safe headers используются в native checks;
 - dry-run без сетевых запросов;
@@ -68,7 +68,7 @@ Gap до полного 1:1:
 
 - Sherlock GET/POST site dataset, WhatsMyName GET/POST dataset и sanitized Maigret site rules импортированы в native username layer;
 - Maigret engine templates, activation flows, recursive policy tuning, report generation, proxies/Tor/I2P and AI mode пока остаются adapter-only;
-- per-site rules покрывают username syntax/length и часть title/body content markers, но ещё не всю Sherlock `errorType`, `errorUrl`, response-url и WAF/error-handling логику;
+- per-site rules покрывают username syntax/length, часть title/body content markers и Sherlock response-url `errorUrl`, но ещё не всю WAF/error-handling логику и site-specific retry/rate-limit поведение;
 - нет rate-limit/backoff правил;
 - username permutation/alias strategy пока базовая: нет словарей никнеймов, исторических alias и platform-specific username rules;
 - content-based confidence пока частичный: нет полного набора marker rules из upstream datasets;

@@ -34,6 +34,7 @@ class UsernameSite:
     rule_note: str = DEFAULT_USERNAME_RULE_NOTE
     profile_markers: tuple[str, ...] = ()
     not_found_markers: tuple[str, ...] = ()
+    not_found_url_template: str = ""
     candidate_status_codes: tuple[int, ...] = ()
     not_found_status_codes: tuple[int, ...] = ()
     request_headers: tuple[tuple[str, str], ...] = ()
@@ -50,6 +51,11 @@ class UsernameSite:
 
     def request_body_for(self, username: str) -> str:
         return self.request_body_template.replace("{username}", username)
+
+    def not_found_url_for(self, username: str) -> str:
+        if not self.not_found_url_template:
+            return ""
+        return self.not_found_url_template.format(username=username)
 
     def validate_username(self, username: str) -> str:
         if re.fullmatch(self.username_pattern, username):
@@ -312,6 +318,7 @@ def _sherlock_entry_to_username_site(name: str, entry: Any) -> UsernameSite | No
     username_pattern = _valid_regex(entry.get("regexCheck")) or DEFAULT_USERNAME_PATTERN
     rule_note = "Sherlock regexCheck" if username_pattern != DEFAULT_USERNAME_PATTERN else DEFAULT_USERNAME_RULE_NOTE
     profile_url_template = url.replace("{}", "{username}") if request_method == "POST" and "{}" in url else ""
+    error_type = entry.get("errorType")
     return UsernameSite(
         name=name,
         url_template=request_url.replace("{}", "{username}"),
@@ -319,7 +326,8 @@ def _sherlock_entry_to_username_site(name: str, entry: Any) -> UsernameSite | No
         source_projects=(SHERLOCK_SOURCE_PROJECT,),
         username_pattern=username_pattern,
         rule_note=rule_note,
-        not_found_markers=_string_tuple(entry.get("errorMsg")),
+        not_found_markers=_string_tuple(entry.get("errorMsg")) if error_type == "message" else (),
+        not_found_url_template=_sherlock_url_template(entry.get("errorUrl")) if error_type == "response_url" else "",
         request_headers=_header_tuple(entry.get("headers")),
         request_method=request_method if request_method == "POST" else "GET",
         request_body_template=request_body_template,
@@ -451,6 +459,12 @@ def _sherlock_request_body_template(value: Any) -> str:
             return ""
         return rendered.replace("{}", "{username}") if "{}" in rendered else ""
     return ""
+
+
+def _sherlock_url_template(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return ""
+    return value.replace("{}", "{username}")
 
 
 def _merge_username_sites(

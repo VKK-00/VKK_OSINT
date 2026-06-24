@@ -397,7 +397,7 @@ osint-toolkit stats
 - Каталог основан на snapshot от 2026-06-24; GitHub stars и актуальность проектов меняются.
 - Качество и безопасность внешних репозиториев не аудированы.
 - Native person-name expansion пока использует базовые шаблоны имени/фамилии и RU/UA transliteration; нет словарей никнеймов, исторических alias и platform-specific username rules.
-- Первый native username module уже импортирует Sherlock GET/POST site dataset, WhatsMyName GET/POST dataset и sanitized Maigret site rules, покрывает URL-template/status-code слой, часть platform syntax rules, custom headers, POST bodies и часть content marker rules, но не всю логику Sherlock/Maigret/WhatsMyName: Maigret engine templates/activation/recursive/reporting logic ещё не встроены, нет полного набора custom `errorType`/`errorUrl`/response-url/WAF rules, rate-limit logic и enrichment.
+- Первый native username module уже импортирует Sherlock GET/POST site dataset, WhatsMyName GET/POST dataset и sanitized Maigret site rules, покрывает URL-template/status-code слой, Sherlock response-url `errorUrl`, часть platform syntax rules, custom headers, POST bodies и часть content marker rules, но не всю логику Sherlock/Maigret/WhatsMyName: Maigret engine templates/activation/recursive/reporting logic ещё не встроены, нет полного набора WAF/error-handling rules, rate-limit logic и enrichment.
 - Native email module делает MX/TXT lookup и SPF/DMARC classifier, но пока не делает native breach lookup, NS/additional TXT classifiers или own API enrichment; Mosint/h8mail покрывают часть enrichment через external adapters.
 - Native phone module пока не делает carrier lookup, reputation lookup или external API enrichment.
 - Telegram module пока не использует Telegram API и не получает private/group data.
@@ -452,6 +452,7 @@ osint-toolkit stats
 - 2026-06-24: импортирован WhatsMyName `wmn-data.json` как native package resource; активный username dataset расширен до 1071 check-шаблона с WMN `e_string`/`m_string`, `e_code`/`m_code` и custom headers.
 - 2026-06-24: импортирована sanitized projection Maigret `data.json` как native package resource; активный username dataset расширен до 1993 check-шаблонов с Maigret regex, markers, tags, safe headers и probe/profile URL metadata.
 - 2026-06-24: добавлен native POST-check support для Sherlock `request_payload` и 22 WhatsMyName POST entries; активный username dataset содержит 2014 check-шаблонов, включая 23 active POST checks после дедупликации.
+- 2026-06-24: добавлен native Sherlock `errorType=response_url` support; импортируются 27 `errorUrl` rules, из них 26 active checks остаются после дедупликации.
 - 2026-06-24: добавлены `HttpResult.body_text`, username content marker rules и `classify_username_http_result()` для soft-404/profile confidence в live checks.
 - 2026-06-24: добавлен `dns_lookup.py`; `EmailScanModule` теперь планирует и выполняет MX/TXT lookup через `nslookup` в live-режиме.
 - 2026-06-24: добавлен `email_auth.py`; `EmailScanModule` теперь классифицирует SPF и DMARC, а adapter manifest расширен executable target для `h8mail`.
