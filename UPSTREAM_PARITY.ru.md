@@ -98,9 +98,11 @@ Gap до полного 1:1:
 - синтаксическая проверка;
 - извлечение домена;
 - live domain resolution по явному `--live`;
-- MX/TXT lookup через системный `nslookup` по явному `--live`;
+- MX/NS/TXT lookup через системный `nslookup` по явному `--live`;
 - SPF classifier поверх доменного TXT: наличие записи, multiple-record warning, `all` policy и include/redirect counts;
 - DMARC classifier через `_dmarc.<domain>` TXT: наличие записи, multiple-record warning, `p=`, `sp=`, alignment, percent и report URI tags;
+- additional TXT classifiers для `_mta-sts.<domain>` MTA-STS, `_smtp._tls.<domain>` TLS-RPT и `default._bimi.<domain>` BIMI;
+- public TXT service signals для root-domain TXT: Google/Microsoft/Yandex/Mail.ru и другие verification markers без раскрытия token values в signal finding;
 - executable adapter target для `alpkeskin/mosint`: `mosint --silent <email> --output <temp.json>`;
 - parser для Mosint upstream JSON: verification, EmailRep, BreachDirectory, HaveIBeenPwned, Hunter related emails/domains, Google/Paste URLs, social flags, DNS records и ipapi metadata нормализуются в `Finding`/entities; password/hash/sha1-like values редактируются;
 - executable adapter target для `khast3x/h8mail`: `h8mail -t <email> --hide -j <temp.json>`;
@@ -112,12 +114,11 @@ Gap:
 
 - breach/API enrichment пока выполняется только через внешние Mosint/h8mail adapters, если upstream CLI установлен, Mosint config/API keys настроены и оператор явно запускает `--execute`;
 - нет локального кэша;
-- нет NS/additional TXT classifiers;
 - нет restricted account-enumeration режима.
 
 План:
 
-1. Native: расширить DNS слой до NS/additional TXT classifiers и richer email security findings.
+1. Native: дальше расширять DNS слой до richer provider attribution и optional CT/domain correlation.
 2. Adapter: `mosint`, `h8mail`, `pwnedOrNot`, `user-scanner`.
 3. Restricted adapter: `holehe`, `email2phonenumber`, любые recovery/account-enumeration flows.
 

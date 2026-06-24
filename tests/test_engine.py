@@ -592,19 +592,29 @@ class EngineTests(unittest.TestCase):
         engine = Engine([EmailScanModule()])
         findings = engine.scan(ScanTarget(kind="email", value="person@example.com"), RunConfig())
 
-        self.assertEqual(len(findings), 6)
+        self.assertEqual(len(findings), 11)
         self.assertEqual(findings[0].source, "syntax")
         self.assertEqual(findings[0].status, "valid")
         self.assertEqual(findings[1].source, "domain-resolution")
         self.assertEqual(findings[1].status, "planned")
         self.assertEqual(findings[2].source, "mx-records")
         self.assertEqual(findings[2].status, "planned")
-        self.assertEqual(findings[3].source, "txt-records")
+        self.assertEqual(findings[3].source, "ns-records")
         self.assertEqual(findings[3].status, "planned")
-        self.assertEqual(findings[4].source, "spf-policy")
+        self.assertEqual(findings[4].source, "txt-records")
         self.assertEqual(findings[4].status, "planned")
-        self.assertEqual(findings[5].source, "dmarc-policy")
+        self.assertEqual(findings[5].source, "txt-service-signals")
         self.assertEqual(findings[5].status, "planned")
+        self.assertEqual(findings[6].source, "spf-policy")
+        self.assertEqual(findings[6].status, "planned")
+        self.assertEqual(findings[7].source, "dmarc-policy")
+        self.assertEqual(findings[7].status, "planned")
+        self.assertEqual(findings[8].source, "mta-sts-policy")
+        self.assertEqual(findings[8].status, "planned")
+        self.assertEqual(findings[9].source, "tls-rpt-policy")
+        self.assertEqual(findings[9].status, "planned")
+        self.assertEqual(findings[10].source, "bimi-policy")
+        self.assertEqual(findings[10].status, "planned")
 
     def test_email_scan_live_adds_mx_and_txt_records(self):
         def fake_lookup(domain, record_type, *, timeout=10.0):
@@ -615,6 +625,13 @@ class EngineTests(unittest.TestCase):
                     status="candidate",
                     records=("10 mail.example.com",),
                 )
+            if record_type == "NS":
+                return DnsLookupResult(
+                    domain=domain,
+                    record_type=record_type,
+                    status="candidate",
+                    records=("ns1.example.com",),
+                )
             if domain.startswith("_dmarc."):
                 return DnsLookupResult(
                     domain=domain,
@@ -622,11 +639,32 @@ class EngineTests(unittest.TestCase):
                     status="candidate",
                     records=("v=DMARC1; p=reject; rua=mailto:dmarc@example.com",),
                 )
+            if domain.startswith("_mta-sts."):
+                return DnsLookupResult(
+                    domain=domain,
+                    record_type=record_type,
+                    status="candidate",
+                    records=("v=STSv1; id=20260624",),
+                )
+            if domain.startswith("_smtp._tls."):
+                return DnsLookupResult(
+                    domain=domain,
+                    record_type=record_type,
+                    status="candidate",
+                    records=("v=TLSRPTv1; rua=mailto:tls@example.com",),
+                )
+            if domain.startswith("default._bimi."):
+                return DnsLookupResult(
+                    domain=domain,
+                    record_type=record_type,
+                    status="candidate",
+                    records=("v=BIMI1; l=https://example.com/bimi.svg; a=https://example.com/vmc.pem",),
+                )
             return DnsLookupResult(
                 domain=domain,
                 record_type=record_type,
                 status="candidate",
-                records=("v=spf1 include:_spf.example.com -all",),
+                records=("v=spf1 include:_spf.example.com -all", "google-site-verification=abc"),
             )
 
         with patch("osint_toolkit.modules.email.socket.getaddrinfo", return_value=[(socket.AF_INET, None, None, "", ("93.184.216.34", 0))]), patch(
@@ -641,10 +679,18 @@ class EngineTests(unittest.TestCase):
         sources = {finding.source: finding for finding in findings}
         self.assertEqual(sources["domain-resolution"].status, "candidate")
         self.assertEqual(sources["mx-records"].metadata["records"], "10 mail.example.com")
-        self.assertEqual(sources["txt-records"].metadata["records"], "v=spf1 include:_spf.example.com -all")
+        self.assertEqual(sources["ns-records"].metadata["records"], "ns1.example.com")
+        self.assertEqual(
+            sources["txt-records"].metadata["records"],
+            "v=spf1 include:_spf.example.com -all | google-site-verification=abc",
+        )
+        self.assertEqual(sources["txt-service-signals"].metadata["signal_types"], "google_site_verification")
         self.assertEqual(sources["spf-policy"].metadata["policy"], "hardfail")
         self.assertEqual(sources["spf-policy"].metadata["include_count"], "1")
         self.assertEqual(sources["dmarc-policy"].metadata["policy"], "reject")
+        self.assertEqual(sources["mta-sts-policy"].metadata["id"], "20260624")
+        self.assertEqual(sources["tls-rpt-policy"].metadata["rua"], "mailto:tls@example.com")
+        self.assertEqual(sources["bimi-policy"].metadata["l"], "https://example.com/bimi.svg")
 
     def test_email_scan_rejects_invalid_input(self):
         engine = Engine([EmailScanModule()])

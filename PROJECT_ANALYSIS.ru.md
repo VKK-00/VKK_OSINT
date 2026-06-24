@@ -24,7 +24,7 @@ CLI работает в трёх режимах:
 - username public profile checks по 2014 активным URL/check-шаблонам: 38 curated правил, импорт Sherlock `data.json` GET/POST entries, импорт WhatsMyName `wmn-data.json` GET/POST entries и sanitized Maigret site rules, совместимые по классу задачи с Sherlock/Maigret/WhatsMyName/Nexfil;
 - platform-specific username rules: несовместимые site checks возвращаются как `skipped`, без построения заведомо неверного URL;
 - content marker rules для live username checks: profile markers повышают confidence, soft-404 markers дают `not_found`;
-- email baseline checks: синтаксис, live domain resolution, MX/TXT lookup, SPF и DMARC policy classification;
+- email baseline checks: синтаксис, live domain resolution, MX/NS/TXT lookup, SPF, DMARC, MTA-STS, TLS-RPT, BIMI и TXT service signal classification;
 - phone baseline checks: нормализация, E.164-like validation и country-prefix signal;
 - domain baseline recon: DNS resolution, HTTP/HTTPS metadata и presence security headers;
 - Telegram baseline: handle/post URL normalization и optional live public metadata;
@@ -103,9 +103,11 @@ CLI работает в трёх режимах:
 - `osint_toolkit/email_auth.py`
   - `classify_spf_policy()` — классификация SPF из доменного TXT: отсутствие, multiple SPF warning, `all` policy, include/redirect counts.
   - `classify_dmarc_policy()` — классификация DMARC из `_dmarc.<domain>` TXT: отсутствие, multiple DMARC warning, `p=`, `sp=`, alignment, percent и report URI tags.
+  - `classify_mta_sts_policy()`, `classify_tls_rpt_policy()`, `classify_bimi_policy()` — классификация additional email-security TXT records.
+  - `classify_txt_service_signals()` — распознавание публичных ownership/service markers в root-domain TXT без вывода token values в signal finding.
 - `osint_toolkit/dns_lookup.py`
-  - `lookup_dns_records()` — запуск системного `nslookup` для MX/TXT без дополнительных Python-зависимостей.
-  - `parse_nslookup_records()` — parser Windows/Unix-style `nslookup` output для MX/TXT; TXT chunks соединяются в одну запись, чтобы SPF/DMARC не теряли длинные значения.
+  - `lookup_dns_records()` — запуск системного `nslookup` для MX/NS/TXT без дополнительных Python-зависимостей.
+  - `parse_nslookup_records()` — parser Windows/Unix-style `nslookup` output для MX/NS/TXT; TXT chunks соединяются в одну запись, чтобы SPF/DMARC/additional TXT records не теряли длинные значения.
 - `osint_toolkit/modules/phone.py`
   - `PhoneScanModule` — нормализация и country-prefix сигнал для телефонных номеров.
 - `osint_toolkit/modules/domain.py`
@@ -399,7 +401,7 @@ osint-toolkit stats
 - Качество и безопасность внешних репозиториев не аудированы.
 - Native person-name expansion использует шаблоны имени/фамилии, reverse-order variants, initials, curated common given-name aliases, operator-provided alias dictionaries, handle suffixes и RU/UA transliteration; пока нет bundled historical alias datasets и platform-specific alias scoring.
 - Первый native username module уже импортирует Sherlock GET/POST site dataset, WhatsMyName GET/POST dataset и sanitized Maigret site rules, покрывает URL-template/status-code слой, Sherlock response-url `errorUrl`, часть platform syntax rules, custom headers, POST bodies, базовый HTTP retry/backoff и часть content marker rules, но не всю логику Sherlock/Maigret/WhatsMyName: Maigret engine templates/activation/recursive/reporting logic ещё не встроены, нет полного набора WAF/error-handling rules, site-specific rate-limit tuning и enrichment.
-- Native email module делает MX/TXT lookup и SPF/DMARC classifier, но пока не делает native breach lookup, NS/additional TXT classifiers или own API enrichment; Mosint/h8mail покрывают часть enrichment через external adapters.
+- Native email module делает MX/NS/TXT lookup, SPF/DMARC/MTA-STS/TLS-RPT/BIMI classifiers и root TXT service signal classifier, но пока не делает native breach lookup, local cache или own API enrichment; Mosint/h8mail покрывают часть enrichment через external adapters.
 - Native phone module пока не делает carrier lookup, reputation lookup или external API enrichment.
 - Telegram module пока не использует Telegram API и не получает private/group data.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
@@ -460,6 +462,7 @@ osint-toolkit stats
 - 2026-06-24: добавлены `HttpResult.body_text`, username content marker rules и `classify_username_http_result()` для soft-404/profile confidence в live checks.
 - 2026-06-24: добавлен `dns_lookup.py`; `EmailScanModule` теперь планирует и выполняет MX/TXT lookup через `nslookup` в live-режиме.
 - 2026-06-24: добавлен `email_auth.py`; `EmailScanModule` теперь классифицирует SPF и DMARC, а adapter manifest расширен executable target для `h8mail`.
+- 2026-06-24: расширен native Email OSINT DNS layer: NS lookup, root TXT service signals, MTA-STS, TLS-RPT и BIMI classifiers.
 - 2026-06-24: `AdapterSpec` получил target-specific `command_templates`; `user-scanner` теперь запускается как adapter для email и username.
 - 2026-06-24: добавлен parser для `user-scanner` JSON/verbose results; executed output теперь превращается в `Finding`/entities/graph signals.
 - 2026-06-24: добавлен RU/UA-aware command rendering и parser stdout/CSV для `snooppr/snoop`; Snoop findings теперь попадают в `Finding`/entities/graph signals.

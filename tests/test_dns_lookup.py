@@ -31,6 +31,17 @@ class DnsLookupTests(unittest.TestCase):
             ("5 mail.example.com", "10 backup.example.com"),
         )
 
+    def test_parse_ns_records(self):
+        output = """
+        example.com     nameserver = ns1.example.com.
+        example.com     name server = ns2.example.com.
+        """
+
+        self.assertEqual(
+            parse_nslookup_records(output, "NS"),
+            ("ns1.example.com", "ns2.example.com"),
+        )
+
     def test_parse_txt_records(self):
         output = '''
         example.com text =

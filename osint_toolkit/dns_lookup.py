@@ -24,7 +24,7 @@ class DnsLookupResult:
 
 def lookup_dns_records(domain: str, record_type: str, *, timeout: float = 10.0) -> DnsLookupResult:
     normalized_type = record_type.strip().upper()
-    if normalized_type not in {"MX", "TXT"}:
+    if normalized_type not in {"MX", "NS", "TXT"}:
         raise ValueError(f"Unsupported DNS record type: {record_type}")
 
     command = ("nslookup", f"-type={normalized_type}", domain)
@@ -77,6 +77,8 @@ def parse_nslookup_records(output: str, record_type: str) -> tuple[str, ...]:
     normalized_type = record_type.strip().upper()
     if normalized_type == "MX":
         return _parse_mx_records(output)
+    if normalized_type == "NS":
+        return _parse_ns_records(output)
     if normalized_type == "TXT":
         return _parse_txt_records(output)
     raise ValueError(f"Unsupported DNS record type: {record_type}")
@@ -98,6 +100,18 @@ def _parse_mx_records(output: str) -> tuple[str, ...]:
             records.append(f"{priority} {host}")
         else:
             records.append(host)
+    return _dedupe(records)
+
+
+def _parse_ns_records(output: str) -> tuple[str, ...]:
+    records: list[str] = []
+    for line in _content_lines(output):
+        lowered = line.lower()
+        if "nameserver" not in lowered and "name server" not in lowered:
+            continue
+        match = re.search(r"(?:name server|nameserver)\s*=\s*(?P<host>\S+)", line, flags=re.IGNORECASE)
+        if match:
+            records.append(match.group("host").rstrip("."))
     return _dedupe(records)
 
 

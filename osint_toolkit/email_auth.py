@@ -163,6 +163,160 @@ def classify_dmarc_policy(domain: str, dmarc_result: DnsLookupResult) -> EmailAu
     )
 
 
+def classify_mta_sts_policy(domain: str, mta_sts_result: DnsLookupResult) -> EmailAuthPolicy:
+    return _classify_single_txt_policy(
+        domain,
+        mta_sts_result,
+        source="mta-sts-policy",
+        label="MTA-STS",
+        prefix="v=STSv1",
+        metadata_keys=("id",),
+        extra_metadata={"policy_url": f"https://mta-sts.{domain}/.well-known/mta-sts.txt"},
+    )
+
+
+def classify_tls_rpt_policy(domain: str, tls_rpt_result: DnsLookupResult) -> EmailAuthPolicy:
+    return _classify_single_txt_policy(
+        domain,
+        tls_rpt_result,
+        source="tls-rpt-policy",
+        label="TLS-RPT",
+        prefix="v=TLSRPTv1",
+        metadata_keys=("rua",),
+    )
+
+
+def classify_bimi_policy(domain: str, bimi_result: DnsLookupResult) -> EmailAuthPolicy:
+    return _classify_single_txt_policy(
+        domain,
+        bimi_result,
+        source="bimi-policy",
+        label="BIMI",
+        prefix="v=BIMI1",
+        metadata_keys=("l", "a"),
+        extra_metadata={"selector": "default"},
+    )
+
+
+def classify_txt_service_signals(domain: str, txt_result: DnsLookupResult) -> EmailAuthPolicy:
+    if txt_result.status != "candidate":
+        return EmailAuthPolicy(
+            source="txt-service-signals",
+            status=txt_result.status,
+            confidence="low",
+            evidence=f"Cannot classify domain TXT service signals because lookup status is {txt_result.status}.",
+            metadata={
+                "domain": domain,
+                "lookup_domain": txt_result.domain,
+                "lookup_status": txt_result.status,
+            },
+        )
+
+    signals = _dedupe(tuple(_txt_service_signal(record) for record in txt_result.records))
+    if not signals:
+        return EmailAuthPolicy(
+            source="txt-service-signals",
+            status="not_found",
+            confidence="medium",
+            evidence="No recognized ownership/service TXT signals found.",
+            metadata={"domain": domain, "lookup_domain": txt_result.domain, "signal_count": "0"},
+        )
+
+    return EmailAuthPolicy(
+        source="txt-service-signals",
+        status="candidate",
+        confidence="medium",
+        evidence=f"Detected TXT ownership/service signals: {', '.join(signals)}.",
+        metadata={
+            "domain": domain,
+            "lookup_domain": txt_result.domain,
+            "signal_count": str(len(signals)),
+            "signal_types": ", ".join(signals),
+        },
+    )
+
+
+def _classify_single_txt_policy(
+    domain: str,
+    result: DnsLookupResult,
+    *,
+    source: str,
+    label: str,
+    prefix: str,
+    metadata_keys: tuple[str, ...],
+    extra_metadata: dict[str, str] | None = None,
+) -> EmailAuthPolicy:
+    if result.status == "not_found":
+        return EmailAuthPolicy(
+            source=source,
+            status="not_found",
+            confidence="medium",
+            evidence=f"No {label} TXT record found.",
+            metadata={
+                "domain": domain,
+                "lookup_domain": result.domain,
+                "lookup_status": result.status,
+                "record_count": "0",
+            },
+        )
+    if result.status != "candidate":
+        return EmailAuthPolicy(
+            source=source,
+            status=result.status,
+            confidence="low" if result.status in {"missing", "timeout", "error"} else "medium",
+            evidence=f"Cannot classify {label} because TXT lookup status is {result.status}.",
+            metadata={
+                "domain": domain,
+                "lookup_domain": result.domain,
+                "lookup_status": result.status,
+                "records": " | ".join(result.records),
+            },
+        )
+
+    records = _records_with_prefix(result.records, prefix)
+    if not records:
+        return EmailAuthPolicy(
+            source=source,
+            status="not_found",
+            confidence="medium",
+            evidence=f"No {label} TXT record found.",
+            metadata={"domain": domain, "lookup_domain": result.domain, "record_count": "0"},
+        )
+    if len(records) > 1:
+        return EmailAuthPolicy(
+            source=source,
+            status="warning",
+            confidence="medium",
+            evidence=f"Multiple {label} TXT records found: {len(records)}.",
+            metadata={
+                "domain": domain,
+                "lookup_domain": result.domain,
+                "record_count": str(len(records)),
+                "records": " | ".join(records),
+            },
+        )
+
+    record = records[0]
+    tags = _dns_tags(record)
+    metadata = {
+        "domain": domain,
+        "lookup_domain": result.domain,
+        "record_count": "1",
+        "record": record,
+    }
+    for key in metadata_keys:
+        metadata[key] = tags.get(key, "")
+    if extra_metadata:
+        metadata.update(extra_metadata)
+    return EmailAuthPolicy(
+        source=source,
+        status="candidate",
+        confidence="high",
+        evidence=f"{label} TXT record found.",
+        metadata=metadata,
+    )
+
+
 def _records_with_prefix(records: tuple[str, ...], prefix: str) -> tuple[str, ...]:
     lowered_prefix = prefix.casefold()
     return tuple(record for record in records if record.strip().casefold().startswith(lowered_prefix))
@@ -188,6 +342,10 @@ def _count_terms(record: str, prefix: str) -> int:
 
 
 def _dmarc_tags(record: str) -> dict[str, str]:
+    return _dns_tags(record)
+
+
+def _dns_tags(record: str) -> dict[str, str]:
     tags: dict[str, str] = {}
     for raw_part in record.split(";"):
         part = raw_part.strip()
@@ -196,3 +354,40 @@ def _dmarc_tags(record: str) -> dict[str, str]:
         key, value = part.split("=", 1)
         tags[key.strip().lower()] = value.strip()
     return tags
+
+
+def _txt_service_signal(record: str) -> str:
+    normalized = record.strip().casefold()
+    markers = (
+        ("google-site-verification=", "google_site_verification"),
+        ("ms=", "microsoft_365_verification"),
+        ("v=msv1", "microsoft_365_verification"),
+        ("apple-domain-verification=", "apple_domain_verification"),
+        ("facebook-domain-verification=", "facebook_domain_verification"),
+        ("globalsign-domain-verification=", "globalsign_domain_verification"),
+        ("adobe-idp-site-verification=", "adobe_idp_verification"),
+        ("atlassian-domain-verification=", "atlassian_domain_verification"),
+        ("dropbox-domain-verification=", "dropbox_domain_verification"),
+        ("protonmail-verification=", "protonmail_verification"),
+        ("zoho-verification=", "zoho_verification"),
+        ("amazonses:", "amazon_ses_verification"),
+        ("yandex-verification:", "yandex_verification"),
+        ("yandex-verification=", "yandex_verification"),
+        ("mailru-verification:", "mailru_verification"),
+        ("mailru-verification=", "mailru_verification"),
+    )
+    for marker, label in markers:
+        if normalized.startswith(marker):
+            return label
+    return ""
+
+
+def _dedupe(values: tuple[str, ...]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in values:
+        normalized = value.strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            deduped.append(normalized)
+    return tuple(deduped)
