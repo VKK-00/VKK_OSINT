@@ -174,6 +174,11 @@ class CliTests(unittest.TestCase):
             entities = {(entity["kind"], entity["value"].lower()) for entity in payload["entities"]}
             self.assertIn(("email", "person@example.com"), entities)
             self.assertIn(("domain", "example.com"), entities)
+            edges = {
+                (edge["source_kind"], edge["relation"], edge["target_kind"], edge["target_value"].lower())
+                for edge in payload["edges"]
+            }
+            self.assertIn(("email", "email_domain", "domain", "example.com"), edges)
 
     def test_brief_command_writes_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -28,12 +28,20 @@ class CaseStoreTests(unittest.TestCase):
         self.assertEqual(records[0].title, "stored case")
         self.assertEqual(records[0].target_count, 2)
         self.assertGreater(records[0].entity_count, 0)
+        self.assertGreater(records[0].edge_count, 0)
         self.assertEqual(payload["case"]["title"], "stored case")
 
         entities = {(entity["kind"], entity["value"].lower()) for entity in payload["entities"]}
         self.assertIn(("email", "person@example.com"), entities)
         self.assertIn(("domain", "example.com"), entities)
         self.assertIn(("telegram", "@durov"), entities)
+
+        edges = {
+            (edge["source_kind"], edge["relation"], edge["target_kind"], edge["target_value"].lower())
+            for edge in payload["edges"]
+        }
+        self.assertIn(("email", "email_domain", "domain", "example.com"), edges)
+        self.assertIn(("telegram", "produced_url", "url", "https://t.me/durov"), edges)
 
     def test_rejects_empty_case_id_and_invalid_limit(self):
         with tempfile.TemporaryDirectory() as tmpdir:

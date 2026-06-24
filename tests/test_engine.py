@@ -188,13 +188,25 @@ class EngineTests(unittest.TestCase):
         self.assertIn(("telegram", "@durov"), entity_keys)
         self.assertIn(("url", "https://t.me/durov"), entity_keys)
 
+        edge_keys = {
+            (edge.source_kind, edge.relation, edge.target_kind, edge.target_value.lower())
+            for edge in result.edges
+        }
+        self.assertIn(("email", "email_domain", "domain", "example.com"), edge_keys)
+        self.assertIn(("phone", "normalized_as", "normalized-value", "+380441234567"), edge_keys)
+        self.assertIn(("phone", "country_hint", "country", "ukraine"), edge_keys)
+        self.assertIn(("telegram", "produced_url", "url", "https://t.me/durov"), edge_keys)
+        self.assertIn(("url", "telegram_url_for", "telegram", "@durov"), edge_keys)
+
         markdown = render_investigation_markdown(result)
         self.assertIn("Entity Summary", markdown)
+        self.assertIn("Graph Edges", markdown)
         self.assertIn("person@example.com", markdown)
         self.assertIn("@durov", markdown)
 
         json_output = render_investigation_json(result)
         self.assertIn('"entities"', json_output)
+        self.assertIn('"edges"', json_output)
         self.assertIn('"value": "person@example.com"', json_output)
 
 

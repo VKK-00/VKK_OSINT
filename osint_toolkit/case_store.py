@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Iterator
 if TYPE_CHECKING:
     from .investigation import InvestigationResult
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 
 class CaseStoreError(Exception):
@@ -28,6 +28,7 @@ class CaseRecord:
     target_count: int
     entity_count: int
     finding_count: int
+    edge_count: int
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -38,6 +39,7 @@ class CaseRecord:
             "target_count": self.target_count,
             "entity_count": self.entity_count,
             "finding_count": self.finding_count,
+            "edge_count": self.edge_count,
         }
 
 
@@ -123,6 +125,30 @@ class CaseStore:
                 """,
                 finding_rows,
             )
+            conn.executemany(
+                """
+                INSERT INTO edges(
+                    case_id, ordinal, source_kind, source_value, relation,
+                    target_kind, target_value, source, confidence, note
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    (
+                        normalized_case_id,
+                        ordinal,
+                        edge.source_kind,
+                        edge.source_value,
+                        edge.relation,
+                        edge.target_kind,
+                        edge.target_value,
+                        edge.source,
+                        edge.confidence,
+                        edge.note,
+                    )
+                    for ordinal, edge in enumerate(result.edges)
+                ),
+            )
         return normalized_case_id
 
     def list_cases(self, *, limit: int = 20) -> tuple[CaseRecord, ...]:
@@ -139,7 +165,8 @@ class CaseStore:
                     cases.saved_at,
                     (SELECT COUNT(*) FROM targets WHERE targets.case_id = cases.case_id) AS target_count,
                     (SELECT COUNT(*) FROM entities WHERE entities.case_id = cases.case_id) AS entity_count,
-                    (SELECT COUNT(*) FROM findings WHERE findings.case_id = cases.case_id) AS finding_count
+                    (SELECT COUNT(*) FROM findings WHERE findings.case_id = cases.case_id) AS finding_count,
+                    (SELECT COUNT(*) FROM edges WHERE edges.case_id = cases.case_id) AS edge_count
                 FROM cases
                 ORDER BY cases.saved_at DESC, cases.case_id DESC
                 LIMIT ?
@@ -155,6 +182,7 @@ class CaseStore:
                 target_count=row["target_count"],
                 entity_count=row["entity_count"],
                 finding_count=row["finding_count"],
+                edge_count=row["edge_count"],
             )
             for row in rows
         )
@@ -196,10 +224,20 @@ class CaseStore:
                 """,
                 (case_id,),
             ).fetchall()
+            edges = conn.execute(
+                """
+                SELECT source_kind, source_value, relation, target_kind, target_value, source, confidence, note
+                FROM edges
+                WHERE case_id = ?
+                ORDER BY ordinal
+                """,
+                (case_id,),
+            ).fetchall()
         return {
             "case": dict(case),
             "targets": [dict(row) for row in targets],
             "entities": [dict(row) for row in entities],
+            "edges": [dict(row) for row in edges],
             "findings": [_finding_row_to_dict(row) for row in findings],
         }
 
@@ -276,6 +314,21 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             metadata_json TEXT NOT NULL,
             checked_at TEXT NOT NULL,
             PRIMARY KEY (case_id, collection, ordinal),
+            FOREIGN KEY (case_id) REFERENCES cases(case_id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS edges (
+            case_id TEXT NOT NULL,
+            ordinal INTEGER NOT NULL,
+            source_kind TEXT NOT NULL,
+            source_value TEXT NOT NULL,
+            relation TEXT NOT NULL,
+            target_kind TEXT NOT NULL,
+            target_value TEXT NOT NULL,
+            source TEXT NOT NULL,
+            confidence TEXT NOT NULL,
+            note TEXT NOT NULL,
+            PRIMARY KEY (case_id, ordinal),
             FOREIGN KEY (case_id) REFERENCES cases(case_id) ON DELETE CASCADE
         );
         """

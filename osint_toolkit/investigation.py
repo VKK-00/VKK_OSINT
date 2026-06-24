@@ -9,6 +9,7 @@ from .adapter_runner import run_adapter_findings
 from .adapters import ADAPTERS
 from .entities import Entity, entities_from_findings, entities_from_targets, merge_entities
 from .engine import Finding, RunConfig, ScanTarget
+from .graph import GraphEdge, graph_edges_from_case
 from .runtime import build_default_engine
 
 
@@ -19,6 +20,7 @@ class InvestigationResult:
     findings: tuple[Finding, ...]
     adapter_findings: tuple[Finding, ...]
     entities: tuple[Entity, ...]
+    edges: tuple[GraphEdge, ...]
     generated_at: str
 
     def all_findings(self) -> tuple[Finding, ...]:
@@ -33,6 +35,7 @@ class InvestigationResult:
                 for target in self.targets
             ],
             "entities": [entity.to_dict() for entity in self.entities],
+            "edges": [edge.to_dict() for edge in self.edges],
             "findings": [finding.to_dict() for finding in self.findings],
             "adapter_findings": [finding.to_dict() for finding in self.adapter_findings],
         }
@@ -62,6 +65,7 @@ def run_investigation(
         entities_from_findings(tuple(findings)),
         entities_from_findings(tuple(adapter_findings)),
     )
+    edges = graph_edges_from_case(targets, (*findings, *adapter_findings), entities)
 
     return InvestigationResult(
         title=title,
@@ -69,6 +73,7 @@ def run_investigation(
         findings=tuple(findings),
         adapter_findings=tuple(adapter_findings),
         entities=entities,
+        edges=edges,
         generated_at=datetime.now().astimezone().isoformat(timespec="seconds"),
     )
 
@@ -100,6 +105,21 @@ def render_investigation_markdown(result: InvestigationResult) -> str:
         lines.append(
             f"| {entity.kind} | {_escape(entity.value)} | {entity.confidence} | "
             f"{_escape(entity.source)} | {_escape(entity.note)} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Graph Edges",
+            "",
+            "| Source | Relation | Target | Confidence | Evidence Source |",
+            "|---|---|---|---|---|",
+        ]
+    )
+    for edge in result.edges:
+        lines.append(
+            f"| {_escape(edge.source_kind + ':' + edge.source_value)} | {edge.relation} | "
+            f"{_escape(edge.target_kind + ':' + edge.target_value)} | {edge.confidence} | {_escape(edge.source)} |"
         )
 
     lines.extend(

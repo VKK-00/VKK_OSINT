@@ -224,13 +224,13 @@ def format_cases(cases: Iterable[CaseRecord], *, output_format: str = "table") -
         return json.dumps([case.to_dict() for case in case_list], ensure_ascii=False, indent=2)
     if output_format == "markdown":
         lines = [
-            "| Case ID | Title | Saved | Targets | Entities | Findings |",
-            "|---|---|---|---:|---:|---:|",
+            "| Case ID | Title | Saved | Targets | Entities | Edges | Findings |",
+            "|---|---|---|---:|---:|---:|---:|",
         ]
         for case in case_list:
             lines.append(
                 f"| {case.case_id} | {_escape_md(case.title)} | {case.saved_at} | "
-                f"{case.target_count} | {case.entity_count} | {case.finding_count} |"
+                f"{case.target_count} | {case.entity_count} | {case.edge_count} | {case.finding_count} |"
             )
         return "\n".join(lines)
     if output_format == "csv":
@@ -245,6 +245,7 @@ def format_cases(cases: Iterable[CaseRecord], *, output_format: str = "table") -
                 "target_count",
                 "entity_count",
                 "finding_count",
+                "edge_count",
             ),
             lineterminator="\n",
         )
@@ -253,7 +254,7 @@ def format_cases(cases: Iterable[CaseRecord], *, output_format: str = "table") -
             writer.writerow(case.to_dict())
         return buffer.getvalue().strip()
     if output_format == "table":
-        headers = ("Case ID", "Title", "Saved", "Targets", "Entities", "Findings")
+        headers = ("Case ID", "Title", "Saved", "Targets", "Entities", "Edges", "Findings")
         rows = [
             (
                 case.case_id,
@@ -261,6 +262,7 @@ def format_cases(cases: Iterable[CaseRecord], *, output_format: str = "table") -
                 case.saved_at,
                 str(case.target_count),
                 str(case.entity_count),
+                str(case.edge_count),
                 str(case.finding_count),
             )
             for case in case_list
@@ -276,11 +278,13 @@ def format_case_detail(payload: dict[str, object], *, output_format: str = "json
     case = payload["case"]
     targets = payload["targets"]
     entities = payload["entities"]
+    edges = payload["edges"]
     findings = payload["findings"]
     valid_payload = (
         isinstance(case, dict)
         and isinstance(targets, list)
         and isinstance(entities, list)
+        and isinstance(edges, list)
         and isinstance(findings, list)
     )
     if not valid_payload:
@@ -318,6 +322,22 @@ def format_case_detail(payload: dict[str, object], *, output_format: str = "json
         lines.extend(
             [
                 "",
+                "## Graph Edges",
+                "",
+                "| Source | Relation | Target | Confidence |",
+                "|---|---|---|---|",
+            ]
+        )
+        for edge in edges:
+            source = f"{edge['source_kind']}:{edge['source_value']}"
+            target = f"{edge['target_kind']}:{edge['target_value']}"
+            lines.append(
+                f"| {_escape_md(source)} | {edge['relation']} | "
+                f"{_escape_md(target)} | {edge['confidence']} |"
+            )
+        lines.extend(
+            [
+                "",
                 "## Findings",
                 "",
                 "| Collection | Module | Source | Status | Confidence | Target |",
@@ -339,6 +359,7 @@ def format_case_detail(payload: dict[str, object], *, output_format: str = "json
             f"Saved:       {case['saved_at']}",
             f"Targets:     {len(targets)}",
             f"Entities:    {len(entities)}",
+            f"Edges:       {len(edges)}",
             f"Findings:    {len(findings)}",
         ]
         return "\n".join(lines)

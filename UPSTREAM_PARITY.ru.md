@@ -256,14 +256,14 @@ python -m osint_toolkit case-show --case-db cases.sqlite case-001
 - optional adapter dry-runs;
 - Markdown/JSON report;
 - Entity Summary from targets, finding URLs, evidence and metadata;
-- SQLite persistence for cases, targets, entities and findings;
+- Graph Edges for base entity relations;
+- SQLite persistence for cases, targets, entities, edges and findings;
 - list/show saved cases through CLI;
 - review checklist in every Markdown report.
 
 Gap:
 
-- entity merge пока только внутри одного кейса, без persistent graph edges;
-- нет graph edges/relations между сущностями;
+- graph edges пока базовые, без weighted graph analytics/path finding;
 - parsed executed adapter outputs пока доступны через `run-adapter`; `investigate --include-adapters` пока остаётся dry-run by design;
 - нет UI для просмотра кейса.
 

@@ -174,9 +174,9 @@ python -m osint_toolkit investigate --domain example.com --live --format json
 python -m osint_toolkit investigate --title "saved case" --email person@example.com --case-db cases.sqlite --case-id case-001
 ```
 
-Отчёт содержит `Entity Summary`: нормализованные email, phone, domain, URL, Telegram handle, country/region и другие сущности, извлечённые из входных seed values, native findings и adapter dry-runs. Это общий слой для будущего case graph.
+Отчёт содержит `Entity Summary` и `Graph Edges`: нормализованные сущности и связи между ними, например `email -> domain`, `url -> domain`, `telegram -> url`, `phone -> country`.
 
-Если указан `--case-db`, кейс сохраняется в SQLite: targets, findings и entities можно открыть позже через `cases` и `case-show`.
+Если указан `--case-db`, кейс сохраняется в SQLite: targets, findings, entities и graph edges можно открыть позже через `cases` и `case-show`.
 
 ### `cases` и `case-show`
 

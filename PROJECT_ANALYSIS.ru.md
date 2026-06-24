@@ -29,8 +29,8 @@ CLI работает в трёх режимах:
 - adapter stdout parser: извлечение URL, email, phone и key/value сигналов из выполненных upstream CLI;
 - adapter setup/readiness layer: install hints, docs URLs, PATH/env readiness;
 - adapter doctor: проверка фактической доступности upstream CLI в `PATH`;
-- investigation runner: один кейс, несколько seed-типов, entity summary, единый Markdown/JSON отчёт;
-- SQLite case store: сохранение и повторный просмотр кейсов, targets, entities и findings;
+- investigation runner: один кейс, несколько seed-типов, entity summary, graph edges, единый Markdown/JSON отчёт;
+- SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges и findings;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
 
@@ -91,9 +91,12 @@ CLI работает в трёх режимах:
   - `entities_from_targets()` — извлечение сущностей из seed values.
   - `entities_from_findings()` — извлечение сущностей из native и adapter findings.
   - `merge_entities()` — дедупликация сущностей с учётом confidence.
+- `osint_toolkit/graph.py`
+  - `GraphEdge` — отношение между двумя сущностями.
+  - `graph_edges_from_case()` — построение связей `email -> domain`, `url -> domain`, `target -> finding URL`, `phone -> country/normalized`.
 - `osint_toolkit/case_store.py`
   - `CaseStore` — SQLite-хранилище расследований.
-  - `save()` — сохраняет `InvestigationResult` в таблицы `cases`, `targets`, `entities`, `findings`.
+  - `save()` — сохраняет `InvestigationResult` в таблицы `cases`, `targets`, `entities`, `edges`, `findings`.
   - `list_cases()` — список сохранённых кейсов.
   - `load_case()` — выгрузка одного кейса для CLI output.
 - `osint_toolkit/investigation.py`
@@ -147,15 +150,16 @@ Investigation-поток:
 2. CLI превращает каждый seed в `ScanTarget`.
 3. `run_investigation()` запускает native scan-модули и, при `--include-adapters`, adapter dry-runs.
 4. `entities.py` извлекает и объединяет сущности из входных целей, `Finding.url`, `Finding.evidence` и `Finding.metadata`.
-5. Если указан `--case-db`, `CaseStore` сохраняет кейс в SQLite до вывода отчёта.
-6. Отчёт выводится как Markdown или JSON; Markdown содержит `Entity Summary`, native findings, adapter dry-runs и review checklist.
+5. `graph.py` строит связи между сущностями.
+6. Если указан `--case-db`, `CaseStore` сохраняет кейс в SQLite до вывода отчёта.
+7. Отчёт выводится как Markdown или JSON; Markdown содержит `Entity Summary`, `Graph Edges`, native findings, adapter dry-runs и review checklist.
 
 Case-store поток:
 
 1. Пользователь запускает `python -m osint_toolkit cases --case-db <path>`.
 2. `CaseStore.list_cases()` читает summary сохранённых кейсов.
 3. Пользователь запускает `python -m osint_toolkit case-show --case-db <path> <case_id>`.
-4. `CaseStore.load_case()` возвращает targets, entities и findings в table/Markdown/JSON формате.
+4. `CaseStore.load_case()` возвращает targets, entities, edges и findings в table/Markdown/JSON формате.
 
 ## Поток данных
 
@@ -181,7 +185,7 @@ Setup adapters:
 
 Investigation:
 
-`multiple CLI seeds -> ScanTarget[] -> Engine -> Finding[] -> optional adapter dry-runs -> Entity[] -> Markdown/JSON report`
+`multiple CLI seeds -> ScanTarget[] -> Engine -> Finding[] -> optional adapter dry-runs -> Entity[] -> GraphEdge[] -> Markdown/JSON report`
 
 Сохранённые кейсы:
 
@@ -265,7 +269,7 @@ osint-toolkit stats
 - Система строится вокруг единого `Finding`, чтобы результаты native-модулей и external adapters можно было объединять.
 - Adapter parser не считается источником истины: он нормализует stdout уже запущенного upstream CLI, а не заменяет native logic upstream-проекта.
 - Adapter setup layer не устанавливает внешние инструменты автоматически: он показывает install plan/readiness, чтобы не запускать непроверенный код без решения оператора.
-- `Entity` отделён от `Finding`: finding описывает источник и сигнал, entity описывает нормализованный объект для сводки кейса и будущего графа.
+- `Entity` отделён от `Finding`: finding описывает источник и сигнал, entity описывает нормализованный объект, а `GraphEdge` описывает связь между объектами.
 - SQLite case store отделён от engine: сканирование можно использовать без записи на диск, а сохранение включается явно через `--case-db`.
 - Dry-run используется по умолчанию для scan-команд. Live-сетевые проверки требуют явного `--live`.
 - Лицензионно сложные или большие проекты подключаются adapters вместо прямого копирования кода.
@@ -290,8 +294,8 @@ osint-toolkit stats
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
 - Adapter parser покрывает только общие URL/email/phone/key-value patterns; сложные JSON/CSV/HTML exports каждого upstream ещё не разобраны.
-- Entity summary сохраняется вместе с кейсом, но graph edges/relations между сущностями пока не моделируются.
-- SQLite schema сейчас версии 1; при изменении таблиц нужна явная миграция.
+- Graph edges пока покрывают базовые отношения; нет взвешенного path finding, graph analytics и визуального UI.
+- SQLite schema сейчас версии 2; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
 
@@ -303,6 +307,7 @@ osint-toolkit stats
 - При изменении install/config требований adapters обновлять `AdapterSpec`, `adapter_setup.py`, tests и README.
 - При добавлении parser для upstream stdout обновлять `adapter_parsers.py`, tests и `UPSTREAM_PARITY.ru.md`.
 - При изменении схемы сущностей обновлять `entities.py`, `investigation.py`, README и тесты JSON/Markdown.
+- При изменении graph relations обновлять `graph.py`, `case_store.py`, README и тесты.
 - При изменении SQLite-схемы обновлять `case_store.py`, schema version, тесты сохранения и документацию.
 - При добавлении команд обновлять `README.md` и этот анализ.
 - При изменении safety-границ обновлять `README.md`, `workflows.py` и тесты brief/recommend.
@@ -316,3 +321,4 @@ osint-toolkit stats
 - 2026-06-24: добавлено SQLite-хранилище кейсов и CLI-команды `cases`/`case-show`.
 - 2026-06-24: добавлен базовый adapter stdout parser и `run_adapter_findings()` для executed upstream CLI outputs.
 - 2026-06-24: добавлен adapter setup/readiness layer и CLI-команда `adapter-setup`.
+- 2026-06-24: добавлены `GraphEdge`, report-level graph edges и сохранение edges в SQLite case store.
