@@ -244,6 +244,7 @@ Gap:
 ```powershell
 python -m osint_toolkit investigate --username <name> --email <email> --domain <domain>
 python -m osint_toolkit investigate --username <name> --include-adapters --out reports/case.md
+python -m osint_toolkit investigate --username <name> --include-adapters --execute-adapters --adapter-limit 1
 python -m osint_toolkit investigate --username <name> --case-db cases.sqlite --case-id case-001
 python -m osint_toolkit cases --case-db cases.sqlite
 python -m osint_toolkit case-show --case-db cases.sqlite case-001
@@ -258,6 +259,7 @@ python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value p
 - несколько seed values в одном запуске;
 - единый native scan через `Engine`;
 - optional adapter dry-runs;
+- explicit executed adapter ingestion via `--execute-adapters`;
 - Markdown/JSON report;
 - Entity Summary from targets, finding URLs, evidence and metadata;
 - Graph Edges for base entity relations;
@@ -266,12 +268,13 @@ python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value p
 - saved graph summary: node/edge counts, relation counts, entity kind counts and top connected nodes;
 - focus-neighbor query for one saved entity;
 - cross-case entity index and exact saved-case lookup by entity;
+- parsed executed adapter outputs can enter investigation entities, graph edges and case store;
 - review checklist in every Markdown report.
 
 Gap:
 
 - graph edges пока базовые, без weighted path finding и full cross-case edge graph;
-- parsed executed adapter outputs пока доступны через `run-adapter`; `investigate --include-adapters` пока остаётся dry-run by design;
+- `investigate --execute-adapters` пока запускает adapters по совместимости и `--adapter-limit`; нет allowlist выбора конкретных repositories в одном кейсе;
 - нет UI для просмотра кейса и интерактивного графа.
 
 ## Adapter doctor

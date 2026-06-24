@@ -48,6 +48,9 @@ def run_investigation(
     live: bool = False,
     timeout: float = 10.0,
     include_adapters: bool = False,
+    execute_adapters: bool = False,
+    allow_restricted_adapters: bool = False,
+    adapter_timeout: float = 60.0,
     adapter_limit: int | None = 20,
 ) -> InvestigationResult:
     engine = build_default_engine()
@@ -59,7 +62,15 @@ def run_investigation(
     adapter_findings: list[Finding] = []
     if include_adapters:
         for target in targets:
-            adapter_findings.extend(_adapter_dry_runs(target, adapter_limit))
+            adapter_findings.extend(
+                _adapter_runs(
+                    target,
+                    adapter_limit,
+                    execute=execute_adapters,
+                    allow_restricted=allow_restricted_adapters,
+                    timeout=adapter_timeout,
+                )
+            )
     entities = merge_entities(
         entities_from_targets(targets),
         entities_from_findings(tuple(findings)),
@@ -135,18 +146,20 @@ def render_investigation_markdown(result: InvestigationResult) -> str:
         lines.append(_finding_row(finding))
 
     if result.adapter_findings:
+        adapter_heading = "Adapter Findings" if _has_executed_adapter_findings(result.adapter_findings) else "Adapter Dry Runs"
         lines.extend(
             [
                 "",
-                "## Adapter Dry Runs",
+                f"## {adapter_heading}",
                 "",
-                "| Adapter | Target | Status | Command / Evidence |",
-                "|---|---|---|---|",
+                "| Adapter | Module | Target | Status | Confidence | Command / Evidence |",
+                "|---|---|---|---|---|---|",
             ]
         )
         for finding in result.adapter_findings:
             lines.append(
-                f"| {finding.source} | {_escape(finding.target)} | {finding.status} | {_escape(finding.evidence)} |"
+                f"| {finding.source} | {finding.module} | {_escape(finding.target)} | "
+                f"{finding.status} | {finding.confidence} | {_escape(finding.evidence)} |"
             )
 
     lines.extend(
@@ -175,7 +188,14 @@ def write_investigation(path: str | Path, content: str) -> Path:
     return output_path
 
 
-def _adapter_dry_runs(target: ScanTarget, limit: int | None) -> tuple[Finding, ...]:
+def _adapter_runs(
+    target: ScanTarget,
+    limit: int | None,
+    *,
+    execute: bool,
+    allow_restricted: bool,
+    timeout: float,
+) -> tuple[Finding, ...]:
     compatible = [
         adapter
         for adapter in ADAPTERS
@@ -185,8 +205,20 @@ def _adapter_dry_runs(target: ScanTarget, limit: int | None) -> tuple[Finding, .
         compatible = compatible[:limit]
     findings: list[Finding] = []
     for adapter in compatible:
-        findings.extend(run_adapter_findings(adapter.repository, target, execute=False))
+        findings.extend(
+            run_adapter_findings(
+                adapter.repository,
+                target,
+                execute=execute,
+                allow_restricted=allow_restricted,
+                timeout=timeout,
+            )
+        )
     return tuple(findings)
+
+
+def _has_executed_adapter_findings(findings: tuple[Finding, ...]) -> bool:
+    return any(finding.status != "planned" or finding.module == "external-adapter-parser" for finding in findings)
 
 
 def _finding_row(finding: Finding) -> str:

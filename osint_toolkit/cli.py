@@ -137,6 +137,9 @@ def build_parser() -> argparse.ArgumentParser:
     investigate.add_argument("--region", choices=("all", "ru", "ua"), default="all")
     investigate.add_argument("--live", action="store_true", help="Perform live checks for native modules.")
     investigate.add_argument("--include-adapters", action="store_true", help="Add adapter dry-run commands.")
+    investigate.add_argument("--execute-adapters", action="store_true", help="Execute configured upstream adapters. Requires --include-adapters.")
+    investigate.add_argument("--allow-restricted-adapters", action="store_true", help="Allow restricted adapters during --execute-adapters after scope review.")
+    investigate.add_argument("--adapter-timeout", type=float, default=60.0)
     investigate.add_argument("--adapter-limit", type=int, default=20)
     investigate.add_argument("--timeout", type=float, default=10.0)
     investigate.add_argument("--format", choices=("markdown", "json"), default="markdown")
@@ -267,12 +270,19 @@ def handle_investigate(args: argparse.Namespace) -> int:
         raise ValueError("At least one investigation seed is required.")
     if args.case_id and not args.case_db:
         raise ValueError("--case-id requires --case-db.")
+    if args.execute_adapters and not args.include_adapters:
+        raise ValueError("--execute-adapters requires --include-adapters.")
+    if args.allow_restricted_adapters and not args.execute_adapters:
+        raise ValueError("--allow-restricted-adapters requires --execute-adapters.")
     result = run_investigation(
         targets,
         title=args.title,
         live=args.live,
         timeout=args.timeout,
         include_adapters=args.include_adapters,
+        execute_adapters=args.execute_adapters,
+        allow_restricted_adapters=args.allow_restricted_adapters,
+        adapter_timeout=args.adapter_timeout,
         adapter_limit=args.adapter_limit,
     )
     content = (

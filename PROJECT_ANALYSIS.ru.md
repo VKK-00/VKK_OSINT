@@ -30,6 +30,7 @@ CLI работает в трёх режимах:
 - adapter setup/readiness layer: install hints, docs URLs, PATH/env readiness;
 - adapter doctor: проверка фактической доступности upstream CLI в `PATH`;
 - investigation runner: один кейс, несколько seed-типов, entity summary, graph edges, единый Markdown/JSON отчёт;
+- executed adapter ingestion inside investigation: явный `--execute-adapters` добавляет parsed upstream CLI findings в entities, graph edges и case store;
 - SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges и findings;
 - saved case graph analysis: счётчики связей/типов сущностей, top connected nodes и focus-запрос соседей сущности;
 - cross-case entity index: поиск повторяющихся email/domain/telegram/url и других сущностей между сохранёнными кейсами;
@@ -154,10 +155,11 @@ Investigation-поток:
 1. Пользователь запускает `python -m osint_toolkit investigate` с одним или несколькими seed values.
 2. CLI превращает каждый seed в `ScanTarget`.
 3. `run_investigation()` запускает native scan-модули и, при `--include-adapters`, adapter dry-runs.
-4. `entities.py` извлекает и объединяет сущности из входных целей, `Finding.url`, `Finding.evidence` и `Finding.metadata`.
-5. `graph.py` строит связи между сущностями.
-6. Если указан `--case-db`, `CaseStore` сохраняет кейс в SQLite до вывода отчёта.
-7. Отчёт выводится как Markdown или JSON; Markdown содержит `Entity Summary`, `Graph Edges`, native findings, adapter dry-runs и review checklist.
+4. При `--execute-adapters` совместимые adapters запускаются через `run_adapter_findings()`; stdout/stderr parser добавляет дополнительные adapter findings.
+5. `entities.py` извлекает и объединяет сущности из входных целей, `Finding.url`, `Finding.evidence` и `Finding.metadata`.
+6. `graph.py` строит связи между сущностями.
+7. Если указан `--case-db`, `CaseStore` сохраняет кейс в SQLite до вывода отчёта.
+8. Отчёт выводится как Markdown или JSON; Markdown содержит `Entity Summary`, `Graph Edges`, native findings, adapter dry-runs или executed adapter findings и review checklist.
 
 Case-store поток:
 
@@ -194,7 +196,7 @@ Setup adapters:
 
 Investigation:
 
-`multiple CLI seeds -> ScanTarget[] -> Engine -> Finding[] -> optional adapter dry-runs -> Entity[] -> GraphEdge[] -> Markdown/JSON report`
+`multiple CLI seeds -> ScanTarget[] -> Engine -> Finding[] -> optional adapter dry-runs/executions -> Entity[] -> GraphEdge[] -> Markdown/JSON report`
 
 Сохранённые кейсы:
 
@@ -225,6 +227,9 @@ SQLite используется локально через стандартну
 - `scan --timeout` — HTTP timeout.
 - `scan --region` — фильтр URL-шаблонов или workflow по региону.
 - `investigate --include-adapters` — добавить dry-run команды совместимых upstream adapters.
+- `investigate --execute-adapters` — явно запустить совместимые upstream CLI adapters после `--include-adapters`.
+- `investigate --allow-restricted-adapters` — разрешить restricted adapters только вместе с `--execute-adapters` после scope review.
+- `investigate --adapter-timeout` — timeout для внешних adapter CLI.
 - `investigate --format markdown|json` — формат отчёта по кейсу.
 - `investigate --case-db` — SQLite-файл для сохранения кейса.
 - `investigate --case-id` — стабильный ID кейса, если нужен повторяемый ключ.
@@ -257,6 +262,7 @@ python -m osint_toolkit adapter-setup sherlock-project/sherlock
 python -m osint_toolkit doctor
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
 python -m osint_toolkit investigate --username example_user --domain example.com --telegram "@durov" --include-adapters
+python -m osint_toolkit investigate --username example_user --include-adapters --execute-adapters --adapter-limit 1
 python -m osint_toolkit investigate --email person@example.com --case-db cases.sqlite --case-id case-001
 python -m osint_toolkit cases --case-db cases.sqlite
 python -m osint_toolkit case-show --case-db cases.sqlite case-001 --format json
@@ -287,6 +293,7 @@ osint-toolkit stats
 - CLI читает уже проверенные CSV, а не тянет актуальные данные из GitHub. Это делает результаты воспроизводимыми.
 - Система строится вокруг единого `Finding`, чтобы результаты native-модулей и external adapters можно было объединять.
 - Adapter parser не считается источником истины: он нормализует stdout уже запущенного upstream CLI, а не заменяет native logic upstream-проекта.
+- Investigation adapter execution является opt-in: `--include-adapters` остаётся dry-run, а запуск внешнего кода требует отдельного `--execute-adapters`.
 - Adapter setup layer не устанавливает внешние инструменты автоматически: он показывает install plan/readiness, чтобы не запускать непроверенный код без решения оператора.
 - `Entity` отделён от `Finding`: finding описывает источник и сигнал, entity описывает нормализованный объект, а `GraphEdge` описывает связь между объектами.
 - SQLite case store отделён от engine: сканирование можно использовать без записи на диск, а сохранение включается явно через `--case-db`.
@@ -315,6 +322,7 @@ osint-toolkit stats
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
 - Adapter parser покрывает только общие URL/email/phone/key-value patterns; сложные JSON/CSV/HTML exports каждого upstream ещё не разобраны.
+- `investigate --execute-adapters` выполняет только уже описанные command templates; выбора конкретного adapter allowlist в investigation пока нет, кроме `--adapter-limit`.
 - Graph edges пока покрывают базовые отношения; есть summary/focus-neighbor analytics и cross-case entity index, но нет weighted path finding, cross-case edge graph и визуального UI.
 - SQLite schema сейчас версии 2; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
@@ -346,3 +354,4 @@ osint-toolkit stats
 - 2026-06-24: добавлены `GraphEdge`, report-level graph edges и сохранение edges в SQLite case store.
 - 2026-06-24: добавлены `analyze_case_graph()` и CLI-команда `case-graph` для summary сохранённого графа и запроса соседей сущности.
 - 2026-06-24: добавлены `case-index`, `list_entity_index()` и `find_cases_by_entity()` для cross-case поиска повторяющихся сущностей.
+- 2026-06-24: добавлен explicit `investigate --execute-adapters`, который запускает configured upstream CLI adapters и включает parsed findings в общий кейс.

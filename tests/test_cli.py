@@ -139,6 +139,33 @@ class CliTests(unittest.TestCase):
         self.assertIn(("telegram", "@durov"), entities)
         self.assertIn(("url", "https://t.me/durov"), entities)
 
+    def test_investigate_execute_adapters_requires_include_adapters(self):
+        result = self.run_cli(
+            "investigate",
+            "--username",
+            "example_user",
+            "--execute-adapters",
+            "--format",
+            "json",
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--execute-adapters requires --include-adapters", result.stderr)
+
+    def test_investigate_allow_restricted_adapters_requires_execute_adapters(self):
+        result = self.run_cli(
+            "investigate",
+            "--username",
+            "example_user",
+            "--include-adapters",
+            "--allow-restricted-adapters",
+            "--format",
+            "json",
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--allow-restricted-adapters requires --execute-adapters", result.stderr)
+
     def test_investigate_can_save_and_show_case(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "cases.sqlite"
