@@ -5,6 +5,7 @@ import socket
 from dataclasses import dataclass
 
 from ..dns_lookup import DnsLookupResult, lookup_dns_records
+from ..email_auth import EmailAuthPolicy, classify_dmarc_policy, classify_spf_policy
 from ..engine import Finding, RunConfig, ScanTarget
 
 EMAIL_RE = re.compile(
@@ -60,6 +61,8 @@ class EmailScanModule:
             )
             findings.append(_planned_dns_record_finding(self.name, value, domain, "MX"))
             findings.append(_planned_dns_record_finding(self.name, value, domain, "TXT"))
+            findings.append(_planned_email_auth_finding(self.name, value, domain, "spf-policy"))
+            findings.append(_planned_email_auth_finding(self.name, value, domain, "dmarc-policy"))
             return tuple(findings)
 
         try:
@@ -90,9 +93,14 @@ class EmailScanModule:
                 )
             )
 
-        for record_type in ("MX", "TXT"):
-            result = lookup_dns_records(domain, record_type, timeout=config.timeout)
-            findings.append(_dns_record_finding(self.name, value, result))
+        mx_result = lookup_dns_records(domain, "MX", timeout=config.timeout)
+        txt_result = lookup_dns_records(domain, "TXT", timeout=config.timeout)
+        findings.append(_dns_record_finding(self.name, value, mx_result))
+        findings.append(_dns_record_finding(self.name, value, txt_result))
+        findings.append(_email_auth_finding(self.name, value, classify_spf_policy(domain, txt_result)))
+
+        dmarc_result = lookup_dns_records(f"_dmarc.{domain}", "TXT", timeout=config.timeout)
+        findings.append(_email_auth_finding(self.name, value, classify_dmarc_policy(domain, dmarc_result)))
         return tuple(findings)
 
 
@@ -129,4 +137,29 @@ def _dns_record_finding(module: str, email: str, result: DnsLookupResult) -> Fin
             "records": " | ".join(result.records),
             "raw_excerpt": result.raw_excerpt,
         },
+    )
+
+
+def _planned_email_auth_finding(module: str, email: str, domain: str, source: str) -> Finding:
+    label = "SPF" if source == "spf-policy" else "DMARC"
+    return Finding(
+        module=module,
+        source=source,
+        target=email,
+        status="planned",
+        confidence="not_checked",
+        evidence=f"Dry run only. Pass --live to classify {label} policy for the email domain.",
+        metadata={"domain": domain},
+    )
+
+
+def _email_auth_finding(module: str, email: str, policy: EmailAuthPolicy) -> Finding:
+    return Finding(
+        module=module,
+        source=policy.source,
+        target=email,
+        status=policy.status,
+        confidence=policy.confidence,
+        evidence=policy.evidence,
+        metadata=policy.metadata,
     )

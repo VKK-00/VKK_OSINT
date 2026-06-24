@@ -4,7 +4,9 @@
 
 Создать собственную единую OSINT-систему на основе уже собранного каталога GitHub OSINT-проектов.
 
-Целевая модель — функциональная совместимость с upstream-проектами в одном интерфейсе: часть возможностей переносится в native-модули, часть подключается через внешние CLI/API adapters, а высокорисковые механики выносятся в restricted-слой.
+Целевая модель — 1:1 функциональная совместимость с upstream-проектами в одном интерфейсе: часть возможностей переносится в native-модули, часть подключается через внешние CLI/API adapters, а высокорисковые механики выносятся в restricted-слой.
+
+Под 1:1 здесь понимается не безусловное копирование исходников, а воспроизведение поведения: такой же класс входов, сопоставимый результат, единая нормализация в `Finding`, понятные confidence/status и явно описанный gap, если upstream-поведение ещё не покрыто. Буквальный перенос кода возможен только после проверки лицензии и совместимости.
 
 ## Что делает проект
 
@@ -22,7 +24,7 @@ CLI работает в трёх режимах:
 - username public profile checks по 38 URL-шаблонам, совместимые по классу задачи с Sherlock/Maigret/WhatsMyName/Nexfil;
 - platform-specific username rules: несовместимые site checks возвращаются как `skipped`, без построения заведомо неверного URL;
 - content marker rules для live username checks: profile markers повышают confidence, soft-404 markers дают `not_found`;
-- email baseline checks: синтаксис, live domain resolution, MX и TXT lookup;
+- email baseline checks: синтаксис, live domain resolution, MX/TXT lookup, SPF и DMARC policy classification;
 - phone baseline checks: нормализация, E.164-like validation и country-prefix signal;
 - domain baseline recon: DNS resolution, HTTP/HTTPS metadata и presence security headers;
 - Telegram baseline: handle/post URL normalization и optional live public metadata;
@@ -80,10 +82,13 @@ CLI работает в трёх режимах:
   - `PersonNameScanModule` — safe person-name expansion в username-кандидаты.
   - `generate_username_candidates()` — стабильные варианты `firstlast`, `first.last`, `first_initial_last` и RU/UA transliteration.
 - `osint_toolkit/modules/email.py`
-  - `EmailScanModule` — базовая проверка email: синтаксис, доменное разрешение, MX/TXT lookup.
+  - `EmailScanModule` — базовая проверка email: синтаксис, доменное разрешение, MX/TXT lookup, SPF/DMARC findings.
+- `osint_toolkit/email_auth.py`
+  - `classify_spf_policy()` — классификация SPF из доменного TXT: отсутствие, multiple SPF warning, `all` policy, include/redirect counts.
+  - `classify_dmarc_policy()` — классификация DMARC из `_dmarc.<domain>` TXT: отсутствие, multiple DMARC warning, `p=`, `sp=`, alignment, percent и report URI tags.
 - `osint_toolkit/dns_lookup.py`
   - `lookup_dns_records()` — запуск системного `nslookup` для MX/TXT без дополнительных Python-зависимостей.
-  - `parse_nslookup_records()` — parser Windows/Unix-style `nslookup` output для MX/TXT.
+  - `parse_nslookup_records()` — parser Windows/Unix-style `nslookup` output для MX/TXT; TXT chunks соединяются в одну запись, чтобы SPF/DMARC не теряли длинные значения.
 - `osint_toolkit/modules/phone.py`
   - `PhoneScanModule` — нормализация и country-prefix сигнал для телефонных номеров.
 - `osint_toolkit/modules/domain.py`
@@ -207,9 +212,9 @@ Case-store поток:
 
 `CLI target -> ScanTarget -> Engine -> ScanModule[] -> Finding[] planned/skipped/live -> table/Markdown/CSV/JSON`
 
-Email DNS enrichment:
+Email DNS/auth enrichment:
 
-`email -> domain -> socket.getaddrinfo + nslookup MX/TXT -> Finding[]`
+`email -> domain -> socket.getaddrinfo + nslookup MX/TXT -> SPF classifier + nslookup _dmarc TXT -> DMARC classifier -> Finding[]`
 
 Person expansion:
 
@@ -239,11 +244,11 @@ Investigation:
 
 Native live-модули используют публичные HTTP(S) URL checks через стандартную библиотеку Python. Для username live checks сохраняется только ограниченный текст ответа в памяти процесса, чтобы применить content marker rules; на диск body не пишется.
 
-Email live-модуль использует `socket.getaddrinfo()` и системный `nslookup` для MX/TXT. Если `nslookup` недоступен, результат DNS-записи возвращается как `missing`, а не как падение команды.
+Email live-модуль использует `socket.getaddrinfo()` и системный `nslookup` для MX/TXT. TXT результата домена достаточно для SPF classifier, а DMARC classifier делает отдельный TXT lookup по `_dmarc.<domain>`. Если `nslookup` недоступен, результат DNS-записи возвращается как `missing`, а не как падение команды.
 
 SQLite используется локально через стандартную библиотеку `sqlite3`; внешнего сервера БД нет.
 
-Будущие external adapters должны подключать upstream CLI/API без копирования кода, если лицензия, масштаб или язык проекта делают прямой перенос неразумным.
+External adapters должны подключать upstream CLI/API без копирования кода, если лицензия, масштаб или язык проекта делают прямой перенос неразумным. Для `h8mail` уже зафиксирован executable adapter target `h8mail -t <email>`; `user-scanner` пока записан как setup-only parity target до поддержки разных command templates для email и username.
 
 ## Конфигурация, переменные окружения и секреты
 
@@ -256,7 +261,7 @@ SQLite используется локально через стандартну
 - `--out` — путь Markdown-файла для `brief`.
 - `scan --live` — явное разрешение сетевых проверок.
 - `scan --timeout` — HTTP timeout.
-- `scan email --live` — дополнительно делает domain resolution и MX/TXT lookup.
+- `scan email --live` — дополнительно делает domain resolution, MX/TXT lookup, SPF classification и DMARC lookup/classification.
 - `scan --region` — фильтр URL-шаблонов или workflow по региону.
 - `investigate --person` — повторяемое имя человека для username expansion.
 - `investigate --include-adapters` — добавить dry-run команды совместимых upstream adapters.
@@ -352,7 +357,7 @@ osint-toolkit stats
 ## Рассмотренные варианты реализации
 
 - Полноценный web UI: отложен, потому что сначала нужно стабилизировать engine/adapters.
-- Буквальное копирование кода из всех проектов: не выбрано как первый шаг из-за разных лицензий, языков и масштаба. Целевая альтернатива — 1:1 functional parity через native-compatible modules и external adapters.
+- Буквальное копирование кода из всех проектов: допускается только после license review. Обязательный путь для цели — 1:1 functional parity поведения через native-compatible modules, external adapters и documented restricted/excluded decisions.
 - Новая база данных SQLite: пока не нужна, CSV достаточно для каталога; для истории scan-запусков может понадобиться позже.
 
 ## Текущие ограничения, риски и открытые вопросы
@@ -361,12 +366,13 @@ osint-toolkit stats
 - Качество и безопасность внешних репозиториев не аудированы.
 - Native person-name expansion пока использует базовые шаблоны имени/фамилии и RU/UA transliteration; нет словарей никнеймов, исторических alias и platform-specific username rules.
 - Первый native username module покрывает URL-template/status-code слой, часть platform syntax rules и часть content marker rules, но не всю логику Sherlock/Maigret: нет полного upstream site dataset, полного набора custom content error rules, rate-limit logic и enrichment.
-- Native email module делает MX/TXT lookup, но пока не делает breach lookup, DMARC classifier или external API enrichment.
+- Native email module делает MX/TXT lookup и SPF/DMARC classifier, но пока не делает breach lookup, NS/additional TXT classifiers или external API enrichment.
 - Native phone module пока не делает carrier lookup, reputation lookup или external API enrichment.
 - Telegram module пока не использует Telegram API и не получает private/group data.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
+- Adapter manifest теперь включает executable target для `h8mail`, но `user-scanner` пока setup-only из-за отсутствия per-target-kind command templates.
 - Adapter parser покрывает только общие URL/email/phone/key-value patterns; сложные JSON/CSV/HTML exports каждого upstream ещё не разобраны.
 - Adapter profiles пока статические; нет пользовательских профилей и per-case persistent adapter policy.
 - Graph edges пока покрывают базовые отношения; есть summary/focus-neighbor analytics и cross-case entity index, но нет weighted path finding, cross-case edge graph и визуального UI.
@@ -380,7 +386,7 @@ osint-toolkit stats
 - При добавлении native-модуля обновлять `engine.py`, `cli.py`, README и тесты.
 - При изменении username site dataset/rules обновлять `sites.py`, username tests, README и parity-карту.
 - При изменении HTTP body/title parsing обновлять `http_client.py`, username classifier tests и safety notes в README/analysis.
-- При изменении DNS lookup обновлять `dns_lookup.py`, email tests, README и parity-карту.
+- При изменении DNS lookup или email auth classification обновлять `dns_lookup.py`, `email_auth.py`, email tests, README и parity-карту.
 - При изменении person-name expansion обновлять `modules/person.py`, graph/entity mapping, investigation tests и parity-карту.
 - При подключении upstream-проекта обновлять `adapters.py`, указать лицензию, режим интеграции и parity gap.
 - При изменении adapter profiles обновлять `adapters.py`, CLI-тесты, README и parity-карту.
@@ -412,3 +418,4 @@ osint-toolkit stats
 - 2026-06-24: расширен native username dataset до 38 URL-шаблонов и добавлены platform-specific username rules со статусом `skipped`.
 - 2026-06-24: добавлены `HttpResult.body_text`, username content marker rules и `classify_username_http_result()` для soft-404/profile confidence в live checks.
 - 2026-06-24: добавлен `dns_lookup.py`; `EmailScanModule` теперь планирует и выполняет MX/TXT lookup через `nslookup` в live-режиме.
+- 2026-06-24: добавлен `email_auth.py`; `EmailScanModule` теперь классифицирует SPF и DMARC, а adapter manifest расширен executable target для `h8mail`.

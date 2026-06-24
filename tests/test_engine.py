@@ -201,7 +201,7 @@ class EngineTests(unittest.TestCase):
         engine = Engine([EmailScanModule()])
         findings = engine.scan(ScanTarget(kind="email", value="person@example.com"), RunConfig())
 
-        self.assertEqual(len(findings), 4)
+        self.assertEqual(len(findings), 6)
         self.assertEqual(findings[0].source, "syntax")
         self.assertEqual(findings[0].status, "valid")
         self.assertEqual(findings[1].source, "domain-resolution")
@@ -210,6 +210,10 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(findings[2].status, "planned")
         self.assertEqual(findings[3].source, "txt-records")
         self.assertEqual(findings[3].status, "planned")
+        self.assertEqual(findings[4].source, "spf-policy")
+        self.assertEqual(findings[4].status, "planned")
+        self.assertEqual(findings[5].source, "dmarc-policy")
+        self.assertEqual(findings[5].status, "planned")
 
     def test_email_scan_live_adds_mx_and_txt_records(self):
         def fake_lookup(domain, record_type, *, timeout=10.0):
@@ -220,11 +224,18 @@ class EngineTests(unittest.TestCase):
                     status="candidate",
                     records=("10 mail.example.com",),
                 )
+            if domain.startswith("_dmarc."):
+                return DnsLookupResult(
+                    domain=domain,
+                    record_type=record_type,
+                    status="candidate",
+                    records=("v=DMARC1; p=reject; rua=mailto:dmarc@example.com",),
+                )
             return DnsLookupResult(
                 domain=domain,
                 record_type=record_type,
                 status="candidate",
-                records=("v=spf1 -all",),
+                records=("v=spf1 include:_spf.example.com -all",),
             )
 
         with patch("osint_toolkit.modules.email.socket.getaddrinfo", return_value=[(socket.AF_INET, None, None, "", ("93.184.216.34", 0))]), patch(
@@ -239,7 +250,10 @@ class EngineTests(unittest.TestCase):
         sources = {finding.source: finding for finding in findings}
         self.assertEqual(sources["domain-resolution"].status, "candidate")
         self.assertEqual(sources["mx-records"].metadata["records"], "10 mail.example.com")
-        self.assertEqual(sources["txt-records"].metadata["records"], "v=spf1 -all")
+        self.assertEqual(sources["txt-records"].metadata["records"], "v=spf1 include:_spf.example.com -all")
+        self.assertEqual(sources["spf-policy"].metadata["policy"], "hardfail")
+        self.assertEqual(sources["spf-policy"].metadata["include_count"], "1")
+        self.assertEqual(sources["dmarc-policy"].metadata["policy"], "reject")
 
     def test_email_scan_rejects_invalid_input(self):
         engine = Engine([EmailScanModule()])

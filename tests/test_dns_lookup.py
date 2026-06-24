@@ -43,6 +43,23 @@ class DnsLookupTests(unittest.TestCase):
             ("v=spf1 include:_spf.example.com -all", "google-site-verification=abc"),
         )
 
+    def test_parse_txt_records_joins_split_chunks(self):
+        output = '''
+        example.com text =
+            "v=spf1 include:_spf.example.com "
+            "include:_spf2.example.com -all"
+        _dmarc.example.com text = "v=DMARC1; p=reject; "
+            "rua=mailto:dmarc@example.com"
+        '''
+
+        self.assertEqual(
+            parse_nslookup_records(output, "TXT"),
+            (
+                "v=spf1 include:_spf.example.com include:_spf2.example.com -all",
+                "v=DMARC1; p=reject; rua=mailto:dmarc@example.com",
+            ),
+        )
+
     def test_lookup_dns_records_uses_nslookup_output(self):
         completed = subprocess.CompletedProcess(
             args=["nslookup", "-type=MX", "example.com"],

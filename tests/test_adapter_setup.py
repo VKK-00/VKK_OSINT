@@ -4,6 +4,7 @@ from unittest.mock import patch
 from osint_toolkit.adapter_setup import build_adapter_setup
 from osint_toolkit.adapters import find_adapter
 from osint_toolkit.doctor import inspect_adapters
+from osint_toolkit.engine import ScanTarget
 
 
 class AdapterSetupTests(unittest.TestCase):
@@ -27,6 +28,27 @@ class AdapterSetupTests(unittest.TestCase):
 
         self.assertEqual(setup.readiness, "ready")
         self.assertEqual(setup.executable_path, "C:\\tools\\maigret.exe")
+
+    def test_h8mail_setup_has_executable_command(self):
+        adapter = find_adapter("khast3x/h8mail")
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "missing")
+        self.assertEqual(setup.install_command, "python -m pip install h8mail")
+        self.assertEqual(
+            adapter.render_command(ScanTarget(kind="email", value="person@example.com")),
+            ("h8mail", "-t", "person@example.com"),
+        )
+
+    def test_user_scanner_setup_waits_for_target_specific_command_template(self):
+        setup = build_adapter_setup(find_adapter("kaifcodec/user-scanner"))
+
+        self.assertEqual(setup.readiness, "not_configured")
+        self.assertEqual(setup.install_command, "python -m pip install user-scanner")
+        self.assertIn("-e", setup.command_hint)
+        self.assertIn("-u", setup.command_hint)
 
     def test_setup_reports_not_configured_for_dataset_adapter(self):
         setup = build_adapter_setup(find_adapter("WebBreacher/WhatsMyName"))

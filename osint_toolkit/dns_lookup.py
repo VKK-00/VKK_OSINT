@@ -103,23 +103,33 @@ def _parse_mx_records(output: str) -> tuple[str, ...]:
 
 def _parse_txt_records(output: str) -> tuple[str, ...]:
     records: list[str] = []
+    current_chunks: list[str] = []
     pending_text_block = False
+
+    def flush_current() -> None:
+        if current_chunks:
+            records.append("".join(current_chunks))
+            current_chunks.clear()
+
     for line in _content_lines(output):
         lowered = line.lower()
         if "text =" in lowered:
+            flush_current()
             pending_text_block = True
             value = line.split("=", 1)[1].strip()
-            records.extend(_quoted_or_plain_text(value))
+            current_chunks.extend(_quoted_or_plain_text(value))
             continue
         if pending_text_block and line.startswith('"'):
-            records.extend(_quoted_or_plain_text(line))
+            current_chunks.extend(_quoted_or_plain_text(line))
             continue
+        flush_current()
         pending_text_block = False
+    flush_current()
     return _dedupe(records)
 
 
 def _quoted_or_plain_text(value: str) -> tuple[str, ...]:
-    quoted = tuple(match.group(1).strip() for match in re.finditer(r'"([^"]*)"', value) if match.group(1).strip())
+    quoted = tuple(match.group(1) for match in re.finditer(r'"([^"]*)"', value) if match.group(1).strip())
     if quoted:
         return quoted
     stripped = value.strip().strip('"')

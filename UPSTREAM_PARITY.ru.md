@@ -2,6 +2,8 @@
 
 Цель: собрать функциональность OSINT-проектов из текущего snapshot в единую систему `osint_toolkit`.
 
+Рабочее правило: для каждого выбранного upstream-проекта должен быть один из трёх статусов — native-покрытие поведения, внешний adapter к upstream CLI/API или restricted/excluded решение с причиной. Нельзя считать функциональность перенесённой, пока входы, результат, confidence/status и ограничения не описаны в этой карте.
+
 Под “1:1” здесь фиксируется не буквальное копирование файлов, а функциональная совместимость:
 
 - одинаковый класс входных данных;
@@ -79,19 +81,25 @@ Gap до полного 1:1:
 - синтаксическая проверка;
 - извлечение домена;
 - live domain resolution по явному `--live`;
-- MX/TXT lookup через системный `nslookup` по явному `--live`.
+- MX/TXT lookup через системный `nslookup` по явному `--live`;
+- SPF classifier поверх доменного TXT: наличие записи, multiple-record warning, `all` policy и include/redirect counts;
+- DMARC classifier через `_dmarc.<domain>` TXT: наличие записи, multiple-record warning, `p=`, `sp=`, alignment, percent и report URI tags;
+- executable adapter target для `khast3x/h8mail`: `h8mail -t <email>`;
+- setup-only parity target для `kaifcodec/user-scanner`, пока adapter model не поддерживает разные флаги `-e`/`-u`.
 
 Gap:
 
 - нет breach lookup;
 - нет API enrichment;
 - нет локального кэша;
+- нет NS/additional TXT classifiers;
+- нет per-target-kind adapter command templates для `user-scanner`;
 - нет restricted account-enumeration режима.
 
 План:
 
-1. Native: расширить DNS слой до NS/DMARC/дополнительных TXT classifiers.
-2. Adapter: `mosint`, `h8mail`, `pwnedOrNot`.
+1. Native: расширить DNS слой до NS/additional TXT classifiers и richer email security findings.
+2. Adapter: `mosint`, `h8mail`, `pwnedOrNot`, `user-scanner`.
 3. Restricted adapter: `holehe`, `email2phonenumber`, любые recovery/account-enumeration flows.
 
 Причина restricted-слоя: email-to-account и email-to-phone могут раскрывать чувствительные персональные данные и часто зависят от password recovery поведения платформ.

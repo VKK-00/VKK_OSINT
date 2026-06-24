@@ -11,6 +11,7 @@ class AdapterProfileTests(unittest.TestCase):
         self.assertIn("email-safe", profiles)
         self.assertEqual(find_adapter_profile("USERNAME-FULL").name, "username-full")
         self.assertIn("sherlock-project/sherlock", profiles["username-full"].repositories)
+        self.assertIn("khast3x/h8mail", profiles["email-safe"].repositories)
 
     def test_expand_adapter_repositories_dedupes_profiles_and_explicit_adapters(self):
         repositories = expand_adapter_repositories(
