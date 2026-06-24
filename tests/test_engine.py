@@ -1020,6 +1020,24 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(ok[0].metadata["account_id"], "1234567890")
         self.assertEqual(ok[0].metadata["target_type"], "profile_id")
 
+    def test_social_scan_normalizes_yandex_and_mailru_targets(self):
+        engine = Engine([SocialPublicProfileModule()])
+        mailru = engine.scan(ScanTarget(kind="social", value="mailru:exampleuser"), RunConfig())
+        mailru_url = engine.scan(ScanTarget(kind="social", value="https://my.mail.ru/bk/exampleuser/"), RunConfig())
+        yandex_q = engine.scan(ScanTarget(kind="social", value="yandex:q/exampleuser"), RunConfig())
+        yandex_market = engine.scan(ScanTarget(kind="social", value="https://market.yandex.ru/user/exampleuser"), RunConfig())
+
+        self.assertEqual(mailru[0].url, "https://my.mail.ru/mail/exampleuser/")
+        self.assertEqual(mailru[0].metadata["platform"], "mailru")
+        self.assertEqual(mailru[0].metadata["social_profile"], "mailru:mail/exampleuser")
+        self.assertEqual(mailru[0].metadata["platform_domain"], "my.mail.ru")
+        self.assertEqual(mailru_url[0].metadata["social_profile"], "mailru:bk/exampleuser")
+        self.assertEqual(yandex_q[0].url, "https://yandex.ru/q/profile/exampleuser/")
+        self.assertEqual(yandex_q[0].metadata["platform"], "yandex")
+        self.assertEqual(yandex_q[0].metadata["target_type"], "yandex_q_profile")
+        self.assertEqual(yandex_market[0].metadata["social_profile"], "yandex:market/exampleuser")
+        self.assertEqual(yandex_market[0].metadata["platform_domain"], "market.yandex.ru")
+
     def test_social_normalizer_rejects_unknown_platform(self):
         self.assertIsNone(normalize_social_target("https://example.com/durov"))
         self.assertIsNone(normalize_social_target("twitter:durov"))

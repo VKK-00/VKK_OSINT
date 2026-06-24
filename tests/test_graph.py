@@ -255,6 +255,45 @@ class GraphAnalysisTests(unittest.TestCase):
         self.assertIn(("social", "vk:exampleuser", "display_name_hint", "name", "Example User"), edge_keys)
         self.assertIn(("url", "https://vk.com/exampleuser", "social_url_for", "social-profile", "vk:exampleuser"), edge_keys)
 
+    def test_yandex_and_mailru_social_url_entities(self):
+        findings = (
+            Finding(
+                module="social-public-profile",
+                source="mailru-profile-url",
+                target="mailru:exampleuser",
+                status="planned",
+                url="https://my.mail.ru/mail/exampleuser/",
+                confidence="not_checked",
+                metadata={"social_profile": "mailru:mail/exampleuser", "platform": "mailru"},
+            ),
+            Finding(
+                module="social-public-profile",
+                source="yandex-profile-url",
+                target="yandex:q/exampleuser",
+                status="planned",
+                url="https://yandex.ru/q/profile/exampleuser/",
+                confidence="not_checked",
+                metadata={"social_profile": "yandex:q/exampleuser", "platform": "yandex"},
+            ),
+        )
+        targets = (
+            ScanTarget(kind="social", value="mailru:exampleuser"),
+            ScanTarget(kind="social", value="yandex:q/exampleuser"),
+        )
+
+        entities = merge_entities(entities_from_targets(targets), entities_from_findings(findings))
+        entity_keys = {(entity.kind, entity.value.lower()) for entity in entities}
+        self.assertIn(("social-profile", "mailru:mail/exampleuser"), entity_keys)
+        self.assertIn(("social-profile", "yandex:q/exampleuser"), entity_keys)
+
+        edges = graph_edges_from_case(targets, findings, entities)
+        edge_keys = {
+            (edge.source_kind, edge.source_value, edge.relation, edge.target_kind, edge.target_value)
+            for edge in edges
+        }
+        self.assertIn(("url", "https://my.mail.ru/mail/exampleuser/", "social_url_for", "social-profile", "mailru:mail/exampleuser"), edge_keys)
+        self.assertIn(("url", "https://yandex.ru/q/profile/exampleuser/", "social_url_for", "social-profile", "yandex:q/exampleuser"), edge_keys)
+
     def test_page_email_metadata_edges(self):
         target = ScanTarget(kind="domain", value="example.com")
         findings = (

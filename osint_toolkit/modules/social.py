@@ -10,6 +10,12 @@ from ..http_client import HttpClient, HttpResult
 
 VK_HOSTS = {"vk.com", "www.vk.com", "m.vk.com", "vkontakte.ru", "www.vkontakte.ru"}
 OK_HOSTS = {"ok.ru", "www.ok.ru", "m.ok.ru", "odnoklassniki.ru", "www.odnoklassniki.ru"}
+MAILRU_HOSTS = {"my.mail.ru", "m.my.mail.ru"}
+YANDEX_Q_HOSTS = {"yandex.ru", "www.yandex.ru"}
+YANDEX_MARKET_HOSTS = {"market.yandex.ru"}
+YANDEX_REVIEWS_HOSTS = {"reviews.yandex.ru"}
+YANDEX_ZEN_HOSTS = {"zen.yandex.ru", "www.zen.yandex.ru"}
+MAILRU_NAMESPACES = {"mail", "bk", "inbox", "list", "internet", "ya", "yandex", "gmail", "vk", "ok"}
 RESERVED_VK_PATHS = {"album", "albums", "audios", "away", "feed", "friends", "groups", "im", "login", "search", "video", "videos"}
 RESERVED_OK_PATHS = {"dk", "feed", "groups", "login", "messages", "search"}
 IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_.-]{2,64}$")
@@ -128,6 +134,16 @@ def normalize_social_target(value: str) -> SocialProfileTarget | None:
         return _vk_target_from_path(parsed.path)
     if host in OK_HOSTS:
         return _ok_target_from_path(parsed.path)
+    if host in MAILRU_HOSTS:
+        return _mailru_target_from_path(parsed.path)
+    if host in YANDEX_Q_HOSTS:
+        return _yandex_target_from_path(parsed.path, service="q")
+    if host in YANDEX_MARKET_HOSTS:
+        return _yandex_target_from_path(parsed.path, service="market")
+    if host in YANDEX_REVIEWS_HOSTS:
+        return _yandex_target_from_path(parsed.path, service="reviews")
+    if host in YANDEX_ZEN_HOSTS:
+        return _yandex_target_from_path(parsed.path, service="zen")
     return None
 
 
@@ -175,6 +191,10 @@ def _target_from_prefix(raw: str) -> SocialProfileTarget | None:
         return _vk_target_from_identifier(identifier)
     if platform in {"ok", "odnoklassniki"}:
         return _ok_target_from_identifier(identifier)
+    if platform in {"mailru", "mail.ru", "my.mail.ru"}:
+        return _mailru_target_from_identifier(identifier)
+    if platform in {"yandex", "ya"}:
+        return _yandex_target_from_identifier(identifier)
     return None
 
 
@@ -240,6 +260,81 @@ def _ok_target_from_identifier(identifier: str) -> SocialProfileTarget | None:
         identifier=normalized,
         target_type=target_type,
         account_id=account_id,
+    )
+
+
+def _mailru_target_from_path(path: str) -> SocialProfileTarget | None:
+    parts = _path_parts(path)
+    if len(parts) < 2:
+        return None
+    return _mailru_target_from_identifier(f"{parts[0].lower()}/{parts[1]}")
+
+
+def _mailru_target_from_identifier(identifier: str) -> SocialProfileTarget | None:
+    normalized = identifier.strip().strip("/")
+    if "/" in normalized:
+        namespace, username = normalized.split("/", 1)
+        namespace = namespace.lower()
+    else:
+        namespace, username = "mail", normalized
+    username = username.strip().strip("/")
+    if namespace not in MAILRU_NAMESPACES or not _valid_identifier(username):
+        return None
+    normalized = f"{namespace}/{username}"
+    return SocialProfileTarget(
+        platform="mailru",
+        platform_name="Mail.ru",
+        platform_domain="my.mail.ru",
+        url=f"https://my.mail.ru/{normalized}/",
+        identifier=normalized,
+        target_type="mailru_profile",
+    )
+
+
+def _yandex_target_from_path(path: str, *, service: str) -> SocialProfileTarget | None:
+    parts = _path_parts(path)
+    if service == "q" and len(parts) >= 3 and parts[0].lower() == "q" and parts[1].lower() == "profile":
+        return _yandex_target_from_identifier(f"q/{parts[2]}")
+    if service in {"market", "reviews", "zen"} and len(parts) >= 2 and parts[0].lower() == "user":
+        return _yandex_target_from_identifier(f"{service}/{parts[1]}")
+    return None
+
+
+def _yandex_target_from_identifier(identifier: str) -> SocialProfileTarget | None:
+    normalized = identifier.strip().strip("/")
+    if "/" in normalized:
+        service, username = normalized.split("/", 1)
+        service = service.lower()
+    else:
+        service, username = "q", normalized
+    username = username.strip().strip("/")
+    if service not in {"q", "market", "reviews", "zen"} or not _valid_identifier(username):
+        return None
+
+    if service == "q":
+        url = f"https://yandex.ru/q/profile/{username}/"
+        target_type = "yandex_q_profile"
+        platform_domain = "yandex.ru"
+    elif service == "market":
+        url = f"https://market.yandex.ru/user/{username}"
+        target_type = "yandex_market_user"
+        platform_domain = "market.yandex.ru"
+    elif service == "reviews":
+        url = f"https://reviews.yandex.ru/user/{username}"
+        target_type = "yandex_reviews_user"
+        platform_domain = "reviews.yandex.ru"
+    else:
+        url = f"https://zen.yandex.ru/user/{username}"
+        target_type = "yandex_zen_user"
+        platform_domain = "zen.yandex.ru"
+
+    return SocialProfileTarget(
+        platform="yandex",
+        platform_name="Yandex",
+        platform_domain=platform_domain,
+        url=url,
+        identifier=f"{service}/{username}",
+        target_type=target_type,
     )
 
 

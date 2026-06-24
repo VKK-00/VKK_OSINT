@@ -29,7 +29,7 @@ CLI работает в трёх режимах:
 - domain baseline recon: DNS resolution, HTTP/HTTPS metadata, bounded same-site crawler, robots/sitemap discovery, public email/phone/social link extraction, presence security headers, certificate transparency subdomain discovery, RDAP registration lookup и raw WHOIS fallback;
 - Telegram baseline: handle/post URL normalization и optional live public metadata;
 - Instagram/social baseline: username/profile/media URL normalization и optional live public profile/media metadata без login/session flows;
-- RU social baseline: VK/OK public profile URL normalization и optional live public page metadata без API/login/session flows;
+- RU social baseline: VK/OK/Yandex/Mail.ru public profile URL normalization и optional live public page metadata без API/login/session flows;
 - RU/UA source pack: curated карты, Telegram/RU platforms, geospatial и pastebin источники;
 - базовый web metadata scan, public email extraction, robots/sitemap discovery и bounded same-site crawl по URL, совместимый с начальным web-check/Photon слоем;
 - external adapter dry-run/execute runner для настроенных upstream CLI;
@@ -136,8 +136,8 @@ CLI работает в трёх режимах:
   - `normalize_instagram_target()` — поддерживает `@username`, `instagram.com/<username>/` и public media URLs `/p/`, `/reel/`, `/reels/`, `/tv/`.
   - `extract_instagram_public_metadata()` — извлекает meta/JSON поля: display name, account id, canonical/profile/media/external URLs, public counters и privacy/verification flags без сохранения сырого HTML.
 - `osint_toolkit/modules/social.py`
-  - `SocialPublicProfileModule` — safe public profile wrapper для VK/OK.
-  - `normalize_social_target()` — поддерживает `vk:<identifier>`, `ok:<identifier>`, `vk.com/<identifier>`, `ok.ru/<identifier>` и `ok.ru/profile/<id>`.
+  - `SocialPublicProfileModule` — safe public profile wrapper для VK/OK/Yandex/Mail.ru.
+  - `normalize_social_target()` — поддерживает `vk:<identifier>`, `ok:<identifier>`, `mailru:<identifier>`, `mailru:<namespace>/<identifier>`, `yandex:q/<identifier>`, `yandex:market/<identifier>`, `yandex:reviews/<identifier>`, `yandex:zen/<identifier>`, прямые `vk.com`, `ok.ru`, `my.mail.ru` и публичные Yandex profile URLs.
   - `extract_social_public_metadata()` — извлекает public title/meta/canonical/image fields и account id, если он виден из публичного URL.
 - `osint_toolkit/modules/ru_ua_sources.py`
   - `RuUaSourcePackModule` — curated RU/UA source pack.
@@ -279,7 +279,7 @@ Instagram:
 
 RU social:
 
-`social seed -> SocialPublicProfileModule -> VK/OK public profile URL -> public metadata -> Entity[]/GraphEdge[]`
+`social seed -> SocialPublicProfileModule -> VK/OK/Yandex/Mail.ru public profile URL -> public metadata -> Entity[]/GraphEdge[]`
 
 Адаптеры:
 
@@ -307,7 +307,7 @@ Native live-модули используют публичные HTTP(S) URL che
 
 Instagram live-модуль использует публичную HTML/meta/JSON информацию страницы профиля или media URL. Сырой HTML не сохраняется, login/session/cookies не используются.
 
-Social live-модуль для VK/OK использует только публичную HTML/meta информацию страницы профиля или группы. API tokens, login/session/cookies и приватные endpoints не используются.
+Social live-модуль для VK/OK/Yandex/Mail.ru использует только публичную HTML/meta информацию страницы профиля, группы или публичного profile-like URL. API tokens, login/session/cookies и приватные endpoints не используются.
 
 Email live-модуль использует `socket.getaddrinfo()` и системный `nslookup` для MX/TXT. TXT результата домена достаточно для SPF classifier, а DMARC classifier делает отдельный TXT lookup по `_dmarc.<domain>`. Если `nslookup` недоступен, результат DNS-записи возвращается как `missing`, а не как падение команды.
 
@@ -363,6 +363,7 @@ python -m osint_toolkit scan domain example.com --live --crawl-pages 5 --crawl-d
 python -m osint_toolkit scan telegram "@durov"
 python -m osint_toolkit scan instagram "@exampleuser" --live
 python -m osint_toolkit scan social vk:exampleuser --live
+python -m osint_toolkit scan social yandex:q/exampleuser
 python -m osint_toolkit scan ru-ua all --region ua
 python -m osint_toolkit scan url https://example.com --live --crawl-pages 5 --crawl-depth 1
 python -m osint_toolkit adapters
@@ -449,7 +450,7 @@ osint-toolkit stats
 - Native WHOIS parser покрывает common WHOIS field names и несколько TLD server mappings, но не все registry-specific formats и не экспортирует полный raw WHOIS text.
 - Telegram module пока не использует Telegram API и не получает private/group data.
 - Instagram module пока является safe public metadata wrapper: нет login/session handling, private data access, follower/following scraping, comments/messages export, media archive ingestion или обхода platform rate limits.
-- Social module для VK/OK пока является safe public metadata wrapper: нет VK/OK API adapters, login/session handling, private profile access, follower scraping, comments/messages export или обхода platform rate limits.
+- Social module для VK/OK/Yandex/Mail.ru пока является safe public metadata wrapper: нет VK/OK/Yandex/Mail.ru API adapters, login/session handling, private profile access, follower scraping, comments/messages export или обхода platform rate limits.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
@@ -530,3 +531,4 @@ osint-toolkit stats
 - 2026-06-24: добавлен raw WHOIS fallback для domain recon: WHOIS port 43 parser извлекает registrar/nameservers/statuses/dates и WHOIS server metadata без копирования полного сырого WHOIS текста в evidence.
 - 2026-06-24: добавлен native Instagram/social public metadata layer: `scan instagram` и `investigate --instagram` нормализуют username/profile/media URLs, извлекают public metadata и создают `instagram` entities/graph edges; `instaloader` adapter теперь принимает `instagram` target.
 - 2026-06-24: добавлен native RU social public metadata layer: `scan social` и `investigate --social` нормализуют VK/OK public profile URLs, извлекают public page metadata и создают `social-profile` entities/graph edges.
+- 2026-06-24: RU social layer расширен на Yandex/Mail.ru public profile-like URLs: `mailru:*` и `yandex:*` targets нормализуются в `social-profile` entities и graph edges без API/login/session flows.

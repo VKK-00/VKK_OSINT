@@ -187,6 +187,16 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload[0]["url"], "https://vk.com/exampleuser")
         self.assertEqual(payload[0]["metadata"]["social_profile"], "vk:exampleuser")
 
+    def test_scan_social_yandex_dry_run_command(self):
+        result = self.run_cli("scan", "social", "yandex:q/exampleuser", "--format", "json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(payload[0]["module"], "social-public-profile")
+        self.assertEqual(payload[0]["source"], "yandex-profile-url")
+        self.assertEqual(payload[0]["url"], "https://yandex.ru/q/profile/exampleuser/")
+        self.assertEqual(payload[0]["metadata"]["social_profile"], "yandex:q/exampleuser")
+
     def test_scan_ru_ua_source_pack_command(self):
         result = self.run_cli("scan", "ru-ua", "all", "--region", "ua", "--format", "markdown")
         self.assertEqual(result.returncode, 0, result.stderr)

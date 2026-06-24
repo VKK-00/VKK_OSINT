@@ -207,6 +207,16 @@ def _social_profile_from_url(url: str) -> str:
             return f"ok:{parts[0].lower()}/{parts[1]}"
         if parts and parts[0].lower() not in {"dk", "feed", "groups", "login", "messages", "search"}:
             return f"ok:{parts[0]}"
+    if hostname in {"my.mail.ru", "m.my.mail.ru"} and len(parts) >= 2:
+        return f"mailru:{parts[0].lower()}/{parts[1]}"
+    if hostname in {"yandex.ru", "www.yandex.ru"} and len(parts) >= 3 and parts[0].lower() == "q" and parts[1].lower() == "profile":
+        return f"yandex:q/{parts[2]}"
+    if hostname == "market.yandex.ru" and len(parts) >= 2 and parts[0].lower() == "user":
+        return f"yandex:market/{parts[1]}"
+    if hostname == "reviews.yandex.ru" and len(parts) >= 2 and parts[0].lower() == "user":
+        return f"yandex:reviews/{parts[1]}"
+    if hostname in {"zen.yandex.ru", "www.zen.yandex.ru"} and len(parts) >= 2 and parts[0].lower() == "user":
+        return f"yandex:zen/{parts[1]}"
     return ""
 
 

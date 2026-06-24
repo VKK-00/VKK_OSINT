@@ -25,7 +25,7 @@
 - выполнять baseline domain recon: DNS resolution, HTTP/HTTPS metadata, bounded same-site crawler, robots/sitemap discovery, public email/phone/social link extraction, security header presence, certificate transparency subdomain discovery, RDAP registration lookup и raw WHOIS registration fallback;
 - нормализовать Telegram handles/t.me URLs и по `--live` получать public metadata;
 - нормализовать Instagram username/profile/media URLs и по `--live` получать public profile/media metadata без login/session flows;
-- нормализовать VK/OK public profile identifiers через `scan social` и по `--live` получать public page metadata без API/login/session flows;
+- нормализовать VK/OK/Yandex/Mail.ru public profile identifiers через `scan social` и по `--live` получать public page metadata без API/login/session flows;
 - выдавать RU/UA source pack: конфликтные карты, Telegram/RU platforms, geospatial и pastebin источники;
 - получать базовые web metadata, public email extraction, robots/sitemap discovery и bounded same-site crawl по URL;
 - показывать карту upstream-адаптеров и dry-run/execute запускать настроенные внешние CLI;
@@ -55,6 +55,7 @@ python -m osint_toolkit scan domain example.com --live --crawl-pages 5 --crawl-d
 python -m osint_toolkit scan telegram "@durov"
 python -m osint_toolkit scan instagram "@exampleuser" --live
 python -m osint_toolkit scan social vk:exampleuser --live
+python -m osint_toolkit scan social yandex:q/exampleuser
 python -m osint_toolkit scan ru-ua all --region ua
 python -m osint_toolkit scan url https://example.com --live --crawl-pages 5 --crawl-depth 1
 python -m osint_toolkit adapters
@@ -140,6 +141,8 @@ python -m osint_toolkit scan telegram "@durov" --live
 python -m osint_toolkit scan instagram "@exampleuser" --live --format json
 python -m osint_toolkit scan social vk:exampleuser --live --format json
 python -m osint_toolkit scan social https://ok.ru/profile/1234567890 --format json
+python -m osint_toolkit scan social mailru:exampleuser --format json
+python -m osint_toolkit scan social yandex:q/exampleuser --format json
 python -m osint_toolkit scan ru-ua all --region ru --format markdown
 python -m osint_toolkit scan url https://example.com --live --crawl-pages 5 --crawl-depth 1 --format json
 ```
@@ -154,7 +157,7 @@ Native domain module является baseline-слоем для web-check/Photo
 
 Native URL scan использует тот же bounded crawler: стартовая страница извлекает title/status/content-type, crawler читает `robots.txt`, `Sitemap:` directives и `/sitemap.xml`, затем до заданного лимита обходит same-site HTTP(S)-ссылки и собирает public email, E.164-like phone values, external links и social links. По умолчанию лимиты небольшие: 5 страниц и глубина 1.
 
-Native Telegram module покрывает нормализацию `@handle`, `t.me/<handle>` и публичных post URLs. Native Instagram module покрывает нормализацию `@username`, `instagram.com/<username>/` и публичных media URLs `/p/`, `/reel/`, `/reels/`, `/tv/`; в `--live` режиме он извлекает только публичные page metadata: display name, account id, canonical/profile/media/external URLs, public counters и privacy/verification flags, если они есть в HTML/JSON страницы. Native social module покрывает RU social public profile wrappers для VK и OK: `vk:<identifier>`, `ok:<identifier>`, `vk.com/<identifier>`, `ok.ru/<identifier>` и `ok.ru/profile/<id>` нормализуются в `social-profile` entities, а live-режим извлекает только public title/meta/canonical/image fields. Эти social-модули не делают login/session handling, private data access, follower scraping, comments/messages export, API-token enrichment или обход rate limits. RU/UA source-pack module отдаёт curated источники из текущей разметки top-100.
+Native Telegram module покрывает нормализацию `@handle`, `t.me/<handle>` и публичных post URLs. Native Instagram module покрывает нормализацию `@username`, `instagram.com/<username>/` и публичных media URLs `/p/`, `/reel/`, `/reels/`, `/tv/`; в `--live` режиме он извлекает только публичные page metadata: display name, account id, canonical/profile/media/external URLs, public counters и privacy/verification flags, если они есть в HTML/JSON страницы. Native social module покрывает RU social public profile wrappers для VK, OK, Yandex и Mail.ru: `vk:<identifier>`, `ok:<identifier>`, `mailru:<identifier>`, `mailru:<namespace>/<identifier>`, `yandex:q/<identifier>`, `yandex:market/<identifier>`, `yandex:reviews/<identifier>`, `yandex:zen/<identifier>` и прямые public URLs нормализуются в `social-profile` entities, а live-режим извлекает только public title/meta/canonical/image fields. Эти social-модули не делают login/session handling, private data access, follower scraping, comments/messages export, API-token enrichment или обход rate limits. RU/UA source-pack module отдаёт curated источники из текущей разметки top-100.
 
 ### `adapters`
 

@@ -211,10 +211,10 @@ Gap:
 - `python -m osint_toolkit scan ru-ua all`;
 - region filters `--region ru` and `--region ua`;
 - curated source pack for DeepStateMap, Liveuamap, TGStat RU, VK, OK, Yandex, Mail.ru, Geocam.ru and paste.in.ua;
-- `python -m osint_toolkit scan social <vk-or-ok-identifier-or-url>`;
-- native public VK/OK profile URL normalization for `vk:<identifier>`, `ok:<identifier>`, `vk.com/<identifier>`, `ok.ru/<identifier>`, `ok.ru/profile/<id>` and related public profile/group ID forms;
-- optional live VK/OK public page metadata by explicit `--live`: display name, description, canonical/profile-image URL, account id when public URL exposes it, platform and platform domain;
-- VK/OK profile metadata creates `social-profile`, `platform`, `username`, `account-id`, `name`, `url` and `domain` entities plus graph edges from the `social` seed to normalized profile/platform/public URLs.
+- `python -m osint_toolkit scan social <ru-platform-identifier-or-url>`;
+- native public VK/OK/Yandex/Mail.ru profile URL normalization for `vk:<identifier>`, `ok:<identifier>`, `mailru:<identifier>`, `mailru:<namespace>/<identifier>`, `yandex:q/<identifier>`, `yandex:market/<identifier>`, `yandex:reviews/<identifier>`, `yandex:zen/<identifier>`, `vk.com/<identifier>`, `ok.ru/<identifier>`, `ok.ru/profile/<id>`, `my.mail.ru/<namespace>/<identifier>`, `yandex.ru/q/profile/<identifier>`, `market.yandex.ru/user/<identifier>`, `reviews.yandex.ru/user/<identifier>` and `zen.yandex.ru/user/<identifier>`;
+- optional live public page metadata by explicit `--live`: display name, description, canonical/profile-image URL, account id when public URL exposes it, platform and platform domain;
+- RU social profile metadata creates `social-profile`, `platform`, `username`, `account-id`, `name`, `url` and `domain` entities plus graph edges from the `social` seed to normalized profile/platform/public URLs.
 
 Gap:
 
@@ -222,7 +222,7 @@ Gap:
 - нет message export/archive;
 - нет channel graph;
 - нет VK/OK/Yandex API adapters;
-- нет login/session/API-token enrichment for VK/OK, private profile access, follower scraping, messages/comments export or platform rate-limit bypass;
+- нет login/session/API-token enrichment for VK/OK/Yandex/Mail.ru, private profile access, follower scraping, messages/comments export or platform rate-limit bypass;
 - нет automated refresh from upstream lists.
 
 План:
