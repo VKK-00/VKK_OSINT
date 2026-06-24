@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from .adapter_runner import run_adapter_findings
 from .adapter_setup import build_adapter_setups
@@ -82,6 +83,8 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--http-retries", type=int, default=1, help="Retry 429/temporary 5xx HTTP responses this many times.")
     scan.add_argument("--http-backoff", type=float, default=1.0, help="Base backoff seconds for HTTP retries.")
     scan.add_argument("--request-delay", type=float, default=0.0, help="Delay seconds between live username HTTP checks.")
+    scan.add_argument("--person-alias", action="append", default=[], help="Known person alias/handle to include in person username expansion. Can be repeated.")
+    scan.add_argument("--person-alias-file", action="append", default=[], help="UTF-8 file with one alias per line or comma-separated aliases.")
     scan.add_argument("--limit", type=int)
     scan.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     scan.set_defaults(handler=handle_scan)
@@ -156,6 +159,8 @@ def build_parser() -> argparse.ArgumentParser:
     investigate.add_argument("--http-retries", type=int, default=1, help="Retry 429/temporary 5xx HTTP responses this many times.")
     investigate.add_argument("--http-backoff", type=float, default=1.0, help="Base backoff seconds for HTTP retries.")
     investigate.add_argument("--request-delay", type=float, default=0.0, help="Delay seconds between live username HTTP checks.")
+    investigate.add_argument("--person-alias", action="append", default=[], help="Known person alias/handle to include in person username expansion. Can be repeated.")
+    investigate.add_argument("--person-alias-file", action="append", default=[], help="UTF-8 file with one alias per line or comma-separated aliases.")
     investigate.add_argument("--format", choices=("markdown", "json"), default="markdown")
     investigate.add_argument("--out", help="Write investigation report to this path.")
     investigate.add_argument("--case-db", help="SQLite database path for saving the case.")
@@ -231,6 +236,7 @@ def handle_scan(args: argparse.Namespace) -> int:
         http_retries=args.http_retries,
         http_backoff=args.http_backoff,
         request_delay=args.request_delay,
+        person_aliases=_person_aliases_from_args(args),
     )
     findings = engine.scan(target, config)
     print(format_findings(findings, output_format=args.format))
@@ -317,6 +323,7 @@ def handle_investigate(args: argparse.Namespace) -> int:
         http_retries=args.http_retries,
         http_backoff=args.http_backoff,
         request_delay=args.request_delay,
+        person_aliases=_person_aliases_from_args(args),
         adapter_repositories=expand_adapter_repositories(
             tuple(args.adapter_profile),
             tuple(args.adapter),
@@ -387,6 +394,38 @@ def _add_data_dir(parser: argparse.ArgumentParser) -> None:
 
 def _load(args: argparse.Namespace) -> Catalog:
     return Catalog.load(args.data_dir)
+
+
+def _person_aliases_from_args(args: argparse.Namespace) -> tuple[str, ...]:
+    aliases: list[str] = []
+    aliases.extend(getattr(args, "person_alias", ()))
+    for path in getattr(args, "person_alias_file", ()):
+        aliases.extend(_read_person_alias_file(path))
+
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for alias in aliases:
+        normalized = alias.strip()
+        key = normalized.casefold()
+        if normalized and key not in seen:
+            seen.add(key)
+            deduped.append(normalized)
+    return tuple(deduped)
+
+
+def _read_person_alias_file(path: str) -> tuple[str, ...]:
+    try:
+        text = Path(path).read_text(encoding="utf-8-sig")
+    except OSError as exc:
+        raise ValueError(f"Could not read person alias file {path}: {exc}") from exc
+
+    aliases: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        aliases.extend(part.strip() for part in stripped.split(",") if part.strip())
+    return tuple(aliases)
 
 
 def _targets_from_args(args: argparse.Namespace) -> tuple[ScanTarget, ...]:

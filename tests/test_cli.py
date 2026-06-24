@@ -77,6 +77,48 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload[0]["module"], "person-name-expansion")
         self.assertIn("ivanpetrenko", usernames)
 
+    def test_scan_person_accepts_operator_alias(self):
+        result = self.run_cli(
+            "scan",
+            "person",
+            "Volodymyr Zelenskyy",
+            "--person-alias",
+            "ze-team",
+            "--limit",
+            "16",
+            "--format",
+            "json",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        by_username = {finding["metadata"]["username"]: finding["metadata"]["strategy"] for finding in payload}
+
+        self.assertEqual(by_username["ze-team"], "operator_alias")
+        self.assertEqual(by_username["zeteamzelenskyy"], "operator_alias_last_joined")
+
+    def test_scan_person_accepts_alias_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            alias_path = Path(tmpdir) / "aliases.txt"
+            alias_path.write_text("# known handles\nze-team, sluha\n", encoding="utf-8")
+            result = self.run_cli(
+                "scan",
+                "person",
+                "Volodymyr Zelenskyy",
+                "--person-alias-file",
+                str(alias_path),
+                "--limit",
+                "20",
+                "--format",
+                "json",
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        usernames = {finding["metadata"]["username"] for finding in payload}
+
+        self.assertIn("ze-team", usernames)
+        self.assertIn("sluha", usernames)
+
     def test_scan_email_dry_run_command(self):
         result = self.run_cli("scan", "email", "person@example.com")
         self.assertEqual(result.returncode, 0, result.stderr)

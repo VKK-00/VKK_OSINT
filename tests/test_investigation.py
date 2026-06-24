@@ -260,6 +260,21 @@ class InvestigationTests(unittest.TestCase):
         self.assertIn(("person", "ivan petrenko", "generated_username_candidate", "username", "vanyapetrenko"), edges)
         self.assertIn(("username", "ivanpetrenko", "produced_url", "url", "https://github.com/ivanpetrenko"), edges)
 
+    def test_person_target_uses_operator_aliases(self):
+        result = run_investigation(
+            (ScanTarget(kind="person", value="Volodymyr Zelenskyy"),),
+            person_aliases=("ze-team",),
+        )
+
+        entities = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("username", "ze-team"), entities)
+
+        edges = {
+            (edge.source_kind, edge.source_value.lower(), edge.relation, edge.target_kind, edge.target_value.lower())
+            for edge in result.edges
+        }
+        self.assertIn(("person", "volodymyr zelenskyy", "generated_username_candidate", "username", "ze-team"), edges)
+
     def test_person_target_adapter_allowlist_runs_only_on_derived_usernames(self):
         result = run_investigation(
             (ScanTarget(kind="person", value="Ivan Petrenko"),),

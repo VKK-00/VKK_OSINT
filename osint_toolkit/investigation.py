@@ -55,6 +55,7 @@ def run_investigation(
     http_retries: int = 1,
     http_backoff: float = 1.0,
     request_delay: float = 0.0,
+    person_aliases: tuple[str, ...] = (),
     adapter_repositories: tuple[str, ...] = (),
 ) -> InvestigationResult:
     engine = build_default_engine()
@@ -64,6 +65,7 @@ def run_investigation(
         http_retries=http_retries,
         http_backoff=http_backoff,
         request_delay=request_delay,
+        person_aliases=person_aliases,
     )
     findings: list[Finding] = []
     for target in targets:

@@ -116,7 +116,7 @@ class PersonNameScanModule:
             )
 
         limit = config.limit if config.limit is not None else self.default_limit
-        candidates = generate_username_candidates(normalized_name)
+        candidates = generate_username_candidates(normalized_name, extra_aliases=config.person_aliases)
         if limit is not None:
             candidates = candidates[:limit]
         if not candidates:
@@ -156,7 +156,11 @@ def normalize_person_name(value: str) -> str:
     return " ".join(tokens)
 
 
-def generate_username_candidates(normalized_name: str) -> tuple[UsernameCandidate, ...]:
+def generate_username_candidates(
+    normalized_name: str,
+    *,
+    extra_aliases: tuple[str, ...] = (),
+) -> tuple[UsernameCandidate, ...]:
     tokens = tuple(_username_token(token) for token in _name_tokens(normalized_name))
     tokens = tuple(token for token in tokens if token)
     if not tokens:
@@ -198,9 +202,28 @@ def generate_username_candidates(normalized_name: str) -> tuple[UsernameCandidat
                 UsernameCandidate(first_middle_last, "first_middle_initials_last"),
             ]
         )
+    proposals.extend(_operator_alias_candidates(extra_aliases, last))
     proposals.extend(_alias_candidates(first, last))
     proposals.extend(_suffix_candidates(first, last))
     return _dedupe_candidates(tuple(proposals))
+
+
+def _operator_alias_candidates(aliases: tuple[str, ...], last: str) -> tuple[UsernameCandidate, ...]:
+    candidates: list[UsernameCandidate] = []
+    for alias in aliases:
+        handle = _username_handle(alias)
+        token = _username_token("".join(_name_tokens(alias)))
+        if handle:
+            candidates.append(UsernameCandidate(handle, "operator_alias"))
+        if token and last:
+            candidates.extend(
+                [
+                    UsernameCandidate(token + last, "operator_alias_last_joined"),
+                    UsernameCandidate(f"{token}.{last}", "operator_alias_dot_last"),
+                    UsernameCandidate(f"{token}_{last}", "operator_alias_underscore_last"),
+                ]
+            )
+    return tuple(candidates)
 
 
 def _alias_candidates(first: str, last: str) -> tuple[UsernameCandidate, ...]:
@@ -240,6 +263,12 @@ def _transliterate(value: str) -> str:
 def _username_token(value: str) -> str:
     token = re.sub(r"[^a-z0-9]", "", value.lower())
     return token
+
+
+def _username_handle(value: str) -> str:
+    normalized = _transliterate(value.strip().lstrip("@").casefold())
+    normalized = re.sub(r"\s+", "", normalized)
+    return re.sub(r"[^a-z0-9._-]", "", normalized).strip(".-_")
 
 
 def _dedupe_candidates(candidates: tuple[UsernameCandidate, ...]) -> tuple[UsernameCandidate, ...]:

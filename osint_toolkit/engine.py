@@ -21,6 +21,7 @@ class RunConfig:
     http_retries: int = 1
     http_backoff: float = 1.0
     request_delay: float = 0.0
+    person_aliases: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

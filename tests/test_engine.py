@@ -513,6 +513,29 @@ class EngineTests(unittest.TestCase):
         self.assertIn("olenaivanenkoofficial", usernames)
         self.assertIn("handle_suffix", strategies)
 
+    def test_person_name_helpers_include_operator_aliases(self):
+        candidates = generate_username_candidates(
+            "volodymyr zelenskyy",
+            extra_aliases=("@ze-team", "служу народу"),
+        )
+        by_username = {candidate.username: candidate.strategy for candidate in candidates}
+
+        self.assertEqual(by_username["ze-team"], "operator_alias")
+        self.assertEqual(by_username["zeteamzelenskyy"], "operator_alias_last_joined")
+        self.assertEqual(by_username["sluzhunarodu"], "operator_alias")
+        self.assertEqual(by_username["sluzhunarodu.zelenskyy"], "operator_alias_dot_last")
+
+    def test_person_scan_uses_operator_aliases_from_run_config(self):
+        engine = Engine([PersonNameScanModule()])
+        findings = engine.scan(
+            ScanTarget(kind="person", value="Volodymyr Zelenskyy"),
+            RunConfig(person_aliases=("ze-team",), limit=16),
+        )
+        by_username = {finding.metadata["username"]: finding.metadata["strategy"] for finding in findings}
+
+        self.assertEqual(by_username["ze-team"], "operator_alias")
+        self.assertEqual(by_username["zeteamzelenskyy"], "operator_alias_last_joined")
+
     def test_url_scan_dry_run_normalizes_scheme(self):
         engine = Engine([WebMetadataModule()])
         findings = engine.scan(ScanTarget(kind="url", value="example.com"), RunConfig())

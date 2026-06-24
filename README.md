@@ -126,6 +126,7 @@ python -m osint_toolkit show sherlock-project/sherlock
 
 ```powershell
 python -m osint_toolkit scan person "Ivan Petrenko" --limit 10
+python -m osint_toolkit scan person "Volodymyr Zelenskyy" --person-alias ze-team --person-alias-file aliases.txt --limit 16
 python -m osint_toolkit scan username exampleuser --limit 10
 python -m osint_toolkit scan username exampleuser --region ru --live --limit 10 --http-retries 2 --request-delay 0.2
 python -m osint_toolkit scan email person@example.com --live --format json
@@ -136,7 +137,7 @@ python -m osint_toolkit scan ru-ua all --region ru --format markdown
 python -m osint_toolkit scan url https://example.com --live --format json
 ```
 
-Native person module делает safe username expansion: нормализует имя, транслитерирует RU/UA/кириллические символы и генерирует bounded список кандидатов, по умолчанию до 24 вариантов, например `ivanpetrenko`, `ivan.petrenko`, `ipetrenko`, `vanyapetrenko` и `ivanpetrenkoofficial`. Это не подтверждение аккаунтов, а список кандидатов для проверки через username scan и adapters.
+Native person module делает safe username expansion: нормализует имя, транслитерирует RU/UA/кириллические символы и генерирует bounded список кандидатов, по умолчанию до 24 вариантов, например `ivanpetrenko`, `ivan.petrenko`, `ipetrenko`, `vanyapetrenko` и `ivanpetrenkoofficial`. Оператор может добавить известные никнеймы и исторические варианты через повторяемый `--person-alias` или UTF-8 файл `--person-alias-file` со строками или comma-separated aliases. Это не подтверждение аккаунтов, а список кандидатов для проверки через username scan и adapters.
 
 Сейчас native username module покрывает Sherlock/Maigret/WhatsMyName-подобный слой публичных profile URL checks: 38 curated URL-шаблонов, 479 валидных записей из Sherlock `data.json` включая 3 POST-checks и 27 response-url rules, 718 entries из WhatsMyName `wmn-data.json` включая 22 POST-checks и 1423 sanitized Maigret site rules; после дедупликации одинаковых URL активно 2014 check-шаблонов, включая 23 active POST checks и 26 active response-url checks. Curated правила идут первыми. Одинаковые URL удаляются, а альтернативные проверки одного сайта сохраняются с суффиксом источника, например `GitLab (WhatsMyName)`, `AniList (WhatsMyName)` или `Instagram (Maigret)`. Если username не подходит конкретной платформе, finding получает `status=skipped`, а не строит заведомо неверный URL. В `--live` режиме title/body markers, Sherlock `errorUrl` response-url rules, Sherlock/WMN POST bodies, WMN `e_string`/`m_string`, WMN `e_code`/`m_code`, Maigret `presenseStrs`/`absenceStrs`, status rules, custom headers, retry по 429/temporary 5xx, `Retry-After` и операторский `--request-delay` используются для более близкой к upstream классификации. Оставшийся gap до полного 1:1: Maigret engine templates/activation/recursive policy/reporting logic, оставшиеся Sherlock WAF/error-handling нюансы, richer per-site rules и site-specific rate-limit policy либо запуск внешних CLI через adapters.
 
@@ -215,6 +216,7 @@ python -m osint_toolkit doctor --status planned --format markdown
 
 ```powershell
 python -m osint_toolkit investigate --person "Ivan Petrenko" --include-adapters --adapter-profile username-full --adapter-limit 2
+python -m osint_toolkit investigate --person "Volodymyr Zelenskyy" --person-alias ze-team --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --title "example case" --username example_user --email person@example.com --domain example.com
 python -m osint_toolkit investigate --username example_user --telegram "@durov" --ru-ua all --region ua --include-adapters --out reports/example_case.md
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter-profile username-full --adapter-limit 2
