@@ -263,18 +263,27 @@ Gap:
 - raw WHOIS lookup via TCP port 43 for common/global and RU/UA-relevant TLDs;
 - WHOIS-derived registrar, nameserver, domain status, date and WHOIS server metadata without copying contact-like raw text into evidence;
 - crawler-derived `url`/`email`/`phone`/`web-path` entities and graph edges for discovered/internal/external/social links, sitemap URLs, robots disallow paths and page contacts.
+- executable adapter target для `projectdiscovery/subfinder`: `subfinder -d <domain> -oJ -silent`;
+- parser для Subfinder JSONL/plain output: `host`/subdomain values превращаются в `subdomain` findings, entities и graph edges `domain -> subdomain`;
+- executable adapter target для `projectdiscovery/httpx`: `httpx -u <domain-or-url> -json -silent -status-code -title -tech-detect ...`;
+- parser для httpx JSONL/plain output: URL, HTTP status, title, webserver, tech, content-type, response-time, IP/CNAME и error state нормализуются в `Finding`/entities;
+- executable passive adapter target для `owasp-amass/amass`: `amass enum -passive -nocolor -d <domain>`;
+- parser для Amass passive stdout/JSON-like output: FQDN/subdomain values превращаются в `subdomain` findings без включения active/bruteforce modes;
+- adapter profile `domain-recon` для Subfinder/httpx/passive Amass;
+- `laramies/theHarvester` внесён в adapter manifest как planned/non-executable item до отдельной проверки output format и license.
 
 Gap:
 
-- нет brute-force/passive subdomain enumeration за пределами crt.sh;
+- нет native brute-force/passive subdomain enumeration за пределами crt.sh; passive enumeration сейчас покрывается external adapters;
 - raw WHOIS full-text export is intentionally not included in reports; parser keeps domain-level fields only by default;
 - crawler bounded и mostly HTML/XML/text-only: нет JavaScript rendering, form submission, full robots policy enforcement, authentication, headless browser или broad SpiderFoot/Photon-style crawling;
-- нет Amass/Subfinder/httpx/SpiderFoot adapters.
+- нет executable theHarvester/SpiderFoot/BBOT adapters;
+- нет активных Amass/bruteforce modes по умолчанию.
 
 План:
 
 1. Native: дальше расширять passive domain recon: richer document metadata extraction, optional sitemap/robots policy tuning and more TLD-specific WHOIS parsing.
-2. Adapter: `httpx`, `theHarvester`, `spiderfoot`, `amass`, `subfinder`.
+2. Adapter: следующий слой — `theHarvester`, `spiderfoot`, BBOT/Argus-style broad recon, плюс richer generated report parsers.
 3. Normalize domains, URLs, emails, subdomains into shared entity model.
 
 ## External adapter runner
@@ -306,13 +315,17 @@ python -m osint_toolkit adapter-setup <repository>
 - adapter-specific parser for `user-scanner` JSON and verbose line output;
 - adapter-specific parser for Snoop stdout and CSV report rows;
 - adapter-specific parser for PhoneInfoga CLI sections and REST/API-like JSON scanner outputs;
+- adapter-specific parser for Subfinder JSONL/plain subdomain output;
+- adapter-specific parser for httpx JSONL/plain HTTP probe output;
+- adapter-specific parser for passive Amass stdout/JSON-like subdomain output;
+- adapter profile `domain-recon` for passive domain/web upstream adapters;
 - install/config/readiness metadata in `AdapterSpec`;
 - `adapter-setup` command for setup plans, docs URLs, PATH/env readiness.
 
 Gap:
 
 - нет автоматической установки upstream CLI;
-- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV и PhoneInfoga CLI/API output;
+- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, PhoneInfoga CLI/API output, Subfinder, httpx и passive Amass;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.
 

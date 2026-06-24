@@ -20,6 +20,18 @@ class InvestigationTests(unittest.TestCase):
         self.assertEqual(repositories, ["soxoj/maigret", "sherlock-project/sherlock"])
         self.assertTrue(all(finding.status == "planned" for finding in result.adapter_findings))
 
+    def test_unsupported_dry_run_adapter_stays_in_dry_run_section(self):
+        result = run_investigation(
+            (ScanTarget(kind="domain", value="example.com"),),
+            include_adapters=True,
+            adapter_repositories=("laramies/theHarvester",),
+        )
+
+        self.assertEqual(result.adapter_findings[0].status, "unsupported")
+        report = render_investigation_markdown(result)
+        self.assertIn("## Adapter Dry Runs", report)
+        self.assertNotIn("## Adapter Findings", report)
+
     def test_execute_adapters_adds_parsed_entities_and_edges(self):
         completed = subprocess.CompletedProcess(
             args=["sherlock", "example_user"],
@@ -241,6 +253,38 @@ class InvestigationTests(unittest.TestCase):
             for edge in result.edges
         }
         self.assertIn(("email", "target@example.com", "related_email", "email", "admin@example.com"), edges)
+
+    def test_execute_domain_recon_adapter_adds_subdomain_entities_and_edges(self):
+        completed = subprocess.CompletedProcess(
+            args=["subfinder", "-d", "example.com", "-oJ", "-silent"],
+            returncode=0,
+            stdout='{"host":"api.example.com","input":"example.com","source":"crtsh"}\n',
+            stderr="",
+        )
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="subfinder"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            return_value=completed,
+        ):
+            result = run_investigation(
+                (ScanTarget(kind="domain", value="example.com"),),
+                include_adapters=True,
+                execute_adapters=True,
+                adapter_repositories=("projectdiscovery/subfinder",),
+            )
+
+        parsed = [finding for finding in result.adapter_findings if finding.module == "external-adapter-parser"]
+        self.assertEqual(parsed[0].metadata["parser"], "subfinder")
+        self.assertEqual(parsed[0].metadata["subdomain"], "api.example.com")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("subdomain", "api.example.com"), entities)
+
+        edges = {
+            (edge.source_kind, edge.source_value.lower(), edge.relation, edge.target_kind, edge.target_value.lower())
+            for edge in result.edges
+        }
+        self.assertIn(("domain", "example.com", "discovered_subdomain", "subdomain", "api.example.com"), edges)
 
     def test_person_target_expands_to_username_scan_edges(self):
         result = run_investigation((ScanTarget(kind="person", value="Ivan Petrenko"),))

@@ -596,6 +596,73 @@ class AdapterParserTests(unittest.TestCase):
         github = next(finding for finding in findings if finding.metadata["site_name"] == "GitHub")
         self.assertEqual(github.url, "https://github.com/example_user")
 
+    def test_parse_subfinder_jsonl_and_plain_subdomains(self):
+        findings = parse_adapter_output(
+            "projectdiscovery/subfinder",
+            ScanTarget(kind="domain", value="example.com"),
+            """
+            {"host":"api.example.com","input":"example.com","source":"crtsh"}
+            www.example.com
+            example.com
+            unrelated.test
+            """,
+        )
+
+        subdomains = {finding.metadata.get("subdomain") for finding in findings}
+        self.assertEqual(subdomains, {"api.example.com", "www.example.com"})
+        api = next(finding for finding in findings if finding.metadata["subdomain"] == "api.example.com")
+        self.assertEqual(api.status, "candidate")
+        self.assertEqual(api.confidence, "high")
+        self.assertEqual(api.metadata["domain"], "example.com")
+        self.assertEqual(api.metadata["source_label"], "crtsh")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("subdomain", "api.example.com"), entities)
+        self.assertIn(("subdomain", "www.example.com"), entities)
+
+    def test_parse_httpx_jsonl_results(self):
+        findings = parse_adapter_output(
+            "projectdiscovery/httpx",
+            ScanTarget(kind="domain", value="example.com"),
+            """
+            {"url":"https://www.example.com","input":"www.example.com","host":"www.example.com","status_code":200,"title":"Example","webserver":"nginx","tech":["Bootstrap","jQuery"],"content_type":"text/html","response_time":"120ms","ip":"93.184.216.34"}
+            {"url":"https://broken.example.com","failed":true,"error":"timeout"}
+            """,
+        )
+
+        alive = next(finding for finding in findings if finding.url == "https://www.example.com")
+        self.assertEqual(alive.status, "candidate")
+        self.assertEqual(alive.http_status, 200)
+        self.assertEqual(alive.title, "Example")
+        self.assertEqual(alive.metadata["domain"], "www.example.com")
+        self.assertEqual(alive.metadata["tech"], "Bootstrap, jQuery")
+        self.assertEqual(alive.metadata["webserver"], "nginx")
+
+        failed = next(finding for finding in findings if finding.metadata.get("checked_url") == "https://broken.example.com")
+        self.assertEqual(failed.status, "error")
+        self.assertEqual(failed.url, "")
+        self.assertEqual(failed.metadata["error"], "timeout")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("url", "https://www.example.com"), entities)
+        self.assertIn(("domain", "www.example.com"), entities)
+        self.assertNotIn(("url", "https://broken.example.com"), entities)
+
+    def test_parse_amass_passive_output(self):
+        findings = parse_adapter_output(
+            "owasp-amass/amass",
+            ScanTarget(kind="domain", value="example.com"),
+            """
+            example.com (FQDN) --> node --> www.example.com (FQDN)
+            api.example.com
+            other.test
+            """,
+        )
+
+        subdomains = {finding.metadata.get("subdomain") for finding in findings}
+        self.assertEqual(subdomains, {"api.example.com", "www.example.com"})
+        self.assertTrue(all(finding.metadata["parser"] == "amass" for finding in findings))
+
     def test_run_adapter_findings_adds_parsed_results_after_execution(self):
         completed = subprocess.CompletedProcess(
             args=["sherlock", "example_user"],

@@ -122,6 +122,31 @@ class AdapterSetupTests(unittest.TestCase):
             ("snoop", "--no-func", "--found-print", "--include", "RU", "example_user"),
         )
 
+    def test_domain_recon_adapters_render_upstream_commands(self):
+        subfinder = find_adapter("projectdiscovery/subfinder")
+        httpx = find_adapter("projectdiscovery/httpx")
+        amass = find_adapter("owasp-amass/amass")
+
+        self.assertEqual(
+            subfinder.render_command(ScanTarget(kind="domain", value="example.com")),
+            ("subfinder", "-d", "example.com", "-oJ", "-silent"),
+        )
+        self.assertEqual(
+            httpx.render_command(ScanTarget(kind="domain", value="example.com"))[:6],
+            ("httpx", "-u", "example.com", "-json", "-silent", "-status-code"),
+        )
+        self.assertIn("-tech-detect", httpx.render_command(ScanTarget(kind="url", value="https://example.com")))
+        self.assertEqual(
+            amass.render_command(ScanTarget(kind="domain", value="example.com")),
+            ("amass", "enum", "-passive", "-nocolor", "-d", "example.com"),
+        )
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
+            setup = build_adapter_setup(subfinder)
+
+        self.assertEqual(setup.install_kind, "go")
+        self.assertIn("projectdiscovery/subfinder", setup.install_command)
+
     def test_setup_reports_not_configured_for_dataset_adapter(self):
         setup = build_adapter_setup(find_adapter("WebBreacher/WhatsMyName"))
 

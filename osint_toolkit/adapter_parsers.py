@@ -12,6 +12,7 @@ from .engine import Finding, ScanTarget
 URL_RE = re.compile(r"https?://[^\s<>\]\)\"']+", re.IGNORECASE)
 EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 PHONE_RE = re.compile(r"\+[1-9]\d{7,14}\b")
+HOSTNAME_RE = re.compile(r"\b(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,63}\b", re.IGNORECASE)
 KEY_VALUE_RE = re.compile(r"^\s*(?P<key>[A-Za-z][A-Za-z0-9 _./-]{1,40})\s*[:=]\s*(?P<value>.+?)\s*$")
 SOCIAL_LINE_RE = re.compile(r"^\s*(?:\[[+*]\]|\+|FOUND:?)?\s*(?P<label>[A-Za-z0-9_. /-]{2,40})\s*[:|-]\s*(?P<rest>.+)$")
 USER_SCANNER_LINE_RE = re.compile(
@@ -42,6 +43,9 @@ PARSER_REPOSITORIES = {
     "khast3x/h8mail",
     "sundowndev/phoneinfoga",
     "kaifcodec/user-scanner",
+    "projectdiscovery/subfinder",
+    "projectdiscovery/httpx",
+    "owasp-amass/amass",
 }
 
 PHONE_KEYS = {
@@ -89,6 +93,12 @@ def parse_adapter_output(
         return _h8mail_findings(repository, target, text)
     if repository == "sundowndev/phoneinfoga":
         return _phoneinfoga_findings(repository, target, text)
+    if repository == "projectdiscovery/subfinder":
+        return _subfinder_findings(repository, target, text)
+    if repository == "projectdiscovery/httpx":
+        return _httpx_findings(repository, target, text)
+    if repository == "owasp-amass/amass":
+        return _amass_findings(repository, target, text)
 
     findings: list[Finding] = []
     seen: set[tuple[str, str, str]] = set()
@@ -102,6 +112,293 @@ def parse_adapter_output(
         key_value = _key_value_finding(repository, target, compact, seen)
         if key_value:
             findings.append(key_value)
+    return tuple(findings)
+
+
+def _subfinder_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    root_domain = _target_domain(target)
+    findings: list[Finding] = []
+    seen: set[tuple[str, str]] = set()
+
+    for record in _json_records(text):
+        raw_subdomain = _first_scalar(
+            record.get("host") or record.get("subdomain") or record.get("fqdn") or record.get("domain")
+        )
+        subdomain = _normalize_hostname(raw_subdomain)
+        source_label = _first_scalar(record.get("source"))
+        if not source_label:
+            source_label = _metadata_list_text(record.get("sources"))
+        ip = _metadata_list_text(record.get("ip") or record.get("ips"))
+        finding = _subdomain_finding(
+            repository=repository,
+            parser="subfinder",
+            target=target,
+            root_domain=root_domain,
+            subdomain=subdomain,
+            source_label=source_label,
+            ip=ip,
+            raw_line="",
+            seen=seen,
+        )
+        if finding:
+            findings.append(finding)
+
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact or compact.startswith(("{", "[")):
+            continue
+        for subdomain in _hostnames_from_text(compact):
+            finding = _subdomain_finding(
+                repository=repository,
+                parser="subfinder",
+                target=target,
+                root_domain=root_domain,
+                subdomain=subdomain,
+                source_label="",
+                ip="",
+                raw_line=compact,
+                seen=seen,
+            )
+            if finding:
+                findings.append(finding)
+    return tuple(findings)
+
+
+def _amass_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    root_domain = _target_domain(target)
+    findings: list[Finding] = []
+    seen: set[tuple[str, str]] = set()
+
+    for record in _json_records(text):
+        raw_subdomain = _first_scalar(
+            record.get("name") or record.get("host") or record.get("subdomain") or record.get("fqdn") or record.get("domain")
+        )
+        subdomain = _normalize_hostname(raw_subdomain)
+        source_label = _metadata_list_text(record.get("source") or record.get("sources"))
+        finding = _subdomain_finding(
+            repository=repository,
+            parser="amass",
+            target=target,
+            root_domain=root_domain,
+            subdomain=subdomain,
+            source_label=source_label,
+            ip=_metadata_list_text(record.get("addresses") or record.get("ips") or record.get("ip")),
+            raw_line="",
+            seen=seen,
+        )
+        if finding:
+            findings.append(finding)
+
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact:
+            continue
+        for subdomain in _hostnames_from_text(compact):
+            finding = _subdomain_finding(
+                repository=repository,
+                parser="amass",
+                target=target,
+                root_domain=root_domain,
+                subdomain=subdomain,
+                source_label="",
+                ip="",
+                raw_line=compact,
+                seen=seen,
+            )
+            if finding:
+                findings.append(finding)
+    return tuple(findings)
+
+
+def _subdomain_finding(
+    *,
+    repository: str,
+    parser: str,
+    target: ScanTarget,
+    root_domain: str,
+    subdomain: str,
+    source_label: str,
+    ip: str,
+    raw_line: str,
+    seen: set[tuple[str, str]],
+) -> Finding | None:
+    normalized = _normalize_hostname(subdomain)
+    if not normalized:
+        return None
+    if root_domain:
+        if normalized == root_domain or not normalized.endswith(f".{root_domain}"):
+            return None
+
+    key = (parser, normalized)
+    if key in seen:
+        return None
+    seen.add(key)
+
+    metadata = {
+        "repository": repository,
+        "parser": parser,
+        "subdomain": normalized,
+    }
+    if root_domain:
+        metadata["domain"] = root_domain
+    if source_label:
+        metadata["source_label"] = source_label
+    if ip:
+        metadata["ip"] = ip
+
+    label = "Subfinder" if parser == "subfinder" else "Amass"
+    evidence = f"{label} reported subdomain: {normalized}"
+    if source_label:
+        evidence += f" (source: {source_label})"
+    elif raw_line:
+        evidence = raw_line
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="candidate",
+        confidence="high",
+        evidence=_short(evidence),
+        metadata=metadata,
+    )
+
+
+def _httpx_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    seen: set[tuple[str, str]] = set()
+
+    for record in _json_records(text):
+        finding = _httpx_record_finding(repository, target, record, seen)
+        if finding:
+            findings.append(finding)
+
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact or compact.startswith(("{", "[")):
+            continue
+        for finding in _httpx_line_findings(repository, target, compact, seen):
+            findings.append(finding)
+    return tuple(findings)
+
+
+def _httpx_record_finding(
+    repository: str,
+    target: ScanTarget,
+    record: dict[str, Any],
+    seen: set[tuple[str, str]],
+) -> Finding | None:
+    url = _httpx_record_url(record)
+    if not url:
+        return None
+
+    http_status = _int_value(
+        record.get("status_code")
+        or record.get("status-code")
+        or record.get("status")
+        or record.get("http_status")
+        or record.get("response_status_code")
+    )
+    title = _first_scalar(record.get("title"))
+    error = _first_scalar(record.get("error") or record.get("failed_reason"))
+    failed = _truthy(record.get("failed")) or _truthy(record.get("probe_failed"))
+    status = "error" if failed or error else "candidate"
+    confidence = "high" if http_status is not None and status == "candidate" else "medium"
+    finding_url = url if status == "candidate" else ""
+
+    key = ("httpx", url.lower())
+    if key in seen:
+        return None
+    seen.add(key)
+
+    parsed = urlparse(url)
+    domain = (parsed.hostname or _normalize_hostname(_first_scalar(record.get("host")))).lower()
+    metadata = {
+        "repository": repository,
+        "parser": "httpx",
+        "target_kind": target.kind,
+    }
+    if domain:
+        metadata["domain"] = domain
+    if not finding_url:
+        metadata["checked_url"] = url
+    _set_metadata(metadata, "http_status", "" if http_status is None else str(http_status))
+    _set_metadata(metadata, "title", title)
+    _set_metadata(metadata, "input", _first_scalar(record.get("input")))
+    _set_metadata(metadata, "host", _first_scalar(record.get("host")))
+    _set_metadata(metadata, "port", _first_scalar(record.get("port")))
+    _set_metadata(metadata, "scheme", _first_scalar(record.get("scheme")))
+    _set_metadata(metadata, "path", _first_scalar(record.get("path")))
+    _set_metadata(metadata, "method", _first_scalar(record.get("method")))
+    _set_metadata(metadata, "webserver", _first_scalar(record.get("webserver") or record.get("web_server")))
+    _set_metadata(metadata, "tech", _metadata_list_text(record.get("tech") or record.get("technologies")))
+    _set_metadata(metadata, "content_type", _first_scalar(record.get("content_type") or record.get("content-type")))
+    _set_metadata(metadata, "content_length", _first_scalar(record.get("content_length") or record.get("content-length")))
+    _set_metadata(metadata, "response_time", _first_scalar(record.get("response_time") or record.get("response-time")))
+    _set_metadata(metadata, "location", _first_scalar(record.get("location")))
+    _set_metadata(metadata, "cdn", _first_scalar(record.get("cdn") or record.get("cdn_name")))
+    _set_metadata(metadata, "ip", _metadata_list_text(record.get("ip") or record.get("ips")))
+    _set_metadata(metadata, "cname", _metadata_list_text(record.get("cname") or record.get("cnames")))
+    if failed:
+        metadata["failed"] = "true"
+    _set_metadata(metadata, "error", error)
+
+    evidence = f"httpx reported {url}"
+    if http_status is not None:
+        evidence += f" with HTTP {http_status}"
+    if title:
+        evidence += f" title={title}"
+    if error:
+        evidence += f" error={error}"
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status=status,
+        url=finding_url,
+        title=title,
+        http_status=http_status,
+        confidence=confidence,
+        evidence=_short(evidence),
+        metadata=metadata,
+    )
+
+
+def _httpx_line_findings(
+    repository: str,
+    target: ScanTarget,
+    line: str,
+    seen: set[tuple[str, str]],
+) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    for raw_url in URL_RE.findall(line):
+        url = raw_url.rstrip(".,;")
+        key = ("httpx", url.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        http_status = _http_status_from_line(line)
+        parsed = urlparse(url)
+        metadata = {
+            "repository": repository,
+            "parser": "httpx",
+            "target_kind": target.kind,
+            "domain": (parsed.hostname or "").lower(),
+        }
+        if http_status is not None:
+            metadata["http_status"] = str(http_status)
+        findings.append(
+            Finding(
+                module="external-adapter-parser",
+                source=repository,
+                target=target.value,
+                status="candidate",
+                url=url,
+                http_status=http_status,
+                confidence="medium",
+                evidence=_short(line),
+                metadata=metadata,
+            )
+        )
     return tuple(findings)
 
 
@@ -2645,6 +2942,180 @@ def _key_value_finding(
         evidence=_short(line),
         metadata=metadata,
     )
+
+
+def _json_records(text: str) -> tuple[dict[str, Any], ...]:
+    records: list[dict[str, Any]] = []
+    payload = _load_json_payload(text)
+    records.extend(_payload_records(payload))
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(("{", "[")):
+            candidate = stripped
+        else:
+            start = stripped.find("{")
+            end = stripped.rfind("}")
+            if start == -1 or end <= start:
+                continue
+            candidate = stripped[start : end + 1]
+        try:
+            line_payload = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        records.extend(_payload_records(line_payload))
+
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        key = json.dumps(record, sort_keys=True, ensure_ascii=False, default=str)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(record)
+    return tuple(deduped)
+
+
+def _payload_records(payload: object | None) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        if any(key in payload for key in ("url", "host", "name", "subdomain", "fqdn", "domain", "status_code")):
+            return [payload]
+        records: list[dict[str, Any]] = []
+        for key in ("results", "data", "hosts", "subdomains"):
+            nested = payload.get(key)
+            if isinstance(nested, (list, tuple)):
+                records.extend(_payload_records(list(nested)))
+        return records
+    if isinstance(payload, list):
+        records = []
+        for item in payload:
+            if isinstance(item, dict):
+                records.extend(_payload_records(item))
+        return records
+    return []
+
+
+def _target_domain(target: ScanTarget) -> str:
+    if target.kind == "domain":
+        return _normalize_hostname(target.value)
+    if target.kind == "url":
+        return _normalize_hostname(target.value)
+    return ""
+
+
+def _normalize_hostname(value: str) -> str:
+    raw = (value or "").strip().strip("[](){}<>\"'")
+    if not raw:
+        return ""
+    if "://" in raw:
+        parsed = urlparse(raw)
+        raw = parsed.hostname or ""
+    else:
+        if "/" in raw:
+            parsed = urlparse(f"//{raw}")
+            raw = parsed.hostname or raw.split("/", 1)[0]
+        if ":" in raw and raw.count(":") == 1:
+            raw = raw.rsplit(":", 1)[0]
+    raw = raw.strip().strip(".").lower()
+    if raw.startswith("*."):
+        raw = raw[2:]
+    if not HOSTNAME_RE.fullmatch(raw):
+        return ""
+    return raw
+
+
+def _hostnames_from_text(text: str) -> tuple[str, ...]:
+    seen: set[str] = set()
+    hosts: list[str] = []
+    for match in HOSTNAME_RE.findall(text):
+        host = _normalize_hostname(match)
+        if host and host not in seen:
+            seen.add(host)
+            hosts.append(host)
+    return tuple(hosts)
+
+
+def _httpx_record_url(record: dict[str, Any]) -> str:
+    raw_url = _first_scalar(record.get("url") or record.get("final_url") or record.get("input"))
+    if raw_url.startswith(("http://", "https://")):
+        return raw_url
+
+    host = _normalize_hostname(raw_url) or _normalize_hostname(_first_scalar(record.get("host")))
+    if not host:
+        return ""
+    scheme = _first_scalar(record.get("scheme")).lower()
+    if scheme not in {"http", "https"}:
+        scheme = "https"
+    return f"{scheme}://{host}"
+
+
+def _http_status_from_line(line: str) -> int | None:
+    bracketed = re.search(r"\[(?P<status>[1-5]\d\d)\]", line)
+    if bracketed:
+        return int(bracketed.group("status"))
+    bare = re.search(r"\b(?P<status>[1-5]\d\d)\b", line)
+    if bare:
+        return int(bare.group("status"))
+    return None
+
+
+def _set_metadata(metadata: dict[str, str], key: str, value: str) -> None:
+    compact = " ".join(str(value).split())
+    if compact:
+        metadata[key] = compact
+
+
+def _metadata_list_text(value: object) -> str:
+    values: list[str] = []
+
+    def add(item: object) -> None:
+        if isinstance(item, dict):
+            for nested_key in ("ip", "address", "host", "name", "source", "value"):
+                if nested_key in item:
+                    add(item[nested_key])
+            return
+        if isinstance(item, (list, tuple, set)):
+            for nested in item:
+                add(nested)
+            return
+        scalar = _first_scalar(item)
+        if scalar:
+            values.append(scalar)
+
+    add(value)
+    return ", ".join(_dedupe_text(values))
+
+
+def _int_value(value: object) -> int | None:
+    scalar = _first_scalar(value)
+    if not scalar:
+        return None
+    match = re.search(r"\d+", scalar)
+    if not match:
+        return None
+    try:
+        return int(match.group(0))
+    except ValueError:
+        return None
+
+
+def _truthy(value: object) -> bool:
+    scalar = _first_scalar(value).lower()
+    return scalar in {"1", "true", "yes", "y", "failed", "failure", "error"}
+
+
+def _dedupe_text(values: list[str]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in values:
+        compact = " ".join(value.split())
+        key = compact.lower()
+        if compact and key not in seen:
+            seen.add(key)
+            deduped.append(compact)
+    return tuple(deduped)
 
 
 def _load_json_payload(text: str) -> object | None:

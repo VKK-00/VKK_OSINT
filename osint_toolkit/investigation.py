@@ -291,7 +291,11 @@ def _target_key(target: ScanTarget) -> tuple[str, str, str]:
 
 
 def _has_executed_adapter_findings(findings: tuple[Finding, ...]) -> bool:
-    return any(finding.status != "planned" or finding.module == "external-adapter-parser" for finding in findings)
+    executed_statuses = {"completed", "error", "timeout", "missing"}
+    return any(
+        finding.module == "external-adapter-parser" or finding.status in executed_statuses
+        for finding in findings
+    )
 
 
 def _finding_row(finding: Finding) -> str:
