@@ -1,7 +1,16 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
+from importlib import resources
+from typing import Any
+
+
+DEFAULT_USERNAME_PATTERN = r"(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]{0,62}[A-Za-z0-9])"
+DEFAULT_USERNAME_RULE_NOTE = "letters, numbers, dot, underscore or dash; no leading/trailing separator"
+SHERLOCK_DATA_RESOURCE = "sherlock_data.json"
+SHERLOCK_SOURCE_PROJECT = "sherlock"
 
 
 @dataclass(frozen=True)
@@ -10,8 +19,8 @@ class UsernameSite:
     url_template: str
     region: str = "global"
     source_projects: tuple[str, ...] = ()
-    username_pattern: str = r"(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]{0,62}[A-Za-z0-9])"
-    rule_note: str = "letters, numbers, dot, underscore or dash; no leading/trailing separator"
+    username_pattern: str = DEFAULT_USERNAME_PATTERN
+    rule_note: str = DEFAULT_USERNAME_RULE_NOTE
     profile_markers: tuple[str, ...] = ()
     not_found_markers: tuple[str, ...] = ()
 
@@ -28,17 +37,17 @@ class UsernameSite:
         if not content.strip():
             return "", ""
         for marker in self.not_found_markers:
-            rendered = marker.format(username=username)
+            rendered = _render_marker(marker, username)
             if rendered.casefold() in content:
                 return "not_found_marker", marker
         for marker in self.profile_markers:
-            rendered = marker.format(username=username)
+            rendered = _render_marker(marker, username)
             if rendered.casefold() in content:
                 return "profile_marker", marker
         return "", ""
 
 
-USERNAME_SITES: tuple[UsernameSite, ...] = (
+CURATED_USERNAME_SITES: tuple[UsernameSite, ...] = (
     UsernameSite(
         "GitHub",
         "https://github.com/{username}",
@@ -190,3 +199,98 @@ USERNAME_SITES: tuple[UsernameSite, ...] = (
         not_found_markers=("Пользователь не найден", "Такого пользователя нет"),
     ),
 )
+
+
+def _load_sherlock_sites() -> tuple[UsernameSite, ...]:
+    return tuple(
+        site
+        for name, entry in _read_sherlock_data().items()
+        if (site := _sherlock_entry_to_username_site(name, entry)) is not None
+    )
+
+
+def _render_marker(marker: str, username: str) -> str:
+    try:
+        return marker.format(username=username)
+    except (IndexError, KeyError, ValueError):
+        return marker
+
+
+def _read_sherlock_data() -> dict[str, Any]:
+    try:
+        resource = resources.files(__package__).joinpath("resources", SHERLOCK_DATA_RESOURCE)
+        raw = resource.read_text(encoding="utf-8")
+    except (FileNotFoundError, ModuleNotFoundError, OSError):
+        return {}
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
+def _sherlock_entry_to_username_site(name: str, entry: Any) -> UsernameSite | None:
+    if name.startswith("$") or not isinstance(entry, dict):
+        return None
+
+    url = entry.get("url")
+    if not isinstance(url, str) or "{}" not in url:
+        return None
+
+    username_pattern = _valid_regex(entry.get("regexCheck")) or DEFAULT_USERNAME_PATTERN
+    rule_note = "Sherlock regexCheck" if username_pattern != DEFAULT_USERNAME_PATTERN else DEFAULT_USERNAME_RULE_NOTE
+    return UsernameSite(
+        name=name,
+        url_template=url.replace("{}", "{username}"),
+        source_projects=(SHERLOCK_SOURCE_PROJECT,),
+        username_pattern=username_pattern,
+        rule_note=rule_note,
+        not_found_markers=_string_tuple(entry.get("errorMsg")),
+    )
+
+
+def _valid_regex(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return ""
+    try:
+        re.compile(value)
+    except re.error:
+        return ""
+    return value
+
+
+def _string_tuple(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return (value,) if value else ()
+    if isinstance(value, list):
+        return tuple(item for item in value if isinstance(item, str) and item)
+    return ()
+
+
+def _merge_username_sites(
+    curated_sites: tuple[UsernameSite, ...],
+    imported_sites: tuple[UsernameSite, ...],
+) -> tuple[UsernameSite, ...]:
+    merged: list[UsernameSite] = []
+    seen_names: set[str] = set()
+    seen_templates: set[str] = set()
+
+    for site in (*curated_sites, *imported_sites):
+        name_key = site.name.casefold()
+        template_key = site.url_template.casefold()
+        if name_key in seen_names or template_key in seen_templates:
+            continue
+        merged.append(site)
+        seen_names.add(name_key)
+        seen_templates.add(template_key)
+
+    return tuple(merged)
+
+
+SHERLOCK_USERNAME_SITES = _load_sherlock_sites()
+SHERLOCK_IMPORTED_SITE_COUNT = len(SHERLOCK_USERNAME_SITES)
+USERNAME_SITES = _merge_username_sites(CURATED_USERNAME_SITES, SHERLOCK_USERNAME_SITES)

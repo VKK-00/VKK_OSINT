@@ -16,7 +16,7 @@ from osint_toolkit.modules.phone import detect_country, is_e164_like, normalize_
 from osint_toolkit.modules.ru_ua_sources import RuUaSourcePackModule
 from osint_toolkit.modules.telegram import TelegramScanModule, normalize_telegram_target
 from osint_toolkit.modules.username import classify_username_http_result, normalize_username
-from osint_toolkit.sites import UsernameSite
+from osint_toolkit.sites import SHERLOCK_IMPORTED_SITE_COUNT, USERNAME_SITES, UsernameSite
 
 
 class EngineTests(unittest.TestCase):
@@ -57,6 +57,23 @@ class EngineTests(unittest.TestCase):
         self.assertIn("Linktree", sources)
         self.assertIn("Threads", sources)
 
+    def test_username_site_dataset_imports_sherlock_resource(self):
+        sources = {site.name for site in USERNAME_SITES}
+        imported_1337x = next(site for site in USERNAME_SITES if site.name == "1337x")
+
+        self.assertGreaterEqual(SHERLOCK_IMPORTED_SITE_COUNT, 450)
+        self.assertGreaterEqual(len(USERNAME_SITES), 450)
+        self.assertIn("Archive of Our Own", sources)
+        self.assertEqual(imported_1337x.url_template, "https://www.1337x.to/user/{username}/")
+        self.assertEqual(imported_1337x.source_projects, ("sherlock",))
+        self.assertIn("<head><title>404 Not Found</title></head>", imported_1337x.not_found_markers)
+
+    def test_curated_username_sites_take_precedence_over_sherlock_duplicates(self):
+        github = next(site for site in USERNAME_SITES if site.name == "GitHub")
+
+        self.assertEqual(github.url_template, "https://github.com/{username}")
+        self.assertEqual(github.source_projects, ("sherlock", "maigret", "whatsmyname"))
+
     def test_username_live_classifier_uses_not_found_marker(self):
         site = UsernameSite(
             "Example",
@@ -72,6 +89,28 @@ class EngineTests(unittest.TestCase):
                 status_code=200,
                 title="Profile",
                 body_text="No user named missinguser was found.",
+            ),
+        )
+
+        self.assertEqual(classification.status, "not_found")
+        self.assertEqual(classification.confidence, "high")
+        self.assertEqual(classification.content_rule, "not_found_marker")
+
+    def test_username_live_classifier_handles_literal_braces_in_marker(self):
+        site = UsernameSite(
+            "Example",
+            "https://example.com/{username}",
+            not_found_markers=('{"users":[]}',),
+        )
+        classification = classify_username_http_result(
+            site,
+            "missinguser",
+            HttpResult(
+                url="https://example.com/missinguser",
+                final_url="https://example.com/missinguser",
+                status_code=200,
+                title="Profile",
+                body_text='{"users":[]}',
             ),
         )
 

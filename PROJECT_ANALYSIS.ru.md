@@ -21,7 +21,7 @@ CLI работает в трёх режимах:
 Первый native-слой уже выполняет:
 
 - person-name expansion: нормализация имени, RU/UA transliteration и username-кандидаты;
-- username public profile checks по 38 URL-шаблонам, совместимые по классу задачи с Sherlock/Maigret/WhatsMyName/Nexfil;
+- username public profile checks по 479 активным URL-шаблонам: 38 curated правил плюс импорт Sherlock `data.json`, совместимые по классу задачи с Sherlock/Maigret/WhatsMyName/Nexfil;
 - platform-specific username rules: несовместимые site checks возвращаются как `skipped`, без построения заведомо неверного URL;
 - content marker rules для live username checks: profile markers повышают confidence, soft-404 markers дают `not_found`;
 - email baseline checks: синтаксис, live domain resolution, MX/TXT lookup, SPF и DMARC policy classification;
@@ -59,6 +59,8 @@ CLI работает в трёх режимах:
 - `osint_people_ru_ua_2026-06-24.csv` — объединённая разметка people + ru/ua.
 - `osint_toolkit/` — Python-пакет CLI.
 - `osint_toolkit/modules/` — native scan-модули.
+- `osint_toolkit/resources/sherlock_data.json` — встроенный snapshot Sherlock `sherlock_project/resources/data.json`, commit `206068d`, MIT license.
+- `osint_toolkit/resources/THIRD_PARTY_NOTICES.txt` — notice по скопированному upstream dataset.
 - `tests/` — unittest-тесты.
 - `README.md` — пользовательская инструкция.
 - `pyproject.toml` — упаковка и console script.
@@ -83,7 +85,9 @@ CLI работает в трёх режимах:
 - `osint_toolkit/sites.py`
   - `UsernameSite` — URL template, регион, upstream source projects и platform-specific username rule.
   - `match_content()` — сопоставление title/body с profile/not-found markers.
-  - `USERNAME_SITES` — текущий native dataset из 38 public profile templates.
+  - `CURATED_USERNAME_SITES` — локально уточнённые 38 public profile templates.
+  - `SHERLOCK_USERNAME_SITES` — импортированные из Sherlock `data.json` templates.
+  - `USERNAME_SITES` — merged native dataset; curated правила идут первыми и вытесняют upstream-дубли по имени или URL.
 - `osint_toolkit/http_client.py`
   - `HttpResult.body_text` — ограниченный текст ответа для content marker checks.
 - `osint_toolkit/modules/person.py`
@@ -388,7 +392,7 @@ osint-toolkit stats
 - Каталог основан на snapshot от 2026-06-24; GitHub stars и актуальность проектов меняются.
 - Качество и безопасность внешних репозиториев не аудированы.
 - Native person-name expansion пока использует базовые шаблоны имени/фамилии и RU/UA transliteration; нет словарей никнеймов, исторических alias и platform-specific username rules.
-- Первый native username module покрывает URL-template/status-code слой, часть platform syntax rules и часть content marker rules, но не всю логику Sherlock/Maigret: нет полного upstream site dataset, полного набора custom content error rules, rate-limit logic и enrichment.
+- Первый native username module уже импортирует Sherlock site dataset и покрывает URL-template/status-code слой, часть platform syntax rules и часть content marker rules, но не всю логику Sherlock/Maigret/WhatsMyName: Maigret/WhatsMyName datasets ещё не встроены, нет полного набора custom `errorType`/`errorUrl`/response-url/WAF rules, rate-limit logic и enrichment.
 - Native email module делает MX/TXT lookup и SPF/DMARC classifier, но пока не делает native breach lookup, NS/additional TXT classifiers или own API enrichment; Mosint/h8mail покрывают часть enrichment через external adapters.
 - Native phone module пока не делает carrier lookup, reputation lookup или external API enrichment.
 - Telegram module пока не использует Telegram API и не получает private/group data.
@@ -439,6 +443,7 @@ osint-toolkit stats
 - 2026-06-24: добавлены `AdapterProfile`, команда `adapter-profiles` и `investigate --adapter-profile` для готовых групп adapters.
 - 2026-06-24: добавлены `PersonNameScanModule`, `scan person` и `investigate --person` с derived username scan/adapters и graph-связью `person -> username`.
 - 2026-06-24: расширен native username dataset до 38 URL-шаблонов и добавлены platform-specific username rules со статусом `skipped`.
+- 2026-06-24: импортирован Sherlock `data.json` как native package resource; активный username dataset расширен до 479 URL-шаблонов после дедупликации curated и upstream-записей.
 - 2026-06-24: добавлены `HttpResult.body_text`, username content marker rules и `classify_username_http_result()` для soft-404/profile confidence в live checks.
 - 2026-06-24: добавлен `dns_lookup.py`; `EmailScanModule` теперь планирует и выполняет MX/TXT lookup через `nslookup` в live-режиме.
 - 2026-06-24: добавлен `email_auth.py`; `EmailScanModule` теперь классифицирует SPF и DMARC, а adapter manifest расширен executable target для `h8mail`.

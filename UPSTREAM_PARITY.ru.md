@@ -30,9 +30,10 @@ python -m osint_toolkit scan username <username> --live
 
 - person-name expansion в username-кандидаты;
 - RU/UA/кириллическая transliteration для username candidates;
-- 38 публичных URL-шаблонов профилей;
+- 479 активных публичных URL-шаблонов профилей: 38 curated правил плюс 478 валидных записей из Sherlock `data.json` после дедупликации;
 - platform-specific username rules и `skipped` findings для заведомо несовместимых платформ;
 - content markers для части live username checks: profile marker -> `candidate/high`, soft-404 marker -> `not_found/high`;
+- native import Sherlock `sherlock_project/resources/data.json` как package resource с MIT notice; curated локальные правила имеют приоритет над upstream-дублями;
 - dry-run без сетевых запросов;
 - live HTTP checks по явному `--live`;
 - единый результат `Finding`;
@@ -63,8 +64,8 @@ python -m osint_toolkit scan username <username> --live
 
 Gap до полного 1:1:
 
-- site dataset расширен до 38 шаблонов, но это ещё не полный upstream dataset Sherlock/Maigret/WhatsMyName;
-- per-site rules покрывают username syntax/length и часть title/body content markers, но не все upstream error rules;
+- Sherlock site dataset импортирован в native username layer, но Maigret/WhatsMyName datasets ещё не импортированы как native resources;
+- per-site rules покрывают username syntax/length и часть title/body content markers, но ещё не всю Sherlock `errorType`, `errorUrl`, response-url и WAF/error-handling логику;
 - нет rate-limit/backoff правил;
 - username permutation/alias strategy пока базовая: нет словарей никнеймов, исторических alias и platform-specific username rules;
 - content-based confidence пока частичный: нет полного набора marker rules из upstream datasets;

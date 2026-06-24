@@ -1,0 +1,9 @@
+Sherlock site dataset
+Source: https://github.com/sherlock-project/sherlock
+File: sherlock_project/resources/data.json
+Snapshot commit: 206068d
+License: MIT
+
+The copied dataset is used as a native username profile URL template source.
+Curated local site rules in osint_toolkit/sites.py take precedence over
+upstream-imported entries.

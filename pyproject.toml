@@ -19,3 +19,6 @@ osint-toolkit = "osint_toolkit.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["osint_toolkit*"]
+
+[tool.setuptools.package-data]
+osint_toolkit = ["resources/*.json", "resources/*.txt"]
