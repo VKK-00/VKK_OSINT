@@ -80,7 +80,7 @@ def format_findings(findings: Iterable[Finding], *, output_format: str = "table"
             )
         return "\n".join(lines)
     if output_format == "table":
-        headers = ("Module", "Source", "Status", "HTTP", "Confidence", "URL")
+        headers = ("Module", "Source", "Status", "HTTP", "Confidence", "Evidence", "URL")
         rows = [
             (
                 finding.module,
@@ -88,6 +88,7 @@ def format_findings(findings: Iterable[Finding], *, output_format: str = "table"
                 finding.status,
                 "" if finding.http_status is None else str(finding.http_status),
                 finding.confidence,
+                _short(finding.evidence, 48),
                 _short(finding.url, 72),
             )
             for finding in finding_list

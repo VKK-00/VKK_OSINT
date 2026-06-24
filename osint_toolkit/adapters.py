@@ -76,9 +76,9 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "email OSINT",
         "external_cli",
         "MIT",
-        "planned",
+        "partial_native",
         "mosint <email>",
-        "Email modules require careful source and API-key handling.",
+        "Native email module covers syntax/domain-resolution baseline; full parity needs upstream enrichment modules.",
     ),
     AdapterSpec(
         "thewhiteh4t/pwnedOrNot",
@@ -130,9 +130,9 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "phone number intelligence",
         "external_cli",
         "GPL-3.0",
-        "planned",
+        "partial_native",
         "phoneinfoga scan -n <number>",
-        "GPL code should not be copied into this package without accepting license implications.",
+        "Native phone module covers normalization/prefix baseline; full parity should use external adapter.",
     ),
     AdapterSpec(
         "smicallef/spiderfoot",
@@ -168,4 +168,3 @@ def filter_adapters(status: str | None = None) -> tuple[AdapterSpec, ...]:
     if not status:
         return ADAPTERS
     return tuple(adapter for adapter in ADAPTERS if adapter.status == status)
-

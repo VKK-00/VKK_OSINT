@@ -33,6 +33,18 @@ class CliTests(unittest.TestCase):
         self.assertIn("GitHub", result.stdout)
         self.assertIn("planned", result.stdout)
 
+    def test_scan_email_dry_run_command(self):
+        result = self.run_cli("scan", "email", "person@example.com")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("email-baseline", result.stdout)
+        self.assertIn("domain-resolution", result.stdout)
+
+    def test_scan_phone_dry_run_command(self):
+        result = self.run_cli("scan", "phone", "+380441234567")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("phone-baseline", result.stdout)
+        self.assertIn("Ukraine", result.stdout)
+
     def test_adapters_command(self):
         result = self.run_cli("adapters", "--status", "partial_native")
         self.assertEqual(result.returncode, 0, result.stderr)

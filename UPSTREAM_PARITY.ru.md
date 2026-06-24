@@ -67,6 +67,21 @@ Gap до полного 1:1:
 - `martinvigo/email2phonenumber`
 - `laramies/theHarvester`
 
+Уже реализовано:
+
+- `python -m osint_toolkit scan email <email>`;
+- синтаксическая проверка;
+- извлечение домена;
+- live domain resolution по явному `--live`.
+
+Gap:
+
+- нет MX lookup;
+- нет breach lookup;
+- нет API enrichment;
+- нет локального кэша;
+- нет restricted account-enumeration режима.
+
 План:
 
 1. Native: нормализация email, домен, MX/NS/TXT через системный resolver или optional DNS dependency.
@@ -84,6 +99,19 @@ Gap до полного 1:1:
 - `megadose/ignorant`
 - `TermuxHackz/X-osint`
 - `martinvigo/email2phonenumber`
+
+Уже реализовано:
+
+- `python -m osint_toolkit scan phone <number>`;
+- E.164-like нормализация;
+- базовый country-prefix signal для `+380`, `+7` и нескольких глобальных префиксов.
+
+Gap:
+
+- нет carrier/type lookup;
+- нет reputation lookup;
+- нет внешних API;
+- нет PhoneInfoga parity adapter.
 
 План:
 
@@ -166,4 +194,3 @@ The full objective is not complete until:
 - results share one schema and can be exported as table, Markdown, CSV and JSON;
 - tests cover dry-run, parsing, output, adapter manifests and at least safe live smoke checks;
 - docs explain installation, usage, parity status and license boundaries.
-

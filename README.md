@@ -17,6 +17,8 @@
 - находить проекты, связанные с OSINT по лицам;
 - находить проекты и ресурсы, связанные с РФ, Украиной и русскоязычными платформами;
 - выполнять native username profile checks по публичным URL-шаблонам;
+- выполнять baseline email checks: синтаксис и live domain resolution;
+- выполнять baseline phone checks: E.164-like нормализация и префикс региона;
 - получать базовые web metadata по URL;
 - показывать карту upstream-адаптеров для дальнейшего 1:1 functional parity;
 - получать безопасный workflow под задачу;
@@ -30,6 +32,8 @@ python -m osint_toolkit catalog --kind people --direct-only --limit 10
 python -m osint_toolkit catalog --kind ru-ua --level direct_ru_ua
 python -m osint_toolkit scan username example_user --limit 8
 python -m osint_toolkit scan username example_user --region ru --live --limit 5
+python -m osint_toolkit scan email person@example.com --live
+python -m osint_toolkit scan phone +380441234567
 python -m osint_toolkit scan url https://example.com --live
 python -m osint_toolkit adapters
 python -m osint_toolkit recommend username --region ru --limit 8
@@ -85,10 +89,14 @@ python -m osint_toolkit show sherlock-project/sherlock
 ```powershell
 python -m osint_toolkit scan username example_user --limit 10
 python -m osint_toolkit scan username example_user --region ru --live --limit 10
+python -m osint_toolkit scan email person@example.com --live --format json
+python -m osint_toolkit scan phone +380441234567
 python -m osint_toolkit scan url https://example.com --live --format json
 ```
 
 Сейчас native username module покрывает Sherlock/Maigret/WhatsMyName-подобный слой публичных profile URL checks. Полное 1:1 покрытие требует импорта upstream datasets и error rules либо подключения внешних CLI через adapters.
+
+Native email/phone modules являются baseline-слоем для Mosint/h8mail/pwnedOrNot/PhoneInfoga-подобных adapters. Они не делают account-enumeration и не запускают password recovery flows.
 
 ### `adapters`
 

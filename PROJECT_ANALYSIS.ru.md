@@ -18,6 +18,8 @@ CLI работает в двух режимах:
 Первый native-слой уже выполняет:
 
 - username public profile checks по URL-шаблонам, совместимые по классу задачи с Sherlock/Maigret/WhatsMyName/Nexfil;
+- email baseline checks: синтаксис и live domain resolution;
+- phone baseline checks: нормализация, E.164-like validation и country-prefix signal;
 - базовый web metadata scan по URL, совместимый с начальным web-check слоем;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
@@ -49,6 +51,10 @@ CLI работает в двух режимах:
   - `Engine` — запуск подходящих модулей.
 - `osint_toolkit/modules/username.py`
   - `UsernameScanModule` — Sherlock/Maigret/WhatsMyName-подобные проверки публичных профилей.
+- `osint_toolkit/modules/email.py`
+  - `EmailScanModule` — базовая проверка email: синтаксис и доменное разрешение.
+- `osint_toolkit/modules/phone.py`
+  - `PhoneScanModule` — нормализация и country-prefix сигнал для телефонных номеров.
 - `osint_toolkit/modules/web.py`
   - `WebMetadataModule` — HTTP status/final URL/title.
 - `osint_toolkit/adapters.py`
@@ -125,6 +131,8 @@ python -m osint_toolkit stats
 python -m osint_toolkit catalog --kind people --direct-only --limit 10
 python -m osint_toolkit scan username example_user --limit 10
 python -m osint_toolkit scan username example_user --region ru --live --limit 5
+python -m osint_toolkit scan email person@example.com --live
+python -m osint_toolkit scan phone +380441234567
 python -m osint_toolkit scan url https://example.com --live
 python -m osint_toolkit adapters
 python -m osint_toolkit recommend username --region ru
@@ -165,6 +173,8 @@ osint-toolkit stats
 - Каталог основан на snapshot от 2026-06-24; GitHub stars и актуальность проектов меняются.
 - Качество и безопасность внешних репозиториев не аудированы.
 - Первый native username module покрывает только URL-template/status-code слой, а не всю логику Sherlock/Maigret: нет полного upstream site dataset, custom error rules, rate-limit logic и enrichment.
+- Native email module пока не делает MX lookup, breach lookup или external API enrichment.
+- Native phone module пока не делает carrier lookup, reputation lookup или external API enrichment.
 - Adapter manifest пока не запускает внешние CLI; это следующий этап.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
