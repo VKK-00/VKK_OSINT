@@ -576,26 +576,42 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(sources["web-crawl"].metadata["email_count"], "1")
 
     def test_url_scan_live_crawls_same_site_links(self):
-        responses = (
-            _FakeHttpResponse(url="https://example.com", status_code=200),
-            _FakeHttpResponse(
-                url="https://example.com",
-                status_code=200,
-                body=(
-                    b"<html><title>Home</title><a href='/about'>About</a>"
-                    b"<a href='https://github.com/example'>GitHub</a>"
-                    b"info@example.com +380 44 123 45 67</html>"
+        fake_client = _FakeDomainHttpClient(
+            (
+                HttpResult(
+                    url="https://example.com",
+                    final_url="https://example.com",
+                    status_code=200,
+                    title="Home",
+                    body_text=(
+                        "<html><title>Home</title><a href='/about'>About</a>"
+                        "<a href='https://github.com/example'>GitHub</a>"
+                        "info@example.com +380 44 123 45 67</html>"
+                    ),
+                    content_type="text/html",
                 ),
-            ),
-            _FakeHttpResponse(url="https://example.com/about", status_code=200),
-            _FakeHttpResponse(
-                url="https://example.com/about",
-                status_code=200,
-                body=b"<html><title>About</title>team@example.com</html>",
-            ),
+                HttpResult(
+                    url="https://example.com/robots.txt",
+                    final_url="https://example.com/robots.txt",
+                    status_code=404,
+                ),
+                HttpResult(
+                    url="https://example.com/sitemap.xml",
+                    final_url="https://example.com/sitemap.xml",
+                    status_code=404,
+                ),
+                HttpResult(
+                    url="https://example.com/about",
+                    final_url="https://example.com/about",
+                    status_code=200,
+                    title="About",
+                    body_text="<html><title>About</title>team@example.com</html>",
+                    content_type="text/html",
+                ),
+            )
         )
 
-        with patch("osint_toolkit.http_client.urllib.request.urlopen", side_effect=responses):
+        with patch("osint_toolkit.modules.web.HttpClient", return_value=fake_client):
             findings = Engine([WebMetadataModule()]).scan(
                 ScanTarget(kind="url", value="example.com"),
                 RunConfig(live=True, crawl_pages=3, crawl_depth=1),
@@ -608,6 +624,77 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(crawl.metadata["phones"], "+380441234567")
         self.assertEqual(crawl.metadata["discovered_urls"], "https://example.com/about")
         self.assertEqual(crawl.metadata["social_urls"], "https://github.com/example")
+
+    def test_url_scan_live_uses_robots_and_sitemap_discovery(self):
+        fake_client = _FakeDomainHttpClient(
+            (
+                HttpResult(
+                    url="https://example.com",
+                    final_url="https://example.com",
+                    status_code=200,
+                    title="Home",
+                    body_text="<html><title>Home</title></html>",
+                    content_type="text/html",
+                ),
+                HttpResult(
+                    url="https://example.com/robots.txt",
+                    final_url="https://example.com/robots.txt",
+                    status_code=200,
+                    body_text=(
+                        "User-agent: *\n"
+                        "Disallow: /private\n"
+                        "Sitemap: https://example.com/main-sitemap.xml\n"
+                    ),
+                    content_type="text/plain",
+                ),
+                HttpResult(
+                    url="https://example.com/main-sitemap.xml",
+                    final_url="https://example.com/main-sitemap.xml",
+                    status_code=200,
+                    body_text=(
+                        "<urlset>"
+                        "<url><loc>https://example.com/contact</loc></url>"
+                        "<url><loc>https://example.com/private</loc></url>"
+                        "<url><loc>https://external.test/out</loc></url>"
+                        "</urlset>"
+                    ),
+                    content_type="application/xml",
+                ),
+                HttpResult(
+                    url="https://example.com/sitemap.xml",
+                    final_url="https://example.com/sitemap.xml",
+                    status_code=404,
+                ),
+                HttpResult(
+                    url="https://example.com/contact",
+                    final_url="https://example.com/contact",
+                    status_code=200,
+                    title="Contact",
+                    body_text="info@example.com",
+                    content_type="text/html",
+                ),
+            )
+        )
+
+        with patch("osint_toolkit.modules.web.HttpClient", return_value=fake_client):
+            findings = Engine([WebMetadataModule()]).scan(
+                ScanTarget(kind="url", value="example.com"),
+                RunConfig(live=True, crawl_pages=2, crawl_depth=1),
+            )
+
+        crawl = {finding.source: finding for finding in findings}["web-crawl"]
+        self.assertEqual(crawl.metadata["robots_url"], "https://example.com/robots.txt")
+        self.assertEqual(crawl.metadata["robots_status"], "200")
+        self.assertEqual(crawl.metadata["robots_sitemaps"], "https://example.com/main-sitemap.xml")
+        self.assertEqual(crawl.metadata["robots_disallow_paths"], "/private")
+        self.assertEqual(crawl.metadata["sitemap_sources"], "https://example.com/main-sitemap.xml")
+        self.assertEqual(crawl.metadata["sitemap_url_count"], "2")
+        self.assertEqual(crawl.metadata["sitemap_urls"], "https://example.com/contact, https://example.com/private")
+        self.assertEqual(crawl.metadata["pages_fetched"], "2")
+        self.assertEqual(crawl.metadata["emails"], "info@example.com")
+        self.assertEqual(fake_client.requests[1][0], "https://example.com/robots.txt")
+        self.assertEqual(fake_client.requests[2][0], "https://example.com/main-sitemap.xml")
+        self.assertEqual(fake_client.requests[3][0], "https://example.com/sitemap.xml")
 
     def test_domain_scan_dry_run_plans_dns_and_http_metadata(self):
         engine = Engine([DomainScanModule()])
@@ -711,6 +798,20 @@ class EngineTests(unittest.TestCase):
                     content_type="text/html",
                 ),
                 HttpResult(
+                    url="https://example.com/robots.txt",
+                    final_url="https://example.com/robots.txt",
+                    status_code=200,
+                    body_text="User-agent: *\nDisallow: /private\nSitemap: https://example.com/sitemap.xml\n",
+                    content_type="text/plain",
+                ),
+                HttpResult(
+                    url="https://example.com/sitemap.xml",
+                    final_url="https://example.com/sitemap.xml",
+                    status_code=200,
+                    body_text="<urlset><url><loc>https://example.com/contact</loc></url></urlset>",
+                    content_type="application/xml",
+                ),
+                HttpResult(
                     url="https://example.com/contact",
                     final_url="https://example.com/contact",
                     status_code=200,
@@ -753,15 +854,17 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(sources["web-crawl"].metadata["emails"], "info@example.com, support@external.test, team@example.com")
         self.assertEqual(sources["web-crawl"].metadata["phones"], "+380441234567")
         self.assertEqual(sources["web-crawl"].metadata["social_urls"], "https://vk.com/example")
+        self.assertEqual(sources["web-crawl"].metadata["robots_disallow_paths"], "/private")
+        self.assertEqual(sources["web-crawl"].metadata["sitemap_urls"], "https://example.com/contact")
         self.assertEqual(sources["certificate-transparency"].status, "candidate")
         self.assertEqual(sources["certificate-transparency"].metadata["subdomain_count"], "2")
         self.assertEqual(sources["certificate-transparency"].metadata["subdomains"], "api.example.com, www.example.com")
-        self.assertEqual(fake_client.requests[3][2], {"Accept": "application/json"})
+        self.assertEqual(fake_client.requests[5][2], {"Accept": "application/json"})
         self.assertEqual(sources["rdap-domain"].status, "candidate")
         self.assertEqual(sources["rdap-domain"].metadata["registrar"], "Example Registrar, Inc.")
         self.assertEqual(sources["rdap-domain"].metadata["nameservers"], "a.iana-servers.net, b.iana-servers.net")
         self.assertEqual(sources["rdap-domain"].metadata["expires_at"], "2026-08-13T04:00:00Z")
-        self.assertEqual(fake_client.requests[4][2], {"Accept": "application/rdap+json, application/json"})
+        self.assertEqual(fake_client.requests[6][2], {"Accept": "application/rdap+json, application/json"})
 
     def test_telegram_scan_normalizes_handle_and_post_url(self):
         engine = Engine([TelegramScanModule()])

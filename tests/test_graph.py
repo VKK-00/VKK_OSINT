@@ -177,6 +177,10 @@ class GraphAnalysisTests(unittest.TestCase):
                     "discovered_urls": "https://example.com/contact",
                     "external_urls": "https://external.test/profile",
                     "social_urls": "https://vk.com/example",
+                    "robots_sitemaps": "https://example.com/sitemap.xml",
+                    "robots_disallow_paths": "/private",
+                    "sitemap_sources": "https://example.com/sitemap.xml",
+                    "sitemap_urls": "https://example.com/contact, https://example.com/about",
                     "emails": "info@example.com",
                     "phones": "+380441234567",
                 },
@@ -188,6 +192,8 @@ class GraphAnalysisTests(unittest.TestCase):
         self.assertIn(("url", "https://example.com/contact"), entity_keys)
         self.assertIn(("url", "https://external.test/profile"), entity_keys)
         self.assertIn(("url", "https://vk.com/example"), entity_keys)
+        self.assertIn(("url", "https://example.com/about"), entity_keys)
+        self.assertIn(("web-path", "/private"), entity_keys)
         self.assertIn(("phone", "+380441234567"), entity_keys)
         self.assertIn(("email", "info@example.com"), entity_keys)
 
@@ -199,6 +205,9 @@ class GraphAnalysisTests(unittest.TestCase):
         self.assertIn(("domain", "example.com", "discovered_url", "url", "https://example.com/contact"), edge_keys)
         self.assertIn(("domain", "example.com", "linked_external_url", "url", "https://external.test/profile"), edge_keys)
         self.assertIn(("domain", "example.com", "linked_social_url", "url", "https://vk.com/example"), edge_keys)
+        self.assertIn(("domain", "example.com", "robots_declared_sitemap", "url", "https://example.com/sitemap.xml"), edge_keys)
+        self.assertIn(("domain", "example.com", "robots_disallow_path", "web-path", "/private"), edge_keys)
+        self.assertIn(("domain", "example.com", "sitemap_url", "url", "https://example.com/about"), edge_keys)
         self.assertIn(("domain", "example.com", "page_contact_phone", "phone", "+380441234567"), edge_keys)
 
 

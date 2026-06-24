@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import html
+import re
 from collections import deque
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import urldefrag, urljoin, urlparse
 
 from .http_client import HttpClient, HttpResult
 from .web_extract import (
@@ -11,6 +13,11 @@ from .web_extract import (
     extract_public_phones,
     filter_social_links,
 )
+
+ROBOTS_DISALLOW_LIMIT = 50
+SITEMAP_FETCH_LIMIT = 5
+SITEMAP_URL_LIMIT = 100
+SITEMAP_LOC_RE = re.compile(r"<loc[^>]*>(.*?)</loc>", re.IGNORECASE | re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -38,6 +45,12 @@ class CrawlResult:
     pages: tuple[CrawledPage, ...]
     queued_url_count: int
     truncated: bool
+    robots_url: str = ""
+    robots_status_code: int | None = None
+    robots_sitemaps: tuple[str, ...] = ()
+    robots_disallow_paths: tuple[str, ...] = ()
+    sitemap_sources: tuple[str, ...] = ()
+    sitemap_urls: tuple[str, ...] = ()
 
     @property
     def crawled_urls(self) -> tuple[str, ...]:
@@ -79,6 +92,7 @@ def crawl_public_site(
     queued: set[str] = set()
     visited: set[str] = set()
     pending: deque[tuple[str, int]] = deque()
+    discovery = _discover_site_urls(seed_url, root_host, client)
 
     if initial_results:
         for result in initial_results:
@@ -94,6 +108,9 @@ def crawl_public_site(
             )
     else:
         _queue(seed_url, 0, queued, pending)
+    if max_depth > 0:
+        for sitemap_url in discovery.sitemap_urls:
+            _queue(sitemap_url, 1, queued, pending)
 
     while pending and len(pages) < max_pages:
         url, depth = pending.popleft()
@@ -115,6 +132,12 @@ def crawl_public_site(
         max_pages=max_pages,
         max_depth=max_depth,
         pages=tuple(pages[:max_pages]),
+        robots_url=discovery.robots_url,
+        robots_status_code=discovery.robots_status_code,
+        robots_sitemaps=discovery.robots_sitemaps,
+        robots_disallow_paths=discovery.robots_disallow_paths,
+        sitemap_sources=discovery.sitemap_sources,
+        sitemap_urls=discovery.sitemap_urls,
         queued_url_count=len(queued),
         truncated=bool(pending) or len(pages) > max_pages,
     )
@@ -127,6 +150,16 @@ def crawl_metadata(result: CrawlResult) -> dict[str, str]:
         "max_pages": str(result.max_pages),
         "max_depth": str(result.max_depth),
         "pages_fetched": str(len(result.pages)),
+        "robots_url": result.robots_url,
+        "robots_status": str(result.robots_status_code or ""),
+        "robots_sitemaps": _join(result.robots_sitemaps),
+        "robots_disallow_paths": _join(result.robots_disallow_paths),
+        "robots_sitemap_count": str(len(result.robots_sitemaps)),
+        "robots_disallow_count": str(len(result.robots_disallow_paths)),
+        "sitemap_sources": _join(result.sitemap_sources),
+        "sitemap_urls": _join(result.sitemap_urls),
+        "sitemap_source_count": str(len(result.sitemap_sources)),
+        "sitemap_url_count": str(len(result.sitemap_urls)),
         "queued_url_count": str(result.queued_url_count),
         "truncated": "yes" if result.truncated else "no",
         "crawled_urls": _join(result.crawled_urls),
@@ -141,6 +174,113 @@ def crawl_metadata(result: CrawlResult) -> dict[str, str]:
         "external_url_count": str(len(result.external_links)),
         "social_url_count": str(len(result.social_links)),
     }
+
+
+@dataclass(frozen=True)
+class _DiscoveryResult:
+    robots_url: str = ""
+    robots_status_code: int | None = None
+    robots_sitemaps: tuple[str, ...] = ()
+    robots_disallow_paths: tuple[str, ...] = ()
+    sitemap_sources: tuple[str, ...] = ()
+    sitemap_urls: tuple[str, ...] = ()
+
+
+def _discover_site_urls(seed_url: str, root_host: str, client: HttpClient) -> _DiscoveryResult:
+    if not root_host:
+        return _DiscoveryResult()
+    root_url = _root_url(seed_url, root_host)
+    robots_url = f"{root_url}/robots.txt"
+    robots_result = client.check(robots_url, fetch_title=True)
+    robots_sitemaps, disallow_paths = _parse_robots_txt(robots_result.body_text, root_url)
+    sitemap_candidates = _dedupe((*robots_sitemaps, f"{root_url}/sitemap.xml"))
+    sitemap_sources, sitemap_urls = _fetch_sitemap_urls(sitemap_candidates, root_host, client)
+    return _DiscoveryResult(
+        robots_url=robots_url,
+        robots_status_code=robots_result.status_code,
+        robots_sitemaps=robots_sitemaps,
+        robots_disallow_paths=disallow_paths,
+        sitemap_sources=sitemap_sources,
+        sitemap_urls=sitemap_urls,
+    )
+
+
+def _parse_robots_txt(text: str, root_url: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    if not text:
+        return (), ()
+    sitemaps: list[str] = []
+    disallow_paths: list[str] = []
+    seen_disallow: set[str] = set()
+    for raw_line in text.splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if not line or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key == "sitemap":
+            sitemap = _normalize_url(value, root_url)
+            if sitemap:
+                sitemaps.append(sitemap)
+        elif key == "disallow" and value:
+            normalized = value.strip()
+            if len(disallow_paths) < ROBOTS_DISALLOW_LIMIT and normalized not in seen_disallow:
+                seen_disallow.add(normalized)
+                disallow_paths.append(normalized)
+    return _dedupe(sitemaps), tuple(disallow_paths)
+
+
+def _fetch_sitemap_urls(
+    sitemap_candidates: tuple[str, ...],
+    root_host: str,
+    client: HttpClient,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    pending: deque[str] = deque(sitemap_candidates)
+    fetched: list[str] = []
+    seen_sources: set[str] = set()
+    urls: list[str] = []
+    seen_urls: set[str] = set()
+    while pending and len(fetched) < SITEMAP_FETCH_LIMIT and len(urls) < SITEMAP_URL_LIMIT:
+        sitemap_url = pending.popleft()
+        source_key = sitemap_url.lower()
+        if source_key in seen_sources:
+            continue
+        seen_sources.add(source_key)
+        result = client.check(
+            sitemap_url,
+            fetch_title=True,
+            headers={"Accept": "application/xml,text/xml,text/plain,text/html"},
+        )
+        if result.status_code is None or result.status_code >= 400 or not result.body_text:
+            continue
+        fetched.append(result.final_url or sitemap_url)
+        for loc in _parse_sitemap_locations(result.body_text, result.final_url or sitemap_url):
+            if not _same_site(_host(loc), root_host):
+                continue
+            if _looks_like_sitemap_url(loc) and len(fetched) + len(pending) < SITEMAP_FETCH_LIMIT:
+                pending.append(loc)
+                continue
+            key = loc.lower()
+            if key not in seen_urls:
+                seen_urls.add(key)
+                urls.append(loc)
+            if len(urls) >= SITEMAP_URL_LIMIT:
+                break
+    return _dedupe(fetched), tuple(urls)
+
+
+def _parse_sitemap_locations(text: str, base_url: str) -> tuple[str, ...]:
+    values: list[str] = []
+    for match in SITEMAP_LOC_RE.finditer(text):
+        loc = _normalize_url(html.unescape(re.sub(r"\s+", " ", match.group(1))).strip(), base_url)
+        if loc:
+            values.append(loc)
+    if not values:
+        for line in text.splitlines():
+            loc = _normalize_url(line.strip(), base_url)
+            if loc:
+                values.append(loc)
+    return _dedupe(values)
 
 
 def _consume_result(
@@ -214,6 +354,28 @@ def _same_site(host: str, root_host: str) -> bool:
 
 def _host(url: str) -> str:
     return (urlparse(url).hostname or "").lower().strip(".")
+
+
+def _root_url(seed_url: str, root_host: str) -> str:
+    parsed = urlparse(seed_url)
+    scheme = parsed.scheme if parsed.scheme in {"http", "https"} else "https"
+    port = f":{parsed.port}" if parsed.port else ""
+    return f"{scheme}://{root_host}{port}"
+
+
+def _normalize_url(value: str, base_url: str) -> str:
+    if not value:
+        return ""
+    absolute, _fragment = urldefrag(urljoin(base_url, value.strip()))
+    parsed = urlparse(absolute)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return absolute
+
+
+def _looks_like_sitemap_url(url: str) -> bool:
+    path = urlparse(url).path.lower()
+    return "sitemap" in path and path.endswith((".xml", ".xml.gz", ".txt"))
 
 
 def _canonical_url(url: str) -> str:

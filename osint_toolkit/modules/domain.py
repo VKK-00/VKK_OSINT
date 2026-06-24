@@ -87,7 +87,7 @@ class DomainScanModule:
                     status="planned",
                     url=f"https://{domain}",
                     confidence="not_checked",
-                    evidence="Dry run only. Pass --live to crawl bounded same-site links and extract public contacts.",
+                    evidence="Dry run only. Pass --live to crawl bounded same-site links, robots.txt and sitemaps.",
                     metadata={
                         "domain": domain,
                         "seed_url": f"https://{domain}",
@@ -282,7 +282,7 @@ def _web_crawl(module: str, original: str, domain: str, crawl: CrawlResult) -> F
         evidence=(
             f"Crawled {len(crawl.pages)} page(s); found {len(crawl.internal_links)} same-site URL(s), "
             f"{len(crawl.external_links)} external URL(s), {len(crawl.social_links)} social URL(s), "
-            f"{len(crawl.emails)} email(s) and {len(crawl.phones)} phone(s)."
+            f"{len(crawl.sitemap_urls)} sitemap URL(s), {len(crawl.emails)} email(s) and {len(crawl.phones)} phone(s)."
         ),
         metadata=metadata,
     )
