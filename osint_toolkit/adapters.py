@@ -50,10 +50,19 @@ class AdapterSpec:
         command_template = self.command_template_for(target.kind)
         if not command_template:
             return ()
-        return tuple(
-            part.format(target_value=target.value, target_kind=target.kind, region=target.region)
-            for part in command_template
-        )
+        context = {
+            "target_value": target.value,
+            "target_kind": target.kind,
+            "region": target.region,
+            "region_code": _region_code(target.region),
+            "region_include_flag": _region_include_flag(target.region),
+        }
+        rendered: list[str] = []
+        for part in command_template:
+            value = part.format(**context)
+            if value:
+                rendered.append(value)
+        return tuple(rendered)
 
     def command_template_for(self, target_kind: str) -> tuple[str, ...]:
         for kind, template in self.command_templates:
@@ -317,13 +326,13 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "external_cli",
         "NOASSERTION",
         "planned",
-        "snoop <username>",
+        "snoop --no-func --found-print [--include RU|UA] <username>",
         "Important RU/UA username backend; needs license confirmation before code reuse.",
         ("username",),
-        ("snoop", "{target_value}"),
+        ("snoop", "--no-func", "--found-print", "{region_include_flag}", "{region_code}", "{target_value}"),
         "binary",
         (),
-        "Download the upstream release binary for Windows or GNU/Linux and put it on PATH.",
+        "Download the upstream release binary for Windows or GNU/Linux and put it on PATH as snoop, or adjust the local wrapper name.",
         "https://github.com/snooppr/snoop",
     ),
     AdapterSpec(
@@ -462,3 +471,11 @@ def _dedupe_strings(values: tuple[str, ...]) -> tuple[str, ...]:
             seen.add(key)
             deduped.append(normalized)
     return tuple(deduped)
+
+
+def _region_code(region: str) -> str:
+    return {"ru": "RU", "ua": "UA"}.get(region.lower(), "")
+
+
+def _region_include_flag(region: str) -> str:
+    return "--include" if _region_code(region) else ""

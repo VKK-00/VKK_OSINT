@@ -88,6 +88,45 @@ class InvestigationTests(unittest.TestCase):
         }
         self.assertIn(("username", "kaifcodec", "produced_url", "url", "https://profiles.example.net/kaifcodec"), edges)
 
+    def test_execute_snoop_adapter_adds_parsed_entities_and_edges(self):
+        completed = subprocess.CompletedProcess(
+            args=["snoop", "--no-func", "--found-print", "--include", "UA", "example_user"],
+            returncode=0,
+            stdout=(
+                "Resource,Geo,Url,Url_username,Status,Http_code,Deceleration/s,Response/s,Time/s,Session/kB\n"
+                "Example UA,UA,https://example.ua,https://example.ua/example_user,найден!,200,0.1,0.2,0.3,12\n"
+            ),
+            stderr="",
+        )
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="snoop"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            return_value=completed,
+        ):
+            result = run_investigation(
+                (ScanTarget(kind="username", value="example_user", region="ua"),),
+                include_adapters=True,
+                execute_adapters=True,
+                adapter_repositories=("snooppr/snoop",),
+            )
+
+        parsed = [finding for finding in result.adapter_findings if finding.module == "external-adapter-parser"]
+        self.assertEqual(parsed[0].metadata["parser"], "snoop")
+        self.assertEqual(parsed[0].metadata["site_name"], "Example UA")
+        self.assertEqual(parsed[0].metadata["region"], "UA")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("url", "https://example.ua/example_user"), entities)
+        self.assertIn(("domain", "example.ua"), entities)
+        self.assertIn(("region", "ua"), entities)
+
+        edges = {
+            (edge.source_kind, edge.source_value.lower(), edge.relation, edge.target_kind, edge.target_value.lower())
+            for edge in result.edges
+        }
+        self.assertIn(("username", "example_user", "produced_url", "url", "https://example.ua/example_user"), edges)
+        self.assertIn(("username", "example_user", "region_hint", "region", "ua"), edges)
+
     def test_person_target_expands_to_username_scan_edges(self):
         result = run_investigation((ScanTarget(kind="person", value="Ivan Petrenko"),))
 

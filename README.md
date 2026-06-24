@@ -28,6 +28,7 @@
 - получать базовые web metadata по URL;
 - показывать карту upstream-адаптеров и dry-run/execute запускать настроенные внешние CLI;
 - включать executed adapter outputs в единый investigation report, entities, graph и case store;
+- запускать Snoop adapter с RU/UA `--include` фильтром и разбирать его stdout/CSV-отчёты;
 - получать безопасный workflow под задачу;
 - генерировать Markdown-brief для кейса.
 - сохранять расследования в SQLite и анализировать graph edges сохранённого кейса.
@@ -53,6 +54,7 @@ python -m osint_toolkit adapter-profiles
 python -m osint_toolkit adapter-setup sherlock-project/sherlock
 python -m osint_toolkit doctor
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
+python -m osint_toolkit run-adapter snooppr/snoop username example_user --region ua
 python -m osint_toolkit investigate --person "Ivan Petrenko" --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --username example_user --domain example.com --telegram "@durov" --include-adapters
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter-profile username-full --adapter-limit 2
@@ -168,7 +170,7 @@ python -m osint_toolkit adapter-profiles
 python -m osint_toolkit adapter-profiles --format json
 ```
 
-Текущие профили включают `username-full`, `username-ru-ua`, `email-safe`, `phone-safe` и `url-archive`. `username-full` и `email-safe` включают `user-scanner` через target-specific JSON-команды `user-scanner -u <username> -f json` и `user-scanner -e <email> -f json`. Restricted email-to-account/email-to-phone adapters в `email-safe` не входят.
+Текущие профили включают `username-full`, `username-ru-ua`, `email-safe`, `phone-safe` и `url-archive`. `username-ru-ua` начинается со Snoop и при `--region ru|ua` рендерит upstream-фильтр `--include RU|UA`. `username-full` и `email-safe` включают `user-scanner` через target-specific JSON-команды `user-scanner -u <username> -f json` и `user-scanner -e <email> -f json`. Restricted email-to-account/email-to-phone adapters в `email-safe` не входят.
 
 ### `run-adapter`
 
@@ -177,6 +179,7 @@ Dry-run или явный запуск настроенного upstream CLI ada
 ```powershell
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user --execute
+python -m osint_toolkit run-adapter snooppr/snoop username example_user --region ua
 python -m osint_toolkit run-adapter kaifcodec/user-scanner email person@example.com
 python -m osint_toolkit run-adapter kaifcodec/user-scanner username example_user
 python -m osint_toolkit run-adapter sundowndev/phoneinfoga phone +380441234567
@@ -184,7 +187,7 @@ python -m osint_toolkit run-adapter sundowndev/phoneinfoga phone +380441234567
 
 Restricted adapters требуют дополнительный флаг `--allow-restricted`; без него возвращается `restricted`.
 
-При `--execute` поддерживаемые adapters дополнительно проходят через stdout parser. Сейчас он извлекает URL, email, E.164-like phone и key/value сигналы из Sherlock/Maigret/Nexfil/Snoop/Mosint/PhoneInfoga-подобного вывода, а для `user-scanner` разбирает JSON/verbose результаты со статусами `Registered`, `Found`, `Not Found`, `Available` и `Error`.
+При `--execute` поддерживаемые adapters дополнительно проходят через stdout parser. Сейчас он извлекает URL, email, E.164-like phone и key/value сигналы из Sherlock/Maigret/Nexfil/Mosint/PhoneInfoga-подобного вывода. Для `user-scanner` есть JSON/verbose parser со статусами `Registered`, `Found`, `Not Found`, `Available` и `Error`. Для `snooppr/snoop` есть parser stdout-строк и CSV-отчёта: `найден!` превращается в `candidate/high`, `Увы!` в `not_found/medium`, `блок` и ошибки в `error/low`; отрицательные строки сохраняют `checked_url`, но не создают подтверждённый URL/domain.
 
 ### `doctor`
 

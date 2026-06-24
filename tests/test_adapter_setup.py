@@ -60,6 +60,23 @@ class AdapterSetupTests(unittest.TestCase):
             ("user-scanner", "-u", "example_user", "-f", "json"),
         )
 
+    def test_snoop_setup_uses_region_aware_command_template(self):
+        adapter = find_adapter("snooppr/snoop")
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "missing")
+        self.assertEqual(setup.executable, "snoop")
+        self.assertEqual(
+            adapter.render_command(ScanTarget(kind="username", value="example_user")),
+            ("snoop", "--no-func", "--found-print", "example_user"),
+        )
+        self.assertEqual(
+            adapter.render_command(ScanTarget(kind="username", value="example_user", region="ru")),
+            ("snoop", "--no-func", "--found-print", "--include", "RU", "example_user"),
+        )
+
     def test_setup_reports_not_configured_for_dataset_adapter(self):
         setup = build_adapter_setup(find_adapter("WebBreacher/WhatsMyName"))
 

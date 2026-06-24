@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import re
 from typing import Any
@@ -19,6 +21,10 @@ USER_SCANNER_LINE_RE = re.compile(
     r"\s+\((?P<value>[^)]+)\):\s*"
     r"(?P<status>Registered|Available|Found|Not Found|Not Registered|Error)"
     r"(?:\s*[-:]\s*(?P<reason>.*))?\s*$",
+    re.IGNORECASE,
+)
+SNOOP_LINE_RE = re.compile(
+    r"^\s*(?:\[[+\-]\]\s*)?(?P<site>[^:]{2,120}):\s*(?P<rest>.+?)\s*$",
     re.IGNORECASE,
 )
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -64,6 +70,8 @@ def parse_adapter_output(
 
     if repository == "kaifcodec/user-scanner":
         return _user_scanner_findings(repository, target, text)
+    if repository == "snooppr/snoop":
+        return _snoop_findings(repository, target, text)
 
     findings: list[Finding] = []
     seen: set[tuple[str, str, str]] = set()
@@ -78,6 +86,242 @@ def parse_adapter_output(
         if key_value:
             findings.append(key_value)
     return tuple(findings)
+
+
+def _snoop_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    findings, _ = _snoop_csv_findings(repository, target, text)
+    if findings:
+        return findings
+
+    parsed: list[Finding] = []
+    line_seen: set[tuple[str, str, str]] = set()
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact:
+            continue
+        finding = _snoop_line_finding(repository, target, compact, line_seen)
+        if finding:
+            parsed.append(finding)
+            continue
+        parsed.extend(_url_findings(repository, target, compact, line_seen))
+        parsed.extend(_email_findings(repository, target, compact, line_seen))
+        parsed.extend(_phone_findings(repository, target, compact, line_seen))
+    return tuple(parsed)
+
+
+def _snoop_csv_findings(
+    repository: str,
+    target: ScanTarget,
+    text: str,
+) -> tuple[tuple[Finding, ...], set[tuple[str, str, str]]]:
+    rows = _snoop_csv_rows(text)
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+    for row in rows:
+        site_name = _snoop_row_value(row, "resource", "ресурс")
+        if not site_name or site_name.startswith(("«", "-", "БД_", "Дата")):
+            continue
+        status_text = _snoop_row_value(row, "status", "статус")
+        profile_url = _snoop_row_value(row, "url_username", "ссылка_на_профиль")
+        site_url = _snoop_row_value(row, "url")
+        region = _snoop_row_value(row, "geo", "гео")
+        http_status = _snoop_row_value(row, "http_code", "статус_http")
+
+        finding = _snoop_record_finding(
+            repository=repository,
+            target=target,
+            site_name=site_name,
+            status_text=status_text,
+            profile_url=profile_url,
+            site_url=site_url,
+            region=region,
+            http_status=http_status,
+            evidence="",
+            seen=seen,
+        )
+        if finding:
+            findings.append(finding)
+    return tuple(findings), seen
+
+
+def _snoop_csv_rows(text: str) -> tuple[dict[str, str], ...]:
+    lines = [line for line in text.strip("\ufeff \n\t").splitlines() if line.strip()]
+    header_index = -1
+    for index, line in enumerate(lines):
+        normalized = line.strip("\ufeff ").lower()
+        if normalized.startswith(("resource,", "resource;", "ресурс,", "ресурс;")):
+            header_index = index
+            break
+    if header_index == -1:
+        return ()
+
+    csv_text = "\n".join(lines[header_index:])
+    header = lines[header_index]
+    delimiter = ";" if header.count(";") > header.count(",") else ","
+    reader = csv.DictReader(io.StringIO(csv_text), delimiter=delimiter)
+    rows: list[dict[str, str]] = []
+    for row in reader:
+        if not row:
+            continue
+        normalized_row = {
+            (key or "").strip("\ufeff "): (value or "").strip()
+            for key, value in row.items()
+            if key is not None
+        }
+        if any(normalized_row.values()):
+            rows.append(normalized_row)
+    return tuple(rows)
+
+
+def _snoop_row_value(row: dict[str, str], *names: str) -> str:
+    wanted = {name.lower() for name in names}
+    for key, value in row.items():
+        if key.strip("\ufeff ").lower() in wanted:
+            return value.strip()
+    return ""
+
+
+def _snoop_line_finding(
+    repository: str,
+    target: ScanTarget,
+    line: str,
+    seen: set[tuple[str, str, str]],
+) -> Finding | None:
+    match = SNOOP_LINE_RE.match(line)
+    if not match:
+        return None
+
+    site_name = _snoop_site_name(match.group("site"))
+    rest = match.group("rest").strip()
+    raw_url_match = URL_RE.search(rest)
+    profile_url = raw_url_match.group(0).rstrip(".,;") if raw_url_match else ""
+    status_text = "найден!" if profile_url else rest
+    status, _ = _snoop_status(status_text)
+    if status == "observed" and not profile_url:
+        return None
+
+    return _snoop_record_finding(
+        repository=repository,
+        target=target,
+        site_name=site_name,
+        status_text=status_text,
+        profile_url=profile_url,
+        site_url="",
+        region="",
+        http_status="",
+        evidence=line,
+        seen=seen,
+    )
+
+
+def _snoop_record_finding(
+    *,
+    repository: str,
+    target: ScanTarget,
+    site_name: str,
+    status_text: str,
+    profile_url: str,
+    site_url: str,
+    region: str,
+    http_status: str,
+    evidence: str,
+    seen: set[tuple[str, str, str]],
+) -> Finding | None:
+    status, confidence = _snoop_status(status_text)
+    if status == "observed" and not profile_url:
+        return None
+
+    finding_url = profile_url if status == "candidate" and profile_url.startswith(("http://", "https://")) else ""
+    checked_url = "" if finding_url else profile_url
+    key = ("snoop", site_name.lower(), status.lower(), (profile_url or site_url).lower())
+    if key in seen:
+        return None
+    seen.add(key)
+
+    metadata = _snoop_metadata(
+        repository=repository,
+        target=target,
+        site_name=site_name,
+        status_text=status_text,
+        profile_url=finding_url,
+        checked_url=checked_url,
+        site_url=site_url,
+        region=region,
+        http_status=http_status,
+    )
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status=status,
+        url=finding_url,
+        confidence=confidence,
+        evidence=_short(evidence or _snoop_evidence(site_name, status_text, region, http_status)),
+        metadata=metadata,
+    )
+
+
+def _snoop_status(raw_status: str) -> tuple[str, str]:
+    normalized = " ".join(raw_status.lower().strip("!. ").split())
+    if normalized in {"найден", "found", "exists", "true"} or "найден" in normalized:
+        return "candidate", "high"
+    if normalized in {"увы", "not found", "not_found", "not-found", "false", "no"} or "увы" in normalized:
+        return "not_found", "medium"
+    if "invalid" in normalized or "недопуст" in normalized:
+        return "skipped", "high"
+    if normalized in {"блок", "block", "blocked", "timeout", "сбой", "завис", "err", "error"}:
+        return "error", "low"
+    if any(marker in normalized for marker in ("блок", "timeout", "ошиб", "error", "err")):
+        return "error", "low"
+    return "observed", "medium"
+
+
+def _snoop_metadata(
+    *,
+    repository: str,
+    target: ScanTarget,
+    site_name: str,
+    status_text: str,
+    profile_url: str,
+    checked_url: str,
+    site_url: str,
+    region: str,
+    http_status: str,
+) -> dict[str, str]:
+    metadata = {
+        "repository": repository,
+        "parser": "snoop",
+        "target_kind": target.kind,
+        "result_status": status_text,
+    }
+    if site_name:
+        metadata["site_name"] = site_name
+    if region:
+        metadata["region"] = region.upper()
+    if profile_url:
+        domain = (urlparse(profile_url).hostname or "").lower()
+        if domain:
+            metadata["domain"] = domain
+    if checked_url:
+        metadata["checked_url"] = checked_url
+    if site_url:
+        metadata["site_url"] = site_url
+    if http_status:
+        metadata["http_status"] = http_status
+    return metadata
+
+
+def _snoop_site_name(value: str) -> str:
+    cleaned = re.sub(r"^[^\wА-Яа-я]+", "", value.strip())
+    return " ".join(cleaned.split()).strip(" :-")
+
+
+def _snoop_evidence(site_name: str, status_text: str, region: str, http_status: str) -> str:
+    evidence = f"Snoop {site_name or 'site'}: {status_text or 'observed'}"
+    details = [detail for detail in (region.upper(), f"HTTP {http_status}" if http_status else "") if detail]
+    if details:
+        evidence += f" ({', '.join(details)})"
+    return evidence
 
 
 def _user_scanner_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:

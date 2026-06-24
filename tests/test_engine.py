@@ -315,6 +315,22 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(username.status, "planned")
         self.assertIn("user-scanner -u example_user -f json", username.evidence)
 
+    def test_adapter_runner_renders_region_specific_snoop_command(self):
+        all_regions = run_adapter(
+            "snooppr/snoop",
+            ScanTarget(kind="username", value="example_user"),
+        )
+        ua = run_adapter(
+            "snooppr/snoop",
+            ScanTarget(kind="username", value="example_user", region="ua"),
+        )
+
+        self.assertEqual(all_regions.status, "planned")
+        self.assertIn("snoop --no-func --found-print example_user", all_regions.evidence)
+        self.assertNotIn("--include", all_regions.evidence)
+        self.assertEqual(ua.status, "planned")
+        self.assertIn("snoop --no-func --found-print --include UA example_user", ua.evidence)
+
     def test_adapter_runner_blocks_restricted_by_default(self):
         finding = run_adapter(
             "megadose/holehe",

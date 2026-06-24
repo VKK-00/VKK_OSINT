@@ -153,6 +153,62 @@ class AdapterParserTests(unittest.TestCase):
         self.assertEqual(envato.url, "")
         self.assertEqual(envato.metadata["checked_url"], "https://account.envato.com")
 
+    def test_parse_snoop_csv_report(self):
+        findings = parse_adapter_output(
+            "snooppr/snoop",
+            ScanTarget(kind="username", value="example_user", region="ua"),
+            """
+            Resource,Geo,Url,Url_username,Status,Http_code,Deceleration/s,Response/s,Time/s,Session/kB
+            GitHub,US,https://github.com,https://github.com/example_user,найден!,200,0.1,0.2,0.3,12
+            Example UA,UA,https://example.ua,https://example.ua/example_user,Увы!,404,0.1,0.2,0.4,4
+            Broken RU,RU,https://broken.ru,https://broken.ru/example_user,блок,сбой,0.1,0.2,0.5,Bad
+            «-----------------------------------,----,-----------------------------------,--------------------------------------------------------,-------------,-----------------,-------------------------------------,-----------------,----------------------------,--------------»
+            Nick=example_user
+            """,
+        )
+
+        self.assertEqual(len(findings), 3)
+        github = next(finding for finding in findings if finding.metadata["site_name"] == "GitHub")
+        self.assertEqual(github.status, "candidate")
+        self.assertEqual(github.confidence, "high")
+        self.assertEqual(github.url, "https://github.com/example_user")
+        self.assertEqual(github.metadata["parser"], "snoop")
+        self.assertEqual(github.metadata["region"], "US")
+        self.assertEqual(github.metadata["domain"], "github.com")
+
+        missing = next(finding for finding in findings if finding.metadata["site_name"] == "Example UA")
+        self.assertEqual(missing.status, "not_found")
+        self.assertEqual(missing.url, "")
+        self.assertEqual(missing.metadata["checked_url"], "https://example.ua/example_user")
+
+        blocked = next(finding for finding in findings if finding.metadata["site_name"] == "Broken RU")
+        self.assertEqual(blocked.status, "error")
+        self.assertEqual(blocked.confidence, "low")
+        self.assertEqual(blocked.url, "")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("domain", "github.com"), entities)
+        self.assertIn(("region", "ua"), entities)
+        self.assertIn(("region", "ru"), entities)
+        self.assertNotIn(("domain", "example.ua"), entities)
+        self.assertNotIn(("domain", "broken.ru"), entities)
+
+    def test_parse_snoop_stdout_lines(self):
+        findings = parse_adapter_output(
+            "snooppr/snoop",
+            ScanTarget(kind="username", value="example_user"),
+            """
+            [+] GitHub: https://github.com/example_user
+            [-] VK: Увы!
+            """,
+        )
+
+        statuses = {finding.metadata["site_name"]: finding.status for finding in findings}
+        self.assertEqual(statuses["GitHub"], "candidate")
+        self.assertEqual(statuses["VK"], "not_found")
+        github = next(finding for finding in findings if finding.metadata["site_name"] == "GitHub")
+        self.assertEqual(github.url, "https://github.com/example_user")
+
     def test_run_adapter_findings_adds_parsed_results_after_execution(self):
         completed = subprocess.CompletedProcess(
             args=["sherlock", "example_user"],
@@ -195,6 +251,28 @@ class AdapterParserTests(unittest.TestCase):
 
         self.assertEqual(findings[0].status, "completed")
         self.assertTrue(any(finding.metadata.get("site_name") == "Github" for finding in findings[1:]))
+
+    def test_run_snoop_adapter_adds_parsed_results_after_execution(self):
+        completed = subprocess.CompletedProcess(
+            args=["snoop", "--no-func", "--found-print", "--include", "UA", "example_user"],
+            returncode=0,
+            stdout="[+] Example UA: https://example.ua/example_user\n",
+            stderr="",
+        )
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="snoop"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            return_value=completed,
+        ):
+            findings = run_adapter_findings(
+                "snooppr/snoop",
+                ScanTarget(kind="username", value="example_user", region="ua"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertTrue(any(finding.metadata.get("parser") == "snoop" for finding in findings[1:]))
+        self.assertTrue(any(finding.url == "https://example.ua/example_user" for finding in findings[1:]))
 
 
 if __name__ == "__main__":
