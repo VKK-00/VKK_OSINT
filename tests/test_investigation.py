@@ -7,6 +7,18 @@ from osint_toolkit.investigation import render_investigation_markdown, run_inves
 
 
 class InvestigationTests(unittest.TestCase):
+    def test_adapter_allowlist_limits_dry_run_repositories(self):
+        result = run_investigation(
+            (ScanTarget(kind="username", value="example_user"),),
+            include_adapters=True,
+            adapter_limit=10,
+            adapter_repositories=("soxoj/maigret", "sherlock-project/sherlock", "soxoj/maigret"),
+        )
+
+        repositories = [finding.source for finding in result.adapter_findings]
+        self.assertEqual(repositories, ["soxoj/maigret", "sherlock-project/sherlock"])
+        self.assertTrue(all(finding.status == "planned" for finding in result.adapter_findings))
+
     def test_execute_adapters_adds_parsed_entities_and_edges(self):
         completed = subprocess.CompletedProcess(
             args=["sherlock", "example_user"],

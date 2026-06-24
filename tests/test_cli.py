@@ -152,6 +152,37 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("--execute-adapters requires --include-adapters", result.stderr)
 
+    def test_investigate_adapter_allowlist_requires_include_adapters(self):
+        result = self.run_cli(
+            "investigate",
+            "--username",
+            "example_user",
+            "--adapter",
+            "soxoj/maigret",
+            "--format",
+            "json",
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--adapter requires --include-adapters", result.stderr)
+
+    def test_investigate_adapter_allowlist_filters_adapter_findings(self):
+        result = self.run_cli(
+            "investigate",
+            "--username",
+            "example_user",
+            "--include-adapters",
+            "--adapter",
+            "soxoj/maigret",
+            "--format",
+            "json",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual([finding["source"] for finding in payload["adapter_findings"]], ["soxoj/maigret"])
+        self.assertEqual(payload["adapter_findings"][0]["status"], "planned")
+
     def test_investigate_allow_restricted_adapters_requires_execute_adapters(self):
         result = self.run_cli(
             "investigate",

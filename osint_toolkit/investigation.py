@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .adapter_runner import run_adapter_findings
-from .adapters import ADAPTERS
+from .adapters import ADAPTERS, AdapterSpec, find_adapter
 from .entities import Entity, entities_from_findings, entities_from_targets, merge_entities
 from .engine import Finding, RunConfig, ScanTarget
 from .graph import GraphEdge, graph_edges_from_case
@@ -52,6 +52,7 @@ def run_investigation(
     allow_restricted_adapters: bool = False,
     adapter_timeout: float = 60.0,
     adapter_limit: int | None = 20,
+    adapter_repositories: tuple[str, ...] = (),
 ) -> InvestigationResult:
     engine = build_default_engine()
     config = RunConfig(live=live, timeout=timeout)
@@ -69,6 +70,7 @@ def run_investigation(
                     execute=execute_adapters,
                     allow_restricted=allow_restricted_adapters,
                     timeout=adapter_timeout,
+                    repositories=adapter_repositories,
                 )
             )
     entities = merge_entities(
@@ -195,12 +197,9 @@ def _adapter_runs(
     execute: bool,
     allow_restricted: bool,
     timeout: float,
+    repositories: tuple[str, ...],
 ) -> tuple[Finding, ...]:
-    compatible = [
-        adapter
-        for adapter in ADAPTERS
-        if adapter.target_kinds and target.kind in adapter.target_kinds
-    ]
+    compatible = _adapters_for_target(target, repositories)
     if limit is not None:
         compatible = compatible[:limit]
     findings: list[Finding] = []
@@ -215,6 +214,28 @@ def _adapter_runs(
             )
         )
     return tuple(findings)
+
+
+def _adapters_for_target(target: ScanTarget, repositories: tuple[str, ...]) -> tuple[AdapterSpec, ...]:
+    if repositories:
+        return tuple(find_adapter(repository) for repository in _dedupe_repositories(repositories))
+    return tuple(
+        adapter
+        for adapter in ADAPTERS
+        if adapter.target_kinds and target.kind in adapter.target_kinds
+    )
+
+
+def _dedupe_repositories(repositories: tuple[str, ...]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for repository in repositories:
+        normalized = repository.strip()
+        key = normalized.lower()
+        if normalized and key not in seen:
+            seen.add(key)
+            deduped.append(normalized)
+    return tuple(deduped)
 
 
 def _has_executed_adapter_findings(findings: tuple[Finding, ...]) -> bool:
