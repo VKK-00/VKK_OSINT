@@ -16,6 +16,7 @@
 - искать по каталогу top-100 OSINT-репозиториев;
 - находить проекты, связанные с OSINT по лицам;
 - находить проекты и ресурсы, связанные с РФ, Украиной и русскоязычными платформами;
+- разворачивать имя человека в username-кандидаты с RU/UA transliteration;
 - выполнять native username profile checks по публичным URL-шаблонам;
 - выполнять baseline email checks: синтаксис и live domain resolution;
 - выполнять baseline phone checks: E.164-like нормализация и префикс региона;
@@ -36,6 +37,7 @@
 python -m osint_toolkit stats
 python -m osint_toolkit catalog --kind people --direct-only --limit 10
 python -m osint_toolkit catalog --kind ru-ua --level direct_ru_ua
+python -m osint_toolkit scan person "Ivan Petrenko" --limit 8
 python -m osint_toolkit scan username example_user --limit 8
 python -m osint_toolkit scan username example_user --region ru --live --limit 5
 python -m osint_toolkit scan email person@example.com --live
@@ -49,6 +51,7 @@ python -m osint_toolkit adapter-profiles
 python -m osint_toolkit adapter-setup sherlock-project/sherlock
 python -m osint_toolkit doctor
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
+python -m osint_toolkit investigate --person "Ivan Petrenko" --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --username example_user --domain example.com --telegram "@durov" --include-adapters
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter soxoj/maigret
@@ -111,6 +114,7 @@ python -m osint_toolkit show sherlock-project/sherlock
 Запускает native-модули единой системы. По умолчанию это dry-run: CLI показывает, что будет проверено, но не делает сетевые запросы. Для реальной проверки публичных URL нужно явно добавить `--live`.
 
 ```powershell
+python -m osint_toolkit scan person "Ivan Petrenko" --limit 10
 python -m osint_toolkit scan username example_user --limit 10
 python -m osint_toolkit scan username example_user --region ru --live --limit 10
 python -m osint_toolkit scan email person@example.com --live --format json
@@ -120,6 +124,8 @@ python -m osint_toolkit scan telegram "@durov" --live
 python -m osint_toolkit scan ru-ua all --region ru --format markdown
 python -m osint_toolkit scan url https://example.com --live --format json
 ```
+
+Native person module делает safe username expansion: нормализует имя, транслитерирует RU/UA/кириллические символы и генерирует кандидаты вроде `ivanpetrenko`, `ivan.petrenko`, `ipetrenko`. Это не подтверждение аккаунтов, а список кандидатов для проверки через username scan и adapters.
 
 Сейчас native username module покрывает Sherlock/Maigret/WhatsMyName-подобный слой публичных profile URL checks. Полное 1:1 покрытие требует импорта upstream datasets и error rules либо подключения внешних CLI через adapters.
 
@@ -190,6 +196,7 @@ python -m osint_toolkit doctor --status planned --format markdown
 Запускает несколько native-модулей по одному кейсу и собирает единый Markdown/JSON отчёт. По умолчанию live-запросы не выполняются.
 
 ```powershell
+python -m osint_toolkit investigate --person "Ivan Petrenko" --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --title "example case" --username example_user --email person@example.com --domain example.com
 python -m osint_toolkit investigate --username example_user --telegram "@durov" --ru-ua all --region ua --include-adapters --out reports/example_case.md
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter-profile username-full --adapter-limit 2
@@ -200,6 +207,8 @@ python -m osint_toolkit investigate --title "saved case" --email person@example.
 ```
 
 Отчёт содержит `Entity Summary` и `Graph Edges`: нормализованные сущности и связи между ними, например `email -> domain`, `url -> domain`, `telegram -> url`, `phone -> country`.
+
+Если указан `--person`, система генерирует username-кандидаты и автоматически прогоняет их через native username scan; при `--include-adapters` эти derived usernames также попадают в совместимые username adapters. В графе это видно как `person -> username -> url`.
 
 `--include-adapters` по умолчанию добавляет только dry-run команды. `--adapter-profile <name>` добавляет готовую группу adapters, а `--adapter <repository>` можно повторять, чтобы ограничить кейс конкретными upstream adapters. `--execute-adapters` явно запускает настроенные upstream CLI из `PATH`, прогоняет поддерживаемый stdout/stderr через parser и добавляет найденные URL/email/phone/key-value сигналы в тот же `Entity Summary`, `Graph Edges` и SQLite case store. Restricted adapters требуют `--allow-restricted-adapters`.
 

@@ -19,17 +19,21 @@
 Команда:
 
 ```powershell
+python -m osint_toolkit scan person "<name>"
 python -m osint_toolkit scan username <username>
 python -m osint_toolkit scan username <username> --live
 ```
 
 Покрытие:
 
+- person-name expansion в username-кандидаты;
+- RU/UA/кириллическая transliteration для username candidates;
 - публичные URL-шаблоны профилей;
 - dry-run без сетевых запросов;
 - live HTTP checks по явному `--live`;
 - единый результат `Finding`;
 - RU-фильтр для VK/OK/Habr и глобальных платформ.
+- `investigate --person` автоматически прогоняет derived username targets через native username scan и совместимые adapters при `--include-adapters`.
 
 Связанные upstream-проекты:
 
@@ -49,7 +53,7 @@ Gap до полного 1:1:
 - нет полного upstream site dataset;
 - нет per-site error rules;
 - нет rate-limit/backoff правил;
-- нет username permutation/alias strategy;
+- username permutation/alias strategy пока базовая: нет словарей никнеймов, исторических alias и platform-specific username rules;
 - нет confidence model на основе контента страницы;
 - нет сохранения истории запусков.
 
@@ -242,6 +246,7 @@ Gap:
 Команда:
 
 ```powershell
+python -m osint_toolkit investigate --person "<name>" --include-adapters --adapter-profile username-full
 python -m osint_toolkit investigate --username <name> --email <email> --domain <domain>
 python -m osint_toolkit investigate --username <name> --include-adapters --out reports/case.md
 python -m osint_toolkit investigate --username <name> --include-adapters --adapter-profile username-full
@@ -259,6 +264,7 @@ python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value p
 Уже реализовано:
 
 - несколько seed values в одном запуске;
+- person seed expansion into username candidates;
 - единый native scan через `Engine`;
 - optional adapter dry-runs;
 - reusable adapter profiles such as `username-full`, `email-safe`, `phone-safe` and `username-ru-ua`;

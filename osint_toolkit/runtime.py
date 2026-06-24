@@ -4,6 +4,7 @@ from .engine import Engine
 from .modules import (
     DomainScanModule,
     EmailScanModule,
+    PersonNameScanModule,
     PhoneScanModule,
     RuUaSourcePackModule,
     TelegramScanModule,
@@ -16,6 +17,7 @@ def build_default_engine() -> Engine:
     return Engine(
         [
             UsernameScanModule(),
+            PersonNameScanModule(),
             EmailScanModule(),
             PhoneScanModule(),
             DomainScanModule(),
@@ -24,4 +26,3 @@ def build_default_engine() -> Engine:
             RuUaSourcePackModule(),
         ]
     )
-

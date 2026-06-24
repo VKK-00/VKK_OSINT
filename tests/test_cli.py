@@ -34,6 +34,15 @@ class CliTests(unittest.TestCase):
         self.assertIn("GitHub", result.stdout)
         self.assertIn("planned", result.stdout)
 
+    def test_scan_person_dry_run_command(self):
+        result = self.run_cli("scan", "person", "Ivan Petrenko", "--limit", "3", "--format", "json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        usernames = [finding["metadata"]["username"] for finding in payload]
+
+        self.assertEqual(payload[0]["module"], "person-name-expansion")
+        self.assertIn("ivanpetrenko", usernames)
+
     def test_scan_email_dry_run_command(self):
         result = self.run_cli("scan", "email", "person@example.com")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -147,6 +156,22 @@ class CliTests(unittest.TestCase):
         self.assertIn(("domain", "example.com"), entities)
         self.assertIn(("telegram", "@durov"), entities)
         self.assertIn(("url", "https://t.me/durov"), entities)
+
+    def test_investigate_person_expands_username_candidates(self):
+        result = self.run_cli(
+            "investigate",
+            "--person",
+            "Ivan Petrenko",
+            "--format",
+            "json",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        entities = {(entity["kind"], entity["value"].lower()) for entity in payload["entities"]}
+        self.assertIn(("person", "ivan petrenko"), entities)
+        self.assertIn(("username", "ivanpetrenko"), entities)
+        self.assertIn(("url", "https://github.com/ivanpetrenko"), entities)
 
     def test_investigate_execute_adapters_requires_include_adapters(self):
         result = self.run_cli(

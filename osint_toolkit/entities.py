@@ -69,6 +69,7 @@ def entities_from_findings(findings: tuple[Finding, ...]) -> tuple[Entity, ...]:
                     continue
                 entity_kind = {
                     "normalized": "normalized-value",
+                    "normalized_name": "normalized-name",
                     "category": "source-category",
                     "line_type": "line-type",
                 }.get(key, entity_kind)
@@ -129,6 +130,8 @@ def _metadata_entity_kind(key: str) -> str:
         "region",
         "email",
         "phone",
+        "username",
+        "normalized_name",
         "name",
         "carrier",
         "location",

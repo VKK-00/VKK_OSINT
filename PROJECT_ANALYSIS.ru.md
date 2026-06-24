@@ -18,6 +18,7 @@ CLI работает в трёх режимах:
 
 Первый native-слой уже выполняет:
 
+- person-name expansion: нормализация имени, RU/UA transliteration и username-кандидаты;
 - username public profile checks по URL-шаблонам, совместимые по классу задачи с Sherlock/Maigret/WhatsMyName/Nexfil;
 - email baseline checks: синтаксис и live domain resolution;
 - phone baseline checks: нормализация, E.164-like validation и country-prefix signal;
@@ -65,6 +66,9 @@ CLI работает в трёх режимах:
   - `Engine` — запуск подходящих модулей.
 - `osint_toolkit/modules/username.py`
   - `UsernameScanModule` — Sherlock/Maigret/WhatsMyName-подобные проверки публичных профилей.
+- `osint_toolkit/modules/person.py`
+  - `PersonNameScanModule` — safe person-name expansion в username-кандидаты.
+  - `generate_username_candidates()` — стабильные варианты `firstlast`, `first.last`, `first_initial_last` и RU/UA transliteration.
 - `osint_toolkit/modules/email.py`
   - `EmailScanModule` — базовая проверка email: синтаксис и доменное разрешение.
 - `osint_toolkit/modules/phone.py`
@@ -157,12 +161,13 @@ Investigation-поток:
 
 1. Пользователь запускает `python -m osint_toolkit investigate` с одним или несколькими seed values.
 2. CLI превращает каждый seed в `ScanTarget`.
-3. `run_investigation()` запускает native scan-модули и, при `--include-adapters`, adapter dry-runs.
-4. При `--execute-adapters` совместимые adapters запускаются через `run_adapter_findings()`; stdout/stderr parser добавляет дополнительные adapter findings.
-5. `entities.py` извлекает и объединяет сущности из входных целей, `Finding.url`, `Finding.evidence` и `Finding.metadata`.
-6. `graph.py` строит связи между сущностями.
-7. Если указан `--case-db`, `CaseStore` сохраняет кейс в SQLite до вывода отчёта.
-8. Отчёт выводится как Markdown или JSON; Markdown содержит `Entity Summary`, `Graph Edges`, native findings, adapter dry-runs или executed adapter findings и review checklist.
+3. `run_investigation()` запускает native scan-модули; person seeds разворачиваются в derived username targets.
+4. Derived username targets прогоняются через native username scan и, при `--include-adapters`, через совместимые adapters.
+5. При `--execute-adapters` совместимые adapters запускаются через `run_adapter_findings()`; stdout/stderr parser добавляет дополнительные adapter findings.
+6. `entities.py` извлекает и объединяет сущности из входных целей, `Finding.url`, `Finding.evidence` и `Finding.metadata`.
+7. `graph.py` строит связи между сущностями, включая `person -> username -> url`.
+8. Если указан `--case-db`, `CaseStore` сохраняет кейс в SQLite до вывода отчёта.
+9. Отчёт выводится как Markdown или JSON; Markdown содержит `Entity Summary`, `Graph Edges`, native findings, adapter dry-runs или executed adapter findings и review checklist.
 
 Case-store поток:
 
@@ -188,6 +193,10 @@ Case-store поток:
 Сканирование:
 
 `CLI target -> ScanTarget -> Engine -> ScanModule[] -> Finding[] -> table/Markdown/CSV/JSON`
+
+Person expansion:
+
+`person seed -> PersonNameScanModule -> username candidates -> derived username ScanTarget[] -> UsernameScanModule/adapters -> Entity[]/GraphEdge[]`
 
 Адаптеры:
 
@@ -229,6 +238,7 @@ SQLite используется локально через стандартну
 - `scan --live` — явное разрешение сетевых проверок.
 - `scan --timeout` — HTTP timeout.
 - `scan --region` — фильтр URL-шаблонов или workflow по региону.
+- `investigate --person` — повторяемое имя человека для username expansion.
 - `investigate --include-adapters` — добавить dry-run команды совместимых upstream adapters.
 - `investigate --adapter-profile` — повторяемая готовая группа adapters.
 - `investigate --adapter` — повторяемый allowlist конкретных upstream repositories для `--include-adapters`.
@@ -254,6 +264,7 @@ SQLite используется локально через стандартну
 ```powershell
 python -m osint_toolkit stats
 python -m osint_toolkit catalog --kind people --direct-only --limit 10
+python -m osint_toolkit scan person "Ivan Petrenko" --limit 10
 python -m osint_toolkit scan username example_user --limit 10
 python -m osint_toolkit scan username example_user --region ru --live --limit 5
 python -m osint_toolkit scan email person@example.com --live
@@ -267,6 +278,7 @@ python -m osint_toolkit adapter-profiles
 python -m osint_toolkit adapter-setup sherlock-project/sherlock
 python -m osint_toolkit doctor
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
+python -m osint_toolkit investigate --person "Ivan Petrenko" --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --username example_user --domain example.com --telegram "@durov" --include-adapters
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter soxoj/maigret
@@ -300,6 +312,7 @@ osint-toolkit stats
 - Используется только стандартная библиотека Python. Это снижает риск установки и упрощает запуск на Windows.
 - CLI читает уже проверенные CSV, а не тянет актуальные данные из GitHub. Это делает результаты воспроизводимыми.
 - Система строится вокруг единого `Finding`, чтобы результаты native-модулей и external adapters можно было объединять.
+- Person-name expansion выдаёт только низкоуверенные username-кандидаты; подтверждение делается отдельными username checks/adapters.
 - Adapter parser не считается источником истины: он нормализует stdout уже запущенного upstream CLI, а не заменяет native logic upstream-проекта.
 - Investigation adapter execution является opt-in: `--include-adapters` остаётся dry-run, а запуск внешнего кода требует отдельного `--execute-adapters`.
 - Investigation adapter allowlist выбирается оператором через повторяемый `--adapter`; без allowlist система использует совместимые adapters из `AdapterSpec`.
@@ -324,6 +337,7 @@ osint-toolkit stats
 
 - Каталог основан на snapshot от 2026-06-24; GitHub stars и актуальность проектов меняются.
 - Качество и безопасность внешних репозиториев не аудированы.
+- Native person-name expansion пока использует базовые шаблоны имени/фамилии и RU/UA transliteration; нет словарей никнеймов, исторических alias и platform-specific username rules.
 - Первый native username module покрывает только URL-template/status-code слой, а не всю логику Sherlock/Maigret: нет полного upstream site dataset, custom error rules, rate-limit logic и enrichment.
 - Native email module пока не делает MX lookup, breach lookup или external API enrichment.
 - Native phone module пока не делает carrier lookup, reputation lookup или external API enrichment.
@@ -342,6 +356,7 @@ osint-toolkit stats
 
 - При изменении CSV-схемы обновлять `Catalog.load()` и тесты.
 - При добавлении native-модуля обновлять `engine.py`, `cli.py`, README и тесты.
+- При изменении person-name expansion обновлять `modules/person.py`, graph/entity mapping, investigation tests и parity-карту.
 - При подключении upstream-проекта обновлять `adapters.py`, указать лицензию, режим интеграции и parity gap.
 - При изменении adapter profiles обновлять `adapters.py`, CLI-тесты, README и parity-карту.
 - При изменении install/config требований adapters обновлять `AdapterSpec`, `adapter_setup.py`, tests и README.
@@ -368,3 +383,4 @@ osint-toolkit stats
 - 2026-06-24: добавлен explicit `investigate --execute-adapters`, который запускает configured upstream CLI adapters и включает parsed findings в общий кейс.
 - 2026-06-24: добавлен повторяемый `investigate --adapter` allowlist для выбора конкретных upstream adapters в кейсе.
 - 2026-06-24: добавлены `AdapterProfile`, команда `adapter-profiles` и `investigate --adapter-profile` для готовых групп adapters.
+- 2026-06-24: добавлены `PersonNameScanModule`, `scan person` и `investigate --person` с derived username scan/adapters и graph-связью `person -> username`.

@@ -55,6 +55,35 @@ class InvestigationTests(unittest.TestCase):
         self.assertIn("## Adapter Findings", report)
         self.assertIn("external-adapter-parser", report)
 
+    def test_person_target_expands_to_username_scan_edges(self):
+        result = run_investigation((ScanTarget(kind="person", value="Ivan Petrenko"),))
+
+        entities = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("person", "ivan petrenko"), entities)
+        self.assertIn(("normalized-name", "ivan petrenko"), entities)
+        self.assertIn(("username", "ivanpetrenko"), entities)
+        self.assertIn(("url", "https://github.com/ivanpetrenko"), entities)
+
+        edges = {
+            (edge.source_kind, edge.source_value.lower(), edge.relation, edge.target_kind, edge.target_value.lower())
+            for edge in result.edges
+        }
+        self.assertIn(("person", "ivan petrenko", "generated_username_candidate", "username", "ivanpetrenko"), edges)
+        self.assertIn(("username", "ivanpetrenko", "produced_url", "url", "https://github.com/ivanpetrenko"), edges)
+
+    def test_person_target_adapter_allowlist_runs_only_on_derived_usernames(self):
+        result = run_investigation(
+            (ScanTarget(kind="person", value="Ivan Petrenko"),),
+            include_adapters=True,
+            adapter_limit=1,
+            adapter_repositories=("snooppr/snoop",),
+        )
+
+        self.assertTrue(result.adapter_findings)
+        self.assertTrue(all(finding.status == "planned" for finding in result.adapter_findings))
+        self.assertNotIn("Ivan Petrenko", {finding.target for finding in result.adapter_findings})
+        self.assertIn("ivanpetrenko", {finding.target for finding in result.adapter_findings})
+
 
 if __name__ == "__main__":
     unittest.main()

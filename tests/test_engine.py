@@ -5,8 +5,9 @@ from osint_toolkit.adapter_runner import run_adapter, run_adapter_findings
 from osint_toolkit.doctor import inspect_adapters
 from osint_toolkit.engine import Engine, RunConfig, ScanTarget
 from osint_toolkit.investigation import render_investigation_json, render_investigation_markdown, run_investigation
-from osint_toolkit.modules import DomainScanModule, EmailScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
+from osint_toolkit.modules import DomainScanModule, EmailScanModule, PersonNameScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
 from osint_toolkit.modules.domain import normalize_domain
+from osint_toolkit.modules.person import generate_username_candidates, normalize_person_name
 from osint_toolkit.modules.phone import detect_country, is_e164_like, normalize_phone
 from osint_toolkit.modules.ru_ua_sources import RuUaSourcePackModule
 from osint_toolkit.modules.telegram import TelegramScanModule, normalize_telegram_target
@@ -30,6 +31,23 @@ class EngineTests(unittest.TestCase):
         self.assertIn("VK", sources)
         self.assertIn("OK.ru", sources)
         self.assertIn("GitHub", sources)
+
+    def test_person_scan_generates_username_candidates_from_ru_ua_name(self):
+        engine = Engine([PersonNameScanModule()])
+        findings = engine.scan(ScanTarget(kind="person", value="Іван Петренко"), RunConfig(limit=4))
+        usernames = [finding.metadata["username"] for finding in findings]
+
+        self.assertEqual(findings[0].metadata["normalized_name"], "ivan petrenko")
+        self.assertIn("ivanpetrenko", usernames)
+        self.assertIn("ivan.petrenko", usernames)
+        self.assertTrue(all(finding.status == "candidate" for finding in findings))
+
+    def test_person_name_helpers_generate_stable_variants(self):
+        self.assertEqual(normalize_person_name("Олена Іваненко"), "olena ivanenko")
+        candidates = generate_username_candidates("olena ivanenko")
+        usernames = [candidate.username for candidate in candidates]
+
+        self.assertEqual(usernames[:4], ["olena", "olenaivanenko", "olena.ivanenko", "olena_ivanenko"])
 
     def test_url_scan_dry_run_normalizes_scheme(self):
         engine = Engine([WebMetadataModule()])

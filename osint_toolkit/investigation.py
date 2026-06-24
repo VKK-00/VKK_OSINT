@@ -60,9 +60,13 @@ def run_investigation(
     for target in targets:
         findings.extend(engine.scan(target, config))
 
+    scan_targets = _scan_targets_with_person_expansions(targets, tuple(findings))
+    for target in scan_targets[len(targets) :]:
+        findings.extend(engine.scan(target, config))
+
     adapter_findings: list[Finding] = []
     if include_adapters:
-        for target in targets:
+        for target in scan_targets:
             adapter_findings.extend(
                 _adapter_runs(
                     target,
@@ -78,7 +82,7 @@ def run_investigation(
         entities_from_findings(tuple(findings)),
         entities_from_findings(tuple(adapter_findings)),
     )
-    edges = graph_edges_from_case(targets, (*findings, *adapter_findings), entities)
+    edges = graph_edges_from_case(scan_targets, (*findings, *adapter_findings), entities)
 
     return InvestigationResult(
         title=title,
@@ -218,7 +222,11 @@ def _adapter_runs(
 
 def _adapters_for_target(target: ScanTarget, repositories: tuple[str, ...]) -> tuple[AdapterSpec, ...]:
     if repositories:
-        return tuple(find_adapter(repository) for repository in _dedupe_repositories(repositories))
+        return tuple(
+            adapter
+            for adapter in (find_adapter(repository) for repository in _dedupe_repositories(repositories))
+            if adapter.target_kinds and target.kind in adapter.target_kinds
+        )
     return tuple(
         adapter
         for adapter in ADAPTERS
@@ -236,6 +244,35 @@ def _dedupe_repositories(repositories: tuple[str, ...]) -> tuple[str, ...]:
             seen.add(key)
             deduped.append(normalized)
     return tuple(deduped)
+
+
+def _scan_targets_with_person_expansions(
+    targets: tuple[ScanTarget, ...],
+    findings: tuple[Finding, ...],
+) -> tuple[ScanTarget, ...]:
+    target_regions = {target.value: target.region for target in targets if target.kind == "person"}
+    expanded = list(targets)
+    seen = {_target_key(target) for target in expanded}
+    for finding in findings:
+        if finding.module != "person-name-expansion" or finding.status != "candidate":
+            continue
+        username = finding.metadata.get("username", "").strip()
+        if not username:
+            continue
+        target = ScanTarget(
+            kind="username",
+            value=username,
+            region=target_regions.get(finding.target, "all"),
+        )
+        key = _target_key(target)
+        if key not in seen:
+            seen.add(key)
+            expanded.append(target)
+    return tuple(expanded)
+
+
+def _target_key(target: ScanTarget) -> tuple[str, str, str]:
+    return target.kind, target.value.lower(), target.region
 
 
 def _has_executed_adapter_findings(findings: tuple[Finding, ...]) -> bool:

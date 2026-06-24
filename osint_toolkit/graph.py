@@ -298,6 +298,8 @@ def _metadata_edge(key: str) -> tuple[str, str] | None:
         "normalized": ("normalized_as", "normalized-value"),
         "country": ("country_hint", "country"),
         "region": ("region_hint", "region"),
+        "username": ("generated_username_candidate", "username"),
+        "normalized_name": ("normalized_name", "normalized-name"),
         "category": ("categorized_as", "source-category"),
         "name": ("name_hint", "name"),
         "carrier": ("carrier_hint", "carrier"),
