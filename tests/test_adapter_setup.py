@@ -53,11 +53,11 @@ class AdapterSetupTests(unittest.TestCase):
         self.assertEqual(setup.install_command, "python -m pip install user-scanner")
         self.assertEqual(
             adapter.render_command(ScanTarget(kind="email", value="person@example.com")),
-            ("user-scanner", "-e", "person@example.com"),
+            ("user-scanner", "-e", "person@example.com", "-f", "json"),
         )
         self.assertEqual(
             adapter.render_command(ScanTarget(kind="username", value="example_user")),
-            ("user-scanner", "-u", "example_user"),
+            ("user-scanner", "-u", "example_user", "-f", "json"),
         )
 
     def test_setup_reports_not_configured_for_dataset_adapter(self):

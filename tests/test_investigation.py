@@ -55,6 +55,39 @@ class InvestigationTests(unittest.TestCase):
         self.assertIn("## Adapter Findings", report)
         self.assertIn("external-adapter-parser", report)
 
+    def test_execute_user_scanner_adapter_adds_parsed_entities_and_edges(self):
+        completed = subprocess.CompletedProcess(
+            args=["user-scanner", "-u", "kaifcodec", "-f", "json"],
+            returncode=0,
+            stdout='[{"status":"Found","username":"kaifcodec","site_name":"Custom","category":"Social","url":"https://profiles.example.net/kaifcodec","extra":{"name":"Kaif"},"reason":""}]',
+            stderr="",
+        )
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="user-scanner"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            return_value=completed,
+        ):
+            result = run_investigation(
+                (ScanTarget(kind="username", value="kaifcodec"),),
+                include_adapters=True,
+                execute_adapters=True,
+                adapter_repositories=("kaifcodec/user-scanner",),
+            )
+
+        parsed = [finding for finding in result.adapter_findings if finding.module == "external-adapter-parser"]
+        self.assertEqual(parsed[0].metadata["parser"], "user-scanner")
+        self.assertEqual(parsed[0].metadata["site_name"], "Custom")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("url", "https://profiles.example.net/kaifcodec"), entities)
+        self.assertIn(("domain", "profiles.example.net"), entities)
+
+        edges = {
+            (edge.source_kind, edge.source_value.lower(), edge.relation, edge.target_kind, edge.target_value.lower())
+            for edge in result.edges
+        }
+        self.assertIn(("username", "kaifcodec", "produced_url", "url", "https://profiles.example.net/kaifcodec"), edges)
+
     def test_person_target_expands_to_username_scan_edges(self):
         result = run_investigation((ScanTarget(kind="person", value="Ivan Petrenko"),))
 

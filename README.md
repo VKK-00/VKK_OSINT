@@ -168,7 +168,7 @@ python -m osint_toolkit adapter-profiles
 python -m osint_toolkit adapter-profiles --format json
 ```
 
-Текущие профили включают `username-full`, `username-ru-ua`, `email-safe`, `phone-safe` и `url-archive`. `username-full` и `email-safe` включают `user-scanner` через target-specific команды `user-scanner -u <username>` и `user-scanner -e <email>`. Restricted email-to-account/email-to-phone adapters в `email-safe` не входят.
+Текущие профили включают `username-full`, `username-ru-ua`, `email-safe`, `phone-safe` и `url-archive`. `username-full` и `email-safe` включают `user-scanner` через target-specific JSON-команды `user-scanner -u <username> -f json` и `user-scanner -e <email> -f json`. Restricted email-to-account/email-to-phone adapters в `email-safe` не входят.
 
 ### `run-adapter`
 
@@ -184,7 +184,7 @@ python -m osint_toolkit run-adapter sundowndev/phoneinfoga phone +380441234567
 
 Restricted adapters требуют дополнительный флаг `--allow-restricted`; без него возвращается `restricted`.
 
-При `--execute` поддерживаемые adapters дополнительно проходят через базовый stdout parser. Сейчас он извлекает URL, email, E.164-like phone и key/value сигналы из Sherlock/Maigret/Nexfil/Snoop/Mosint/PhoneInfoga-подобного вывода и возвращает их как обычные `Finding`.
+При `--execute` поддерживаемые adapters дополнительно проходят через stdout parser. Сейчас он извлекает URL, email, E.164-like phone и key/value сигналы из Sherlock/Maigret/Nexfil/Snoop/Mosint/PhoneInfoga-подобного вывода, а для `user-scanner` разбирает JSON/verbose результаты со статусами `Registered`, `Found`, `Not Found`, `Available` и `Error`.
 
 ### `doctor`
 

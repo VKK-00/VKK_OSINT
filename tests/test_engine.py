@@ -311,9 +311,9 @@ class EngineTests(unittest.TestCase):
         )
 
         self.assertEqual(email.status, "planned")
-        self.assertIn("user-scanner -e person@example.com", email.evidence)
+        self.assertIn("user-scanner -e person@example.com -f json", email.evidence)
         self.assertEqual(username.status, "planned")
-        self.assertIn("user-scanner -u example_user", username.evidence)
+        self.assertIn("user-scanner -u example_user -f json", username.evidence)
 
     def test_adapter_runner_blocks_restricted_by_default(self):
         finding = run_adapter(

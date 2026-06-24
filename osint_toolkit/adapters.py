@@ -225,8 +225,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Parity target for 100+ email and 185+ username scan vectors through target-specific CLI flags.",
         ("email", "username"),
         command_templates=(
-            ("email", ("user-scanner", "-e", "{target_value}")),
-            ("username", ("user-scanner", "-u", "{target_value}")),
+            ("email", ("user-scanner", "-e", "{target_value}", "-f", "json")),
+            ("username", ("user-scanner", "-u", "{target_value}", "-f", "json")),
         ),
         install_kind="pip",
         install_command=("python", "-m", "pip", "install", "user-scanner"),

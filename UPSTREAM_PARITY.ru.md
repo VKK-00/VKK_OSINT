@@ -37,7 +37,7 @@ python -m osint_toolkit scan username <username> --live
 - live HTTP checks по явному `--live`;
 - единый результат `Finding`;
 - RU-фильтр для VK/OK/Habr и глобальных платформ.
-- executable target-specific adapter для `kaifcodec/user-scanner`: `user-scanner -u <username>`;
+- executable target-specific adapter для `kaifcodec/user-scanner`: `user-scanner -u <username> -f json`;
 - `investigate --person` автоматически прогоняет derived username targets через native username scan и совместимые adapters при `--include-adapters`.
 
 Связанные upstream-проекты:
@@ -86,7 +86,8 @@ Gap до полного 1:1:
 - SPF classifier поверх доменного TXT: наличие записи, multiple-record warning, `all` policy и include/redirect counts;
 - DMARC classifier через `_dmarc.<domain>` TXT: наличие записи, multiple-record warning, `p=`, `sp=`, alignment, percent и report URI tags;
 - executable adapter target для `khast3x/h8mail`: `h8mail -t <email>`;
-- executable target-specific adapter для `kaifcodec/user-scanner`: `user-scanner -e <email>`.
+- executable target-specific adapter для `kaifcodec/user-scanner`: `user-scanner -e <email> -f json`;
+- parser для `user-scanner` JSON/verbose results: `Registered`/`Found` -> `candidate`, `Available`/`Not Found`/`Not Registered` -> `not_found`, `Error` -> `error`.
 
 Gap:
 
@@ -241,6 +242,7 @@ python -m osint_toolkit adapter-setup <repository>
 - restricted adapter guard via `--allow-restricted`;
 - `run_adapter_findings()` returns summary + parsed findings;
 - stdout parser for common URL/email/phone/key-value lines from Sherlock/Maigret/Nexfil/Snoop/Mosint/PhoneInfoga-like output;
+- adapter-specific parser for `user-scanner` JSON and verbose line output;
 - install/config/readiness metadata in `AdapterSpec`;
 - `adapter-setup` command for setup plans, docs URLs, PATH/env readiness.
 
