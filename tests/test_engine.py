@@ -11,12 +11,13 @@ from osint_toolkit.doctor import inspect_adapters
 from osint_toolkit.engine import Engine, RunConfig, ScanTarget
 from osint_toolkit.http_client import HttpClient, HttpResult
 from osint_toolkit.investigation import render_investigation_json, render_investigation_markdown, run_investigation
-from osint_toolkit.modules import DomainScanModule, EmailScanModule, InstagramPublicProfileModule, PersonNameScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
+from osint_toolkit.modules import DomainScanModule, EmailScanModule, InstagramPublicProfileModule, PersonNameScanModule, PhoneScanModule, SocialPublicProfileModule, UsernameScanModule, WebMetadataModule
 from osint_toolkit.modules.domain import normalize_domain, parse_crtsh_subdomains, parse_rdap_domain_record
 from osint_toolkit.modules.instagram import extract_instagram_public_metadata, normalize_instagram_target
 from osint_toolkit.modules.person import generate_username_candidates, normalize_person_name
 from osint_toolkit.modules.phone import detect_country, is_e164_like, normalize_phone
 from osint_toolkit.modules.ru_ua_sources import RuUaSourcePackModule
+from osint_toolkit.modules.social import extract_social_public_metadata, normalize_social_target
 from osint_toolkit.modules.telegram import TelegramScanModule, normalize_telegram_target
 from osint_toolkit.modules.username import classify_username_http_result, normalize_username
 from osint_toolkit.whois_lookup import WhoisDomainRecord, parse_whois_domain_record
@@ -1003,6 +1004,79 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(findings[0].metadata["display_name"], "Example User")
         self.assertEqual(findings[0].metadata["follower_count"], "10")
         self.assertEqual(findings[0].metadata["profile_image_url"], "https://cdninstagram.example/profile.jpg")
+        self.assertEqual(findings[0].metadata["http_attempts"], "2")
+
+    def test_social_scan_normalizes_vk_and_ok_targets(self):
+        engine = Engine([SocialPublicProfileModule()])
+        vk = engine.scan(ScanTarget(kind="social", value="vk:durov"), RunConfig())
+        ok = engine.scan(ScanTarget(kind="social", value="https://ok.ru/profile/1234567890"), RunConfig())
+
+        self.assertEqual(vk[0].url, "https://vk.com/durov")
+        self.assertEqual(vk[0].metadata["platform"], "vk")
+        self.assertEqual(vk[0].metadata["social_profile"], "vk:durov")
+        self.assertEqual(vk[0].metadata["social_username"], "durov")
+        self.assertEqual(ok[0].url, "https://ok.ru/profile/1234567890")
+        self.assertEqual(ok[0].metadata["platform"], "ok")
+        self.assertEqual(ok[0].metadata["account_id"], "1234567890")
+        self.assertEqual(ok[0].metadata["target_type"], "profile_id")
+
+    def test_social_normalizer_rejects_unknown_platform(self):
+        self.assertIsNone(normalize_social_target("https://example.com/durov"))
+        self.assertIsNone(normalize_social_target("twitter:durov"))
+
+    def test_extract_social_public_metadata_from_html(self):
+        target = normalize_social_target("vk:id1")
+        self.assertIsNotNone(target)
+        body = """
+        <html><head>
+        <link rel="canonical" href="https://vk.com/id1" />
+        <meta property="og:title" content="Pavel Durov | VK" />
+        <meta property="og:description" content="Public VK profile description" />
+        <meta property="og:image" content="https://vk.example/profile.jpg" />
+        </head></html>
+        """
+
+        metadata = extract_social_public_metadata(body, target)
+
+        self.assertEqual(metadata.display_name, "Pavel Durov")
+        self.assertEqual(metadata.description, "Public VK profile description")
+        self.assertEqual(metadata.canonical_url, "https://vk.com/id1")
+        self.assertEqual(metadata.profile_image_url, "https://vk.example/profile.jpg")
+        self.assertEqual(metadata.account_id, "1")
+
+    def test_social_live_scan_extracts_public_metadata(self):
+        body = """
+        <html><head>
+        <link rel="canonical" href="https://vk.com/exampleuser" />
+        <meta property="og:title" content="Example User | VK" />
+        <meta property="og:description" content="Example public page" />
+        <meta property="og:image" content="https://vk.example/profile.jpg" />
+        </head></html>
+        """
+        with patch("osint_toolkit.modules.social.HttpClient.check") as check:
+            check.return_value = HttpResult(
+                url="https://vk.com/exampleuser",
+                final_url="https://vk.com/exampleuser",
+                status_code=200,
+                title="Example User | VK",
+                body_text=body,
+                content_type="text/html",
+                attempts=2,
+            )
+            findings = Engine([SocialPublicProfileModule()]).scan(
+                ScanTarget(kind="social", value="vk:exampleuser"),
+                RunConfig(live=True, http_retries=2, http_backoff=0.5),
+            )
+
+        check.assert_called_once_with(
+            "https://vk.com/exampleuser",
+            fetch_title=True,
+            headers={"Accept-Language": "ru,en-US;q=0.9,en;q=0.8"},
+        )
+        self.assertEqual(findings[0].status, "candidate")
+        self.assertEqual(findings[0].metadata["display_name"], "Example User")
+        self.assertEqual(findings[0].metadata["canonical_url"], "https://vk.com/exampleuser")
+        self.assertEqual(findings[0].metadata["profile_image_url"], "https://vk.example/profile.jpg")
         self.assertEqual(findings[0].metadata["http_attempts"], "2")
 
     def test_ru_ua_source_pack_filters_by_region(self):

@@ -8,6 +8,7 @@ from .modules import (
     PersonNameScanModule,
     PhoneScanModule,
     RuUaSourcePackModule,
+    SocialPublicProfileModule,
     TelegramScanModule,
     UsernameScanModule,
     WebMetadataModule,
@@ -25,6 +26,7 @@ def build_default_engine() -> Engine:
             WebMetadataModule(),
             TelegramScanModule(),
             InstagramPublicProfileModule(),
+            SocialPublicProfileModule(),
             RuUaSourcePackModule(),
         ]
     )

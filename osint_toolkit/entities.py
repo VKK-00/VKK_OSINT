@@ -57,6 +57,9 @@ def entities_from_findings(findings: tuple[Finding, ...]) -> tuple[Entity, ...]:
             instagram = _instagram_handle_from_url(finding.url)
             if instagram:
                 entities.append(Entity("instagram", instagram, source, finding.confidence, "from Instagram URL"))
+            social_profile = _social_profile_from_url(finding.url)
+            if social_profile:
+                entities.append(Entity("social-profile", social_profile, source, finding.confidence, "from social platform URL"))
 
         for email in EMAIL_RE.findall(finding.evidence):
             entities.append(Entity("email", email, source, "low", "from evidence text"))
@@ -104,6 +107,10 @@ def entities_from_findings(findings: tuple[Finding, ...]) -> tuple[Entity, ...]:
                     if _looks_like_instagram_handle(username):
                         entities.append(Entity("instagram", username, source, finding.confidence, "metadata:instagram_username"))
                 continue
+            if key == "social_profile":
+                for profile in _split_metadata_values(value):
+                    entities.append(Entity("social-profile", profile, source, finding.confidence, "metadata:social_profile"))
+                continue
             if key == "robots_disallow_paths":
                 for path in _split_metadata_values(value):
                     entities.append(Entity("web-path", path, source, finding.confidence, "metadata:robots_disallow_paths"))
@@ -137,6 +144,8 @@ def entities_from_findings(findings: tuple[Finding, ...]) -> tuple[Entity, ...]:
                     "display_name": "name",
                     "account_id": "account-id",
                     "media_shortcode": "media-shortcode",
+                    "social_username": "username",
+                    "platform_domain": "domain",
                 }.get(key, entity_kind)
                 entities.append(Entity(entity_kind, value, source, finding.confidence, f"metadata:{key}"))
     return dedupe_entities(tuple(entities))
@@ -184,6 +193,21 @@ def _instagram_handle_from_url(url: str) -> str:
     if not _looks_like_instagram_handle("@" + handle):
         return ""
     return "@" + handle
+
+
+def _social_profile_from_url(url: str) -> str:
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if hostname in {"vk.com", "www.vk.com", "m.vk.com", "vkontakte.ru", "www.vkontakte.ru"}:
+        if parts and parts[0].lower() not in {"album", "albums", "audios", "away", "feed", "friends", "groups", "im", "login", "search", "video", "videos"}:
+            return f"vk:{parts[0]}"
+    if hostname in {"ok.ru", "www.ok.ru", "m.ok.ru", "odnoklassniki.ru", "www.odnoklassniki.ru"}:
+        if len(parts) >= 2 and parts[0].lower() in {"profile", "group"}:
+            return f"ok:{parts[0].lower()}/{parts[1]}"
+        if parts and parts[0].lower() not in {"dk", "feed", "groups", "login", "messages", "search"}:
+            return f"ok:{parts[0]}"
+    return ""
 
 
 def _looks_like_instagram_handle(value: str) -> bool:
@@ -234,6 +258,9 @@ def _metadata_entity_kind(key: str) -> str:
         "display_name",
         "account_id",
         "media_shortcode",
+        "social_profile",
+        "social_username",
+        "platform_domain",
     }
     return key if key in supported else ""
 

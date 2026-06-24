@@ -29,6 +29,7 @@ CLI работает в трёх режимах:
 - domain baseline recon: DNS resolution, HTTP/HTTPS metadata, bounded same-site crawler, robots/sitemap discovery, public email/phone/social link extraction, presence security headers, certificate transparency subdomain discovery, RDAP registration lookup и raw WHOIS fallback;
 - Telegram baseline: handle/post URL normalization и optional live public metadata;
 - Instagram/social baseline: username/profile/media URL normalization и optional live public profile/media metadata без login/session flows;
+- RU social baseline: VK/OK public profile URL normalization и optional live public page metadata без API/login/session flows;
 - RU/UA source pack: curated карты, Telegram/RU platforms, geospatial и pastebin источники;
 - базовый web metadata scan, public email extraction, robots/sitemap discovery и bounded same-site crawl по URL, совместимый с начальным web-check/Photon слоем;
 - external adapter dry-run/execute runner для настроенных upstream CLI;
@@ -134,6 +135,10 @@ CLI работает в трёх режимах:
   - `InstagramPublicProfileModule` — нормализация Instagram usernames/profile/media URLs и live public metadata.
   - `normalize_instagram_target()` — поддерживает `@username`, `instagram.com/<username>/` и public media URLs `/p/`, `/reel/`, `/reels/`, `/tv/`.
   - `extract_instagram_public_metadata()` — извлекает meta/JSON поля: display name, account id, canonical/profile/media/external URLs, public counters и privacy/verification flags без сохранения сырого HTML.
+- `osint_toolkit/modules/social.py`
+  - `SocialPublicProfileModule` — safe public profile wrapper для VK/OK.
+  - `normalize_social_target()` — поддерживает `vk:<identifier>`, `ok:<identifier>`, `vk.com/<identifier>`, `ok.ru/<identifier>` и `ok.ru/profile/<id>`.
+  - `extract_social_public_metadata()` — извлекает public title/meta/canonical/image fields и account id, если он виден из публичного URL.
 - `osint_toolkit/modules/ru_ua_sources.py`
   - `RuUaSourcePackModule` — curated RU/UA source pack.
 - `osint_toolkit/modules/web.py`
@@ -162,13 +167,13 @@ CLI работает в трёх режимах:
 - `osint_toolkit/doctor.py`
   - `inspect_adapters()` — диагностика доступности upstream adapters.
 - `osint_toolkit/entities.py`
-  - `Entity` — нормализованная сущность кейса: email, phone, domain, URL, Telegram handle, Instagram handle, country/region и т.д.
+  - `Entity` — нормализованная сущность кейса: email, phone, domain, URL, Telegram handle, Instagram handle, social profile, country/region и т.д.
   - `entities_from_targets()` — извлечение сущностей из seed values.
   - `entities_from_findings()` — извлечение сущностей из native и adapter findings.
   - `merge_entities()` — дедупликация сущностей с учётом confidence.
 - `osint_toolkit/graph.py`
   - `GraphEdge` — отношение между двумя сущностями.
-  - `graph_edges_from_case()` — построение связей `email -> domain`, `email -> related_email`, `domain|url -> page_contact_email/page_contact_phone/discovered_url/social_url/sitemap_url/robots_disallow_path`, `domain -> whois-server`, `url -> domain`, `url -> instagram`, `instagram -> platform/display name/account id/public URLs`, `target -> finding URL`, `phone -> country/normalized/carrier/location/line-type/phone-range/postal-code`.
+  - `graph_edges_from_case()` — построение связей `email -> domain`, `email -> related_email`, `domain|url -> page_contact_email/page_contact_phone/discovered_url/social_url/sitemap_url/robots_disallow_path`, `domain -> whois-server`, `url -> domain`, `url -> instagram`, `url -> social-profile`, `instagram -> platform/display name/account id/public URLs`, `social -> social-profile/platform/display name/account id/public URLs`, `target -> finding URL`, `phone -> country/normalized/carrier/location/line-type/phone-range/postal-code`.
   - `analyze_case_graph()` — аналитика сохранённого кейса: node/edge counts, relation counts, kind counts, top connected nodes и соседи выбранной сущности.
 - `osint_toolkit/case_store.py`
   - `CaseStore` — SQLite-хранилище расследований.
@@ -231,7 +236,7 @@ Investigation-поток:
 4. Derived username targets прогоняются через native username scan и, при `--include-adapters`, через совместимые adapters.
 5. При `--execute-adapters` совместимые adapters запускаются через `run_adapter_findings()`; stdout/stderr parser добавляет дополнительные adapter findings.
 6. `entities.py` извлекает и объединяет сущности из входных целей, `Finding.url`, `Finding.evidence` и `Finding.metadata`.
-7. `graph.py` строит связи между сущностями, включая `person -> username -> url`, `domain|url -> page_contact_email`, `domain|url -> page_contact_phone`, `domain|url -> sitemap_url`, `domain|url -> robots_disallow_path`, `domain|url -> discovered/social URL` и `instagram -> public profile metadata`.
+7. `graph.py` строит связи между сущностями, включая `person -> username -> url`, `domain|url -> page_contact_email`, `domain|url -> page_contact_phone`, `domain|url -> sitemap_url`, `domain|url -> robots_disallow_path`, `domain|url -> discovered/social URL`, `instagram -> public profile metadata` и `social -> VK/OK public profile metadata`.
 8. Если указан `--case-db`, `CaseStore` сохраняет кейс в SQLite до вывода отчёта.
 9. Отчёт выводится как Markdown или JSON; Markdown содержит `Entity Summary`, `Graph Edges`, native findings, adapter dry-runs или executed adapter findings и review checklist.
 
@@ -272,6 +277,10 @@ Instagram:
 
 `instagram seed -> InstagramPublicProfileModule -> public profile/media URL -> public metadata -> Entity[]/GraphEdge[]`
 
+RU social:
+
+`social seed -> SocialPublicProfileModule -> VK/OK public profile URL -> public metadata -> Entity[]/GraphEdge[]`
+
 Адаптеры:
 
 `CLI adapter request -> AdapterSpec -> command_template/target-specific command_templates -> dry-run/external process -> summary Finding -> parsed Finding[]`
@@ -297,6 +306,8 @@ Investigation:
 Native live-модули используют публичные HTTP(S) URL checks через стандартную библиотеку Python. Для username live checks сохраняется только ограниченный текст ответа в памяти процесса, чтобы применить content marker rules; на диск body не пишется.
 
 Instagram live-модуль использует публичную HTML/meta/JSON информацию страницы профиля или media URL. Сырой HTML не сохраняется, login/session/cookies не используются.
+
+Social live-модуль для VK/OK использует только публичную HTML/meta информацию страницы профиля или группы. API tokens, login/session/cookies и приватные endpoints не используются.
 
 Email live-модуль использует `socket.getaddrinfo()` и системный `nslookup` для MX/TXT. TXT результата домена достаточно для SPF classifier, а DMARC classifier делает отдельный TXT lookup по `_dmarc.<domain>`. Если `nslookup` недоступен, результат DNS-записи возвращается как `missing`, а не как падение команды.
 
@@ -351,6 +362,7 @@ python -m osint_toolkit scan phone +380441234567
 python -m osint_toolkit scan domain example.com --live --crawl-pages 5 --crawl-depth 1
 python -m osint_toolkit scan telegram "@durov"
 python -m osint_toolkit scan instagram "@exampleuser" --live
+python -m osint_toolkit scan social vk:exampleuser --live
 python -m osint_toolkit scan ru-ua all --region ua
 python -m osint_toolkit scan url https://example.com --live --crawl-pages 5 --crawl-depth 1
 python -m osint_toolkit adapters
@@ -364,7 +376,7 @@ python -m osint_toolkit run-adapter khast3x/h8mail email person@example.com
 python -m osint_toolkit run-adapter instaloader/instaloader instagram https://www.instagram.com/exampleuser/
 python -m osint_toolkit run-adapter sundowndev/phoneinfoga phone +380441234567
 python -m osint_toolkit investigate --person "Ivan Petrenko" --include-adapters --adapter-profile username-full --adapter-limit 2
-python -m osint_toolkit investigate --username example_user --domain example.com --telegram "@durov" --instagram "@exampleuser" --include-adapters
+python -m osint_toolkit investigate --username example_user --domain example.com --telegram "@durov" --instagram "@exampleuser" --social vk:exampleuser --include-adapters
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter soxoj/maigret
 python -m osint_toolkit investigate --username example_user --include-adapters --execute-adapters --adapter-limit 1
@@ -437,13 +449,14 @@ osint-toolkit stats
 - Native WHOIS parser покрывает common WHOIS field names и несколько TLD server mappings, но не все registry-specific formats и не экспортирует полный raw WHOIS text.
 - Telegram module пока не использует Telegram API и не получает private/group data.
 - Instagram module пока является safe public metadata wrapper: нет login/session handling, private data access, follower/following scraping, comments/messages export, media archive ingestion или обхода platform rate limits.
+- Social module для VK/OK пока является safe public metadata wrapper: нет VK/OK API adapters, login/session handling, private profile access, follower scraping, comments/messages export или обхода platform rate limits.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
 - Adapter manifest теперь включает generated CSV/TXT folder template для `sherlock-project/sherlock`, isolated workdir TXT ingestion для `thewhiteh4t/nexfil`, generated JSON-file templates для `alpkeskin/mosint` и `h8mail`, generated JSON-report folder template для `soxoj/maigret`, target-specific executable templates для `user-scanner`, region-aware template для `snooppr/snoop` и executable template для `sundowndev/phoneinfoga`; более сложные adapters могут потребовать richer per-mode config.
 - Adapter parser покрывает общие URL/email/phone/key-value patterns, Sherlock stdout/CSV/TXT reports, Nexfil stdout/TXT reports, Mosint JSON reports, h8mail JSON reports, Maigret JSON/CSV reports, `user-scanner` JSON/verbose output, Snoop stdout/CSV output и PhoneInfoga CLI/API output; сложные JSON/CSV/HTML exports остальных upstream ещё не разобраны.
 - Adapter profiles пока статические; нет пользовательских профилей и per-case persistent adapter policy.
-- Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> email`, `domain -> phone`, `domain -> discovered/social/sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois-server`, `url -> instagram`, `instagram -> platform/display name/account id/public URLs` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics и cross-case entity index, но нет weighted path finding, cross-case edge graph и визуального UI.
+- Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> email`, `domain -> phone`, `domain -> discovered/social/sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois-server`, `url -> instagram`, `url -> social-profile`, `instagram -> platform/display name/account id/public URLs`, `social -> social-profile/platform/display name/account id/public URLs` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics и cross-case entity index, но нет weighted path finding, cross-case edge graph и визуального UI.
 - SQLite schema сейчас версии 2; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
@@ -457,6 +470,7 @@ osint-toolkit stats
 - При изменении web crawler или metadata extraction обновлять `web_extract.py`, `web_crawler.py`, web/domain tests, graph/entity mapping, README и parity-карту.
 - При изменении WHOIS lookup/parser обновлять `whois_lookup.py`, `modules/domain.py`, graph/entity mapping, README и parity-карту.
 - При изменении Instagram/social public metadata layer обновлять `modules/instagram.py`, graph/entity mapping, CLI/investigation tests, README и parity-карту.
+- При изменении VK/OK RU social public metadata layer обновлять `modules/social.py`, graph/entity mapping, CLI/investigation tests, README и parity-карту.
 - При изменении DNS lookup или email auth classification обновлять `dns_lookup.py`, `email_auth.py`, email tests, README и parity-карту.
 - При изменении person-name expansion обновлять `modules/person.py`, graph/entity mapping, investigation tests и parity-карту.
 - При подключении upstream-проекта обновлять `adapters.py`, указать лицензию, режим интеграции и parity gap.
@@ -515,3 +529,4 @@ osint-toolkit stats
 - 2026-06-24: crawler расширен robots/sitemap discovery: `robots.txt` `Sitemap:`/`Disallow` и sitemap XML/text URLs нормализуются в `web-crawl` metadata, entities и graph edges.
 - 2026-06-24: добавлен raw WHOIS fallback для domain recon: WHOIS port 43 parser извлекает registrar/nameservers/statuses/dates и WHOIS server metadata без копирования полного сырого WHOIS текста в evidence.
 - 2026-06-24: добавлен native Instagram/social public metadata layer: `scan instagram` и `investigate --instagram` нормализуют username/profile/media URLs, извлекают public metadata и создают `instagram` entities/graph edges; `instaloader` adapter теперь принимает `instagram` target.
+- 2026-06-24: добавлен native RU social public metadata layer: `scan social` и `investigate --social` нормализуют VK/OK public profile URLs, извлекают public page metadata и создают `social-profile` entities/graph edges.

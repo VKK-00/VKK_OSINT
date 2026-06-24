@@ -213,6 +213,48 @@ class GraphAnalysisTests(unittest.TestCase):
         self.assertIn(("instagram", "https://www.instagram.com/exampleuser/", "linked_external_url", "url", "https://example.com"), edge_keys)
         self.assertIn(("url", "https://www.instagram.com/exampleuser/", "instagram_url_for", "instagram", "@exampleuser"), edge_keys)
 
+    def test_social_profile_metadata_edges(self):
+        target = ScanTarget(kind="social", value="vk:exampleuser")
+        findings = (
+            Finding(
+                module="social-public-profile",
+                source="vk-profile-url",
+                target="vk:exampleuser",
+                status="candidate",
+                url="https://vk.com/exampleuser",
+                confidence="medium",
+                evidence="Public VK metadata found.",
+                metadata={
+                    "platform": "vk",
+                    "platform_domain": "vk.com",
+                    "social_profile": "vk:exampleuser",
+                    "social_username": "exampleuser",
+                    "display_name": "Example User",
+                    "account_id": "12345",
+                    "canonical_url": "https://vk.com/exampleuser",
+                },
+            ),
+        )
+
+        entities = merge_entities(entities_from_targets((target,)), entities_from_findings(findings))
+        entity_keys = {(entity.kind, entity.value.lower()) for entity in entities}
+        self.assertIn(("social-profile", "vk:exampleuser"), entity_keys)
+        self.assertIn(("platform", "vk"), entity_keys)
+        self.assertIn(("username", "exampleuser"), entity_keys)
+        self.assertIn(("domain", "vk.com"), entity_keys)
+        self.assertIn(("name", "example user"), entity_keys)
+
+        edges = graph_edges_from_case((target,), findings, entities)
+        edge_keys = {
+            (edge.source_kind, edge.source_value, edge.relation, edge.target_kind, edge.target_value)
+            for edge in edges
+        }
+        self.assertIn(("social", "vk:exampleuser", "normalized_social_profile", "social-profile", "vk:exampleuser"), edge_keys)
+        self.assertIn(("social", "vk:exampleuser", "profile_username", "username", "exampleuser"), edge_keys)
+        self.assertIn(("social", "vk:exampleuser", "platform_domain", "domain", "vk.com"), edge_keys)
+        self.assertIn(("social", "vk:exampleuser", "display_name_hint", "name", "Example User"), edge_keys)
+        self.assertIn(("url", "https://vk.com/exampleuser", "social_url_for", "social-profile", "vk:exampleuser"), edge_keys)
+
     def test_page_email_metadata_edges(self):
         target = ScanTarget(kind="domain", value="example.com")
         findings = (

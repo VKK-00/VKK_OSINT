@@ -222,6 +222,9 @@ def _edges_from_entities(entities: tuple[Entity, ...], entity_keys: set[tuple[st
             instagram = _instagram_from_url(entity.value)
             if _has_entity(entity_keys, "instagram", instagram):
                 edges.append(_edge(entity, "instagram_url_for", "instagram", instagram, "parsed from Instagram URL"))
+            social_profile = _social_profile_from_url(entity.value)
+            if _has_entity(entity_keys, "social-profile", social_profile):
+                edges.append(_edge(entity, "social_url_for", "social-profile", social_profile, "parsed from social platform URL"))
     return tuple(edges)
 
 
@@ -342,6 +345,9 @@ def _metadata_edge(key: str) -> tuple[str, str] | None:
         "profile_image_url": ("profile_image_url", "url"),
         "media_url": ("media_url", "url"),
         "external_url": ("linked_external_url", "url"),
+        "social_profile": ("normalized_social_profile", "social-profile"),
+        "social_username": ("profile_username", "username"),
+        "platform_domain": ("platform_domain", "domain"),
     }
     return mapping.get(key)
 
@@ -368,6 +374,7 @@ def _metadata_values(key: str, value: str) -> tuple[str, ...]:
         "profile_image_url",
         "media_url",
         "external_url",
+        "social_profile",
     }:
         parts = [part.strip() for part in value.replace("|", ",").split(",")]
         return tuple(part for part in parts if part)
@@ -410,6 +417,21 @@ def _instagram_from_url(value: str) -> str:
     if not re.fullmatch(r"[A-Za-z0-9._]{1,30}", handle):
         return ""
     return f"@{handle}"
+
+
+def _social_profile_from_url(value: str) -> str:
+    parsed = urlparse(value)
+    hostname = (parsed.hostname or "").lower()
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if hostname in {"vk.com", "www.vk.com", "m.vk.com", "vkontakte.ru", "www.vkontakte.ru"}:
+        if parts and parts[0].lower() not in {"album", "albums", "audios", "away", "feed", "friends", "groups", "im", "login", "search", "video", "videos"}:
+            return f"vk:{parts[0]}"
+    if hostname in {"ok.ru", "www.ok.ru", "m.ok.ru", "odnoklassniki.ru", "www.odnoklassniki.ru"}:
+        if len(parts) >= 2 and parts[0].lower() in {"profile", "group"}:
+            return f"ok:{parts[0].lower()}/{parts[1]}"
+        if parts and parts[0].lower() not in {"dk", "feed", "groups", "login", "messages", "search"}:
+            return f"ok:{parts[0]}"
+    return ""
 
 
 def _confidence_rank(confidence: str) -> int:

@@ -75,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     show.set_defaults(handler=handle_show)
 
     scan = subparsers.add_parser("scan", help="Run native unified OSINT scan modules.")
-    scan.add_argument("target_kind", choices=("person", "username", "email", "phone", "domain", "url", "telegram", "instagram", "ru-ua"))
+    scan.add_argument("target_kind", choices=("person", "username", "email", "phone", "domain", "url", "telegram", "instagram", "social", "ru-ua"))
     scan.add_argument("target_value")
     scan.add_argument("--region", choices=("all", "ru", "ua"), default="all")
     scan.add_argument("--live", action="store_true", help="Perform network checks. Default is dry-run planning.")
@@ -148,6 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     investigate.add_argument("--url", action="append", default=[])
     investigate.add_argument("--telegram", action="append", default=[])
     investigate.add_argument("--instagram", action="append", default=[])
+    investigate.add_argument("--social", action="append", default=[])
     investigate.add_argument("--ru-ua", action="append", default=[])
     investigate.add_argument("--region", choices=("all", "ru", "ua"), default="all")
     investigate.add_argument("--live", action="store_true", help="Perform live checks for native modules.")
@@ -439,7 +440,7 @@ def _read_person_alias_file(path: str) -> tuple[str, ...]:
 
 def _targets_from_args(args: argparse.Namespace) -> tuple[ScanTarget, ...]:
     targets: list[ScanTarget] = []
-    for kind in ("person", "username", "email", "phone", "domain", "url", "telegram", "instagram"):
+    for kind in ("person", "username", "email", "phone", "domain", "url", "telegram", "instagram", "social"):
         for value in getattr(args, kind):
             targets.append(ScanTarget(kind=kind, value=value, region=args.region))
     for value in getattr(args, "ru_ua"):

@@ -4,6 +4,7 @@ from .instagram import InstagramPublicProfileModule
 from .person import PersonNameScanModule
 from .phone import PhoneScanModule
 from .ru_ua_sources import RuUaSourcePackModule
+from .social import SocialPublicProfileModule
 from .telegram import TelegramScanModule
 from .username import UsernameScanModule
 from .web import WebMetadataModule
@@ -15,6 +16,7 @@ __all__ = [
     "PersonNameScanModule",
     "PhoneScanModule",
     "RuUaSourcePackModule",
+    "SocialPublicProfileModule",
     "TelegramScanModule",
     "UsernameScanModule",
     "WebMetadataModule",
