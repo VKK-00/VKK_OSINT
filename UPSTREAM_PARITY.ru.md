@@ -271,21 +271,23 @@ Gap:
 - parser для Amass passive stdout/JSON-like output: FQDN/subdomain values превращаются в `subdomain` findings без включения active/bruteforce modes;
 - executable adapter target для `laramies/theHarvester`: `theHarvester -d <domain> -b all -f <temp.json>`;
 - parser для theHarvester generated JSON/stdout output: `emails`, `hosts`, `vhosts`, `interesting_urls`, `trello_urls`, `ips`, `asns` и people fields нормализуются в `Finding`/entities/graph signals;
-- adapter profile `domain-recon` для Subfinder/httpx/passive Amass/theHarvester.
+- executable adapter target для `blacklanternsecurity/bbot`: `bbot -t <target> -p subdomain-enum -rf passive --output <tempdir> --name osint-toolkit`;
+- parser для BBOT generated JSON/NDJSON/stdout events: `DNS_NAME`, `EMAIL_ADDRESS`, `URL`, `IP_ADDRESS`, `OPEN_TCP_PORT`, `TECHNOLOGY`, `FINDING` и `VULNERABILITY` нормализуются в `Finding`/entities/graph signals;
+- adapter profile `domain-recon` для Subfinder/httpx/passive Amass/theHarvester/BBOT.
 
 Gap:
 
 - нет native brute-force/passive subdomain enumeration за пределами crt.sh; passive enumeration сейчас покрывается external adapters;
 - raw WHOIS full-text export is intentionally not included in reports; parser keeps domain-level fields only by default;
 - crawler bounded и mostly HTML/XML/text-only: нет JavaScript rendering, form submission, full robots policy enforcement, authentication, headless browser или broad SpiderFoot/Photon-style crawling;
-- нет executable SpiderFoot/BBOT adapters;
-- нет активных Amass/bruteforce modes, theHarvester screenshots или API endpoint scans по умолчанию.
+- нет executable SpiderFoot adapter;
+- нет активных Amass/bruteforce modes, broader BBOT presets/deadly modules, theHarvester screenshots или API endpoint scans по умолчанию.
 
 План:
 
 1. Native: дальше расширять passive domain recon: richer document metadata extraction, optional sitemap/robots policy tuning and more TLD-specific WHOIS parsing.
-2. Adapter: следующий слой — `spiderfoot`, BBOT/Argus-style broad recon, плюс richer generated report parsers.
-3. Normalize domains, URLs, emails, subdomains into shared entity model.
+2. Adapter: следующий слой — `spiderfoot`, Argus-style recon, richer BBOT presets/output modules и более богатые generated report parsers.
+3. Normalize domains, URLs, emails, subdomains, IPs, ports and technologies into shared entity model.
 
 ## External adapter runner
 
@@ -320,6 +322,7 @@ python -m osint_toolkit adapter-setup <repository>
 - adapter-specific parser for httpx JSONL/plain HTTP probe output;
 - adapter-specific parser for passive Amass stdout/JSON-like subdomain output;
 - adapter-specific parser for theHarvester generated JSON/stdout domain recon output;
+- adapter-specific parser for BBOT generated JSON/NDJSON/stdout event output;
 - adapter profile `domain-recon` for passive domain/web upstream adapters;
 - install/config/readiness metadata in `AdapterSpec`;
 - `adapter-setup` command for setup plans, docs URLs, PATH/env readiness.
@@ -327,7 +330,7 @@ python -m osint_toolkit adapter-setup <repository>
 Gap:
 
 - нет автоматической установки upstream CLI;
-- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass и theHarvester;
+- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester и BBOT events;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.
 

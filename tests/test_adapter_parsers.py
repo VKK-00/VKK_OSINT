@@ -722,6 +722,54 @@ class AdapterParserTests(unittest.TestCase):
         self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings))
         self.assertTrue(any(finding.url == "https://www.example.com/admin" for finding in findings))
 
+    def test_parse_bbot_json_events(self):
+        findings = parse_adapter_output(
+            "blacklanternsecurity/bbot",
+            ScanTarget(kind="domain", value="example.com"),
+            "\n".join(
+                (
+                    '{"type":"DNS_NAME","data":"api.example.com","module":"certspotter","scope_description":"in-scope","tags":["subdomain","in-scope"],"resolved_hosts":["93.184.216.34"]}',
+                    '{"type":"EMAIL_ADDRESS","data":"admin@example.com","module":"emailformat","scope_description":"in-scope"}',
+                    '{"type":"URL","data":"https://www.example.com/login","module":"httpx","scope_description":"in-scope"}',
+                    '{"type":"IP_ADDRESS","data":"93.184.216.34","module":"dnsresolve"}',
+                    '{"type":"OPEN_TCP_PORT","data":"api.example.com:443","host":"api.example.com","port":443,"module":"portscan"}',
+                    '{"type":"TECHNOLOGY","data":"nginx","module":"wappalyzer"}',
+                )
+            ),
+        )
+
+        metadata = [finding.metadata for finding in findings]
+        self.assertTrue(any(item.get("parser") == "bbot" for item in metadata))
+        self.assertTrue(any(item.get("subdomain") == "api.example.com" and item.get("ip") == "93.184.216.34" for item in metadata))
+        self.assertTrue(any(item.get("email") == "admin@example.com" for item in metadata))
+        self.assertTrue(any(item.get("ip") == "93.184.216.34" for item in metadata))
+        self.assertTrue(any(item.get("port") == "443" for item in metadata))
+        self.assertTrue(any(item.get("technology") == "nginx" for item in metadata))
+        self.assertIn("https://www.example.com/login", {finding.url for finding in findings})
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("subdomain", "api.example.com"), entities)
+        self.assertIn(("email", "admin@example.com"), entities)
+        self.assertIn(("url", "https://www.example.com/login"), entities)
+        self.assertIn(("ip", "93.184.216.34"), entities)
+        self.assertIn(("port", "443"), entities)
+        self.assertIn(("technology", "nginx"), entities)
+
+    def test_parse_bbot_stdout_events(self):
+        findings = parse_adapter_output(
+            "blacklanternsecurity/bbot",
+            ScanTarget(kind="domain", value="example.com"),
+            """
+            [DNS_NAME] api.example.com certspotter (distance-0, in-scope, subdomain)
+            [EMAIL_ADDRESS] admin@example.com emailformat (distance-0, in-scope)
+            [URL] https://www.example.com/login httpx (distance-0, in-scope)
+            """,
+        )
+
+        self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings))
+        self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings))
+        self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings))
+
     def test_run_adapter_findings_adds_parsed_results_after_execution(self):
         completed = subprocess.CompletedProcess(
             args=["sherlock", "example_user"],
@@ -945,6 +993,38 @@ class AdapterParserTests(unittest.TestCase):
         self.assertEqual(findings[0].metadata["generated_output_files"], "1")
         self.assertIn("-f", findings[0].metadata["command"])
         self.assertTrue(any(finding.metadata.get("parser") == "theharvester" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings[1:]))
+        self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings[1:]))
+
+    def test_run_bbot_adapter_reads_generated_json_events_after_execution(self):
+        def fake_run(args, **kwargs):
+            self.assertEqual(args[:7], ["bbot", "-t", "example.com", "-p", "subdomain-enum", "-rf", "passive"])
+            output_dir = Path(args[args.index("--output") + 1])
+            scan_dir = output_dir / "osint-toolkit"
+            scan_dir.mkdir(parents=True, exist_ok=True)
+            (scan_dir / "output.json").write_text(
+                '{"type":"DNS_NAME","data":"api.example.com","module":"certspotter","scope_description":"in-scope"}\n'
+                '{"type":"EMAIL_ADDRESS","data":"admin@example.com","module":"emailformat","scope_description":"in-scope"}\n'
+                '{"type":"URL","data":"https://www.example.com/login","module":"httpx","scope_description":"in-scope"}\n',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="Scan complete\n", stderr="")
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="bbot"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            findings = run_adapter_findings(
+                "blacklanternsecurity/bbot",
+                ScanTarget(kind="domain", value="example.com"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertEqual(findings[0].metadata["generated_output_files"], "1")
+        self.assertIn("--output", findings[0].metadata["command"])
+        self.assertTrue(any(finding.metadata.get("parser") == "bbot" for finding in findings[1:]))
         self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
         self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings[1:]))
         self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings[1:]))

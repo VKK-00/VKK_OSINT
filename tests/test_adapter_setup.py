@@ -127,6 +127,7 @@ class AdapterSetupTests(unittest.TestCase):
         httpx = find_adapter("projectdiscovery/httpx")
         amass = find_adapter("owasp-amass/amass")
         theharvester = find_adapter("laramies/theHarvester")
+        bbot = find_adapter("blacklanternsecurity/bbot")
 
         self.assertEqual(
             subfinder.render_command(ScanTarget(kind="domain", value="example.com")),
@@ -147,6 +148,16 @@ class AdapterSetupTests(unittest.TestCase):
         )
         self.assertEqual(theharvester.render_output_file_args("C:\\tmp\\harvester.json"), ("-f", "C:\\tmp\\harvester.json"))
         self.assertEqual(theharvester.generated_output_patterns, ("*.json",))
+        self.assertEqual(
+            bbot.render_command(ScanTarget(kind="domain", value="example.com")),
+            ("bbot", "-t", "example.com", "-p", "subdomain-enum", "-rf", "passive"),
+        )
+        self.assertEqual(
+            bbot.render_command(ScanTarget(kind="username", value="@example_user")),
+            ("bbot", "-t", "USER:example_user", "-p", "subdomain-enum", "-rf", "passive"),
+        )
+        self.assertEqual(bbot.render_output_dir_args("C:\\tmp\\bbot"), ("--output", "C:\\tmp\\bbot", "--name", "osint-toolkit"))
+        self.assertEqual(bbot.generated_output_patterns, ("*.json",))
 
         with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
             setup = build_adapter_setup(subfinder)
@@ -160,6 +171,13 @@ class AdapterSetupTests(unittest.TestCase):
         self.assertEqual(harvester_setup.readiness, "missing")
         self.assertEqual(harvester_setup.install_kind, "manual")
         self.assertIn("Python 3.12+", harvester_setup.install_note)
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
+            bbot_setup = build_adapter_setup(bbot)
+
+        self.assertEqual(bbot_setup.readiness, "missing")
+        self.assertEqual(bbot_setup.install_kind, "pipx")
+        self.assertEqual(bbot_setup.install_command, "pipx install bbot")
 
     def test_setup_reports_not_configured_for_dataset_adapter(self):
         setup = build_adapter_setup(find_adapter("WebBreacher/WhatsMyName"))

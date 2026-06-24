@@ -47,6 +47,7 @@ PARSER_REPOSITORIES = {
     "projectdiscovery/httpx",
     "owasp-amass/amass",
     "laramies/theHarvester",
+    "blacklanternsecurity/bbot",
 }
 
 PHONE_KEYS = {
@@ -102,6 +103,8 @@ def parse_adapter_output(
         return _amass_findings(repository, target, text)
     if repository == "laramies/theHarvester":
         return _theharvester_findings(repository, target, text)
+    if repository == "blacklanternsecurity/bbot":
+        return _bbot_findings(repository, target, text)
 
     findings: list[Finding] = []
     seen: set[tuple[str, str, str]] = set()
@@ -253,6 +256,7 @@ def _subdomain_finding(
         "subfinder": "Subfinder",
         "amass": "Amass",
         "theharvester": "theHarvester",
+        "bbot": "BBOT",
     }.get(parser, parser)
     evidence = f"{label} reported subdomain: {normalized}"
     if source_label:
@@ -653,6 +657,317 @@ def _theharvester_people(value: object) -> tuple[str, ...]:
                 if scalar:
                     people.append(scalar)
     return _dedupe_text(people)
+
+
+def _bbot_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    seen: set[tuple[str, str]] = set()
+    seen_subdomains: set[tuple[str, str]] = set()
+    root_domain = _target_domain(target)
+
+    for record in _bbot_event_records(text):
+        event_type = _first_scalar(record.get("type")).upper()
+        if not event_type:
+            continue
+        finding = _bbot_event_finding(
+            repository=repository,
+            target=target,
+            record=record,
+            event_type=event_type,
+            root_domain=root_domain,
+            seen=seen,
+            seen_subdomains=seen_subdomains,
+        )
+        if finding:
+            findings.append(finding)
+
+    if findings:
+        return tuple(findings)
+
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact:
+            continue
+        event_match = re.match(r"^\[(?P<type>[A-Z0-9_]+)\]\s+(?P<data>\S+)(?:\s+(?P<module>\S+))?", compact)
+        if not event_match:
+            continue
+        record = {
+            "type": event_match.group("type"),
+            "data": event_match.group("data"),
+            "module": event_match.group("module") or "stdout",
+        }
+        finding = _bbot_event_finding(
+            repository=repository,
+            target=target,
+            record=record,
+            event_type=event_match.group("type").upper(),
+            root_domain=root_domain,
+            seen=seen,
+            seen_subdomains=seen_subdomains,
+        )
+        if finding:
+            findings.append(finding)
+    return tuple(findings)
+
+
+def _bbot_event_records(text: str) -> tuple[dict[str, Any], ...]:
+    records: list[dict[str, Any]] = []
+    payload = _load_json_payload(text)
+    records.extend(_bbot_payload_records(payload))
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if not stripped.startswith(("{", "[")):
+            start = stripped.find("{")
+            end = stripped.rfind("}")
+            if start == -1 or end <= start:
+                continue
+            stripped = stripped[start : end + 1]
+        try:
+            line_payload = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        records.extend(_bbot_payload_records(line_payload))
+
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        key = json.dumps(record, sort_keys=True, ensure_ascii=False, default=str)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(record)
+    return tuple(deduped)
+
+
+def _bbot_payload_records(payload: object | None) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        if _first_scalar(payload.get("type")) and "data" in payload:
+            return [payload]
+        records: list[dict[str, Any]] = []
+        for key in ("events", "results", "data"):
+            nested = payload.get(key)
+            if isinstance(nested, (list, tuple)):
+                records.extend(_bbot_payload_records(list(nested)))
+        return records
+    if isinstance(payload, list):
+        records = []
+        for item in payload:
+            if isinstance(item, dict):
+                records.extend(_bbot_payload_records(item))
+        return records
+    return []
+
+
+def _bbot_event_finding(
+    *,
+    repository: str,
+    target: ScanTarget,
+    record: dict[str, Any],
+    event_type: str,
+    root_domain: str,
+    seen: set[tuple[str, str]],
+    seen_subdomains: set[tuple[str, str]],
+) -> Finding | None:
+    data = record.get("data")
+    data_text = _bbot_data_text(data)
+    if not data_text:
+        return None
+
+    if event_type == "DNS_NAME":
+        subdomain = _normalize_hostname(data_text)
+        return _subdomain_finding(
+            repository=repository,
+            parser="bbot",
+            target=target,
+            root_domain=root_domain,
+            subdomain=subdomain,
+            source_label=_first_scalar(record.get("module")),
+            ip=_metadata_list_text(record.get("resolved_hosts")),
+            raw_line="",
+            seen=seen_subdomains,
+        )
+
+    if event_type == "EMAIL_ADDRESS":
+        return _bbot_email_finding(repository, target, data_text, record, seen)
+
+    if event_type in {"URL", "URL_UNVERIFIED"}:
+        return _bbot_url_finding(repository, target, data_text, event_type, record, seen)
+
+    metadata = _bbot_base_metadata(repository, record, event_type)
+    status = "observed"
+    confidence = _bbot_confidence(record)
+    url = ""
+    title = ""
+    http_status = None
+
+    if event_type == "IP_ADDRESS":
+        metadata["ip"] = data_text
+    elif event_type == "IP_RANGE":
+        metadata["ip_range"] = data_text
+    elif event_type == "OPEN_TCP_PORT":
+        host, port = _bbot_host_port(data_text, record)
+        _set_metadata(metadata, "host", host)
+        _set_metadata(metadata, "port", port)
+        status = "candidate"
+    elif event_type == "TECHNOLOGY":
+        metadata["technology"] = data_text
+    elif event_type == "USERNAME":
+        metadata["username"] = data_text.strip().lstrip("@")
+    elif event_type in {"FINDING", "VULNERABILITY", "STORAGE_BUCKET"}:
+        status = "candidate"
+        if event_type == "VULNERABILITY":
+            confidence = "high"
+        if isinstance(data, dict):
+            url = _first_scalar(data.get("url") or data.get("host") or data.get("endpoint"))
+            if url and not url.startswith(("http://", "https://")):
+                url = ""
+            title = _first_scalar(data.get("title") or data.get("description") or data.get("name"))
+            _set_metadata(metadata, "severity", _first_scalar(data.get("severity")))
+            _set_metadata(metadata, "description", _first_scalar(data.get("description") or data.get("name")))
+            _set_metadata(metadata, "host", _first_scalar(data.get("host")))
+            _set_metadata(metadata, "technology", _first_scalar(data.get("technology")))
+            http_status = _int_value(data.get("status_code") or data.get("http_status"))
+        elif data_text.startswith(("http://", "https://")):
+            url = data_text
+    elif event_type == "HTTP_RESPONSE" and isinstance(data, dict):
+        url = _first_scalar(data.get("url") or data.get("request_url"))
+        title = _first_scalar(data.get("title"))
+        http_status = _int_value(data.get("status_code") or data.get("http_status"))
+        status = "candidate"
+    else:
+        metadata["value"] = data_text
+
+    if url:
+        domain = (urlparse(url).hostname or "").lower()
+        if domain:
+            metadata["domain"] = domain
+
+    key = (event_type, (url or data_text).lower())
+    if key in seen:
+        return None
+    seen.add(key)
+
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status=status,
+        url=url,
+        title=title,
+        http_status=http_status,
+        confidence=confidence,
+        evidence=_short(f"BBOT {event_type}: {title or data_text}"),
+        metadata=metadata,
+    )
+
+
+def _bbot_email_finding(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    record: dict[str, Any],
+    seen: set[tuple[str, str]],
+) -> Finding | None:
+    normalized = email.strip().lower()
+    if not EMAIL_RE.fullmatch(normalized):
+        return None
+    key = ("EMAIL_ADDRESS", normalized)
+    if key in seen:
+        return None
+    seen.add(key)
+    metadata = _bbot_base_metadata(repository, record, "EMAIL_ADDRESS")
+    metadata["email"] = normalized
+    metadata["domain"] = normalized.rsplit("@", 1)[1]
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="candidate",
+        confidence=_bbot_confidence(record),
+        evidence=f"BBOT EMAIL_ADDRESS: {normalized}",
+        metadata=metadata,
+    )
+
+
+def _bbot_url_finding(
+    repository: str,
+    target: ScanTarget,
+    url: str,
+    event_type: str,
+    record: dict[str, Any],
+    seen: set[tuple[str, str]],
+) -> Finding | None:
+    value = url.strip()
+    if not value.startswith(("http://", "https://")):
+        return None
+    key = (event_type, value.lower())
+    if key in seen:
+        return None
+    seen.add(key)
+    metadata = _bbot_base_metadata(repository, record, event_type)
+    domain = (urlparse(value).hostname or "").lower()
+    if domain:
+        metadata["domain"] = domain
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="candidate",
+        url=value,
+        confidence=_bbot_confidence(record),
+        evidence=f"BBOT {event_type}: {value}",
+        metadata=metadata,
+    )
+
+
+def _bbot_base_metadata(repository: str, record: dict[str, Any], event_type: str) -> dict[str, str]:
+    metadata = {
+        "repository": repository,
+        "parser": "bbot",
+        "event_type": event_type,
+    }
+    for key in ("module", "scope_description", "host", "port", "scan", "parent", "parent_uuid", "uuid", "id"):
+        _set_metadata(metadata, f"bbot_{key}", _first_scalar(record.get(key)))
+    tags = _metadata_list_text(record.get("tags"))
+    if tags:
+        metadata["bbot_tags"] = tags
+    resolved_hosts = _metadata_list_text(record.get("resolved_hosts"))
+    if resolved_hosts:
+        metadata["resolved_hosts"] = resolved_hosts
+    return metadata
+
+
+def _bbot_data_text(value: object) -> str:
+    if isinstance(value, dict):
+        for key in ("url", "email", "host", "name", "description", "technology", "bucket", "id", "value"):
+            scalar = _first_scalar(value.get(key))
+            if scalar:
+                return scalar
+        return _short(json.dumps(value, sort_keys=True, ensure_ascii=False, default=str), limit=200)
+    return _first_scalar(value)
+
+
+def _bbot_confidence(record: dict[str, Any]) -> str:
+    scope = _first_scalar(record.get("scope_description")).lower()
+    tags = {item.lower() for item in _string_list(record.get("tags"))}
+    if scope == "in-scope" or "in-scope" in tags:
+        return "high"
+    return "medium"
+
+
+def _bbot_host_port(data_text: str, record: dict[str, Any]) -> tuple[str, str]:
+    host = _first_scalar(record.get("host"))
+    port = _first_scalar(record.get("port"))
+    if host and port:
+        return host, port
+    value = data_text.strip()
+    if ":" in value:
+        host_part, port_part = value.rsplit(":", 1)
+        return _normalize_hostname(host_part) or host_part.strip(), port_part.strip()
+    return host, port
 
 
 def _mosint_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:

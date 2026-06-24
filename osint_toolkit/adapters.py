@@ -69,6 +69,7 @@ class AdapterSpec:
             "region_tag": _region_tag(target.region),
             "region_tags_flag": _region_tags_flag(target.region),
             "instagram_profile": _instagram_profile_value(target.value),
+            "bbot_target": _bbot_target_value(target),
         }
         rendered: list[str] = []
         for part in command_template:
@@ -325,6 +326,23 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         generated_output_patterns=("*.json",),
     ),
     AdapterSpec(
+        "blacklanternsecurity/bbot",
+        "recursive OSINT, recon and attack surface scanner",
+        "external_cli",
+        "GPL-3.0",
+        "planned",
+        "bbot -t <target> -p subdomain-enum -rf passive --output <dir> --name osint-toolkit",
+        "SpiderFoot-inspired BBOT adapter; default command keeps execution to passive subdomain-enum and ingests generated JSON events.",
+        ("domain", "url", "email", "username"),
+        ("bbot", "-t", "{bbot_target}", "-p", "subdomain-enum", "-rf", "passive"),
+        install_kind="pipx",
+        install_command=("pipx", "install", "bbot"),
+        install_note="Configure third-party API keys in upstream ~/.config/bbot/bbot.yml; broader presets and deadly modules stay operator-controlled.",
+        docs_url="https://www.blacklanternsecurity.com/bbot/",
+        generated_output_dir_args=("--output", "{output_dir}", "--name", "osint-toolkit"),
+        generated_output_patterns=("*.json",),
+    ),
+    AdapterSpec(
         "alpkeskin/mosint",
         "email OSINT",
         "external_cli",
@@ -569,8 +587,9 @@ ADAPTER_PROFILES: tuple[AdapterProfile, ...] = (
             "projectdiscovery/httpx",
             "owasp-amass/amass",
             "laramies/theHarvester",
+            "blacklanternsecurity/bbot",
         ),
-        note="Default profile stays passive; active/bruteforce Amass modes and screenshot/API endpoint scans are separate scope decisions.",
+        note="Default profile stays passive; active/bruteforce Amass, broader BBOT presets and screenshot/API endpoint scans are separate scope decisions.",
     ),
 )
 
@@ -664,3 +683,9 @@ def _instagram_profile_value(value: str) -> str:
     if re.fullmatch(r"[A-Za-z0-9._]{1,30}", normalized):
         return normalized
     return value.strip().lstrip("@")
+
+
+def _bbot_target_value(target: ScanTarget) -> str:
+    if target.kind == "username":
+        return f"USER:{target.value.strip().lstrip('@')}"
+    return target.value.strip()

@@ -336,6 +336,54 @@ class InvestigationTests(unittest.TestCase):
         self.assertIn(("domain", "example.com", "discovered_subdomain", "subdomain", "api.example.com"), edges)
         self.assertIn(("domain", "example.com", "produced_url", "url", "https://www.example.com/login"), edges)
 
+    def test_execute_bbot_adapter_adds_entities_and_edges(self):
+        def fake_run(args, **kwargs):
+            output_dir = Path(args[args.index("--output") + 1])
+            scan_dir = output_dir / "osint-toolkit"
+            scan_dir.mkdir(parents=True, exist_ok=True)
+            (scan_dir / "output.json").write_text(
+                '{"type":"DNS_NAME","data":"api.example.com","module":"certspotter","scope_description":"in-scope","resolved_hosts":["93.184.216.34"]}\n'
+                '{"type":"EMAIL_ADDRESS","data":"admin@example.com","module":"emailformat","scope_description":"in-scope"}\n'
+                '{"type":"URL","data":"https://www.example.com/login","module":"httpx","scope_description":"in-scope"}\n'
+                '{"type":"OPEN_TCP_PORT","data":"api.example.com:443","host":"api.example.com","port":443,"module":"portscan"}\n'
+                '{"type":"TECHNOLOGY","data":"nginx","module":"wappalyzer"}\n',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="Scan complete\n", stderr="")
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="bbot"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            result = run_investigation(
+                (ScanTarget(kind="domain", value="example.com"),),
+                include_adapters=True,
+                execute_adapters=True,
+                adapter_repositories=("blacklanternsecurity/bbot",),
+            )
+
+        parsed = [finding for finding in result.adapter_findings if finding.module == "external-adapter-parser"]
+        self.assertTrue(any(finding.metadata.get("parser") == "bbot" for finding in parsed))
+
+        entities = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("email", "admin@example.com"), entities)
+        self.assertIn(("subdomain", "api.example.com"), entities)
+        self.assertIn(("url", "https://www.example.com/login"), entities)
+        self.assertIn(("ip", "93.184.216.34"), entities)
+        self.assertIn(("port", "443"), entities)
+        self.assertIn(("technology", "nginx"), entities)
+
+        edges = {
+            (edge.source_kind, edge.source_value.lower(), edge.relation, edge.target_kind, edge.target_value.lower())
+            for edge in result.edges
+        }
+        self.assertIn(("domain", "example.com", "related_email", "email", "admin@example.com"), edges)
+        self.assertIn(("domain", "example.com", "discovered_subdomain", "subdomain", "api.example.com"), edges)
+        self.assertIn(("domain", "example.com", "produced_url", "url", "https://www.example.com/login"), edges)
+        self.assertIn(("domain", "example.com", "resolved_ip", "ip", "93.184.216.34"), edges)
+        self.assertIn(("domain", "example.com", "open_port", "port", "443"), edges)
+        self.assertIn(("domain", "example.com", "uses_technology", "technology", "nginx"), edges)
+
     def test_person_target_expands_to_username_scan_edges(self):
         result = run_investigation((ScanTarget(kind="person", value="Ivan Petrenko"),))
 

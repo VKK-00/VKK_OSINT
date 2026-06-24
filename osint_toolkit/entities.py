@@ -146,6 +146,11 @@ def entities_from_findings(findings: tuple[Finding, ...]) -> tuple[Entity, ...]:
                     "media_shortcode": "media-shortcode",
                     "social_username": "username",
                     "platform_domain": "domain",
+                    "ip": "ip",
+                    "ip_range": "ip-range",
+                    "asn": "asn",
+                    "port": "port",
+                    "technology": "technology",
                 }.get(key, entity_kind)
                 entities.append(Entity(entity_kind, value, source, finding.confidence, f"metadata:{key}"))
     return dedupe_entities(tuple(entities))
@@ -271,6 +276,11 @@ def _metadata_entity_kind(key: str) -> str:
         "social_profile",
         "social_username",
         "platform_domain",
+        "ip",
+        "ip_range",
+        "asn",
+        "port",
+        "technology",
     }
     return key if key in supported else ""
 
