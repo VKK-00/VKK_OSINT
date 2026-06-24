@@ -28,6 +28,7 @@ CLI работает в трёх режимах:
 - external adapter dry-run/execute runner для настроенных upstream CLI;
 - adapter doctor: проверка фактической доступности upstream CLI в `PATH`;
 - investigation runner: один кейс, несколько seed-типов, entity summary, единый Markdown/JSON отчёт;
+- SQLite case store: сохранение и повторный просмотр кейсов, targets, entities и findings;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
 
@@ -81,6 +82,11 @@ CLI работает в трёх режимах:
   - `entities_from_targets()` — извлечение сущностей из seed values.
   - `entities_from_findings()` — извлечение сущностей из native и adapter findings.
   - `merge_entities()` — дедупликация сущностей с учётом confidence.
+- `osint_toolkit/case_store.py`
+  - `CaseStore` — SQLite-хранилище расследований.
+  - `save()` — сохраняет `InvestigationResult` в таблицы `cases`, `targets`, `entities`, `findings`.
+  - `list_cases()` — список сохранённых кейсов.
+  - `load_case()` — выгрузка одного кейса для CLI output.
 - `osint_toolkit/investigation.py`
   - `run_investigation()` — multi-target native scan + optional adapter dry-runs + entity summary.
   - `render_investigation_markdown()` — единый отчёт по кейсу.
@@ -124,7 +130,15 @@ Investigation-поток:
 2. CLI превращает каждый seed в `ScanTarget`.
 3. `run_investigation()` запускает native scan-модули и, при `--include-adapters`, adapter dry-runs.
 4. `entities.py` извлекает и объединяет сущности из входных целей, `Finding.url`, `Finding.evidence` и `Finding.metadata`.
-5. Отчёт выводится как Markdown или JSON; Markdown содержит `Entity Summary`, native findings, adapter dry-runs и review checklist.
+5. Если указан `--case-db`, `CaseStore` сохраняет кейс в SQLite до вывода отчёта.
+6. Отчёт выводится как Markdown или JSON; Markdown содержит `Entity Summary`, native findings, adapter dry-runs и review checklist.
+
+Case-store поток:
+
+1. Пользователь запускает `python -m osint_toolkit cases --case-db <path>`.
+2. `CaseStore.list_cases()` читает summary сохранённых кейсов.
+3. Пользователь запускает `python -m osint_toolkit case-show --case-db <path> <case_id>`.
+4. `CaseStore.load_case()` возвращает targets, entities и findings в table/Markdown/JSON формате.
 
 ## Поток данных
 
@@ -148,6 +162,10 @@ Investigation:
 
 `multiple CLI seeds -> ScanTarget[] -> Engine -> Finding[] -> optional adapter dry-runs -> Entity[] -> Markdown/JSON report`
 
+Сохранённые кейсы:
+
+`InvestigationResult -> CaseStore(SQLite) -> cases/case-show -> table/Markdown/CSV/JSON`
+
 ## Внешние интеграции
 
 В рантайме сетевые интеграции есть только в явном live-режиме scan-команд.
@@ -155,6 +173,8 @@ Investigation:
 Существующие CSV были собраны из GitHub ранее. Каталоговые команды не ходят в GitHub API.
 
 Native live-модули используют публичные HTTP(S) URL checks через стандартную библиотеку Python.
+
+SQLite используется локально через стандартную библиотеку `sqlite3`; внешнего сервера БД нет.
 
 Будущие external adapters должны подключать upstream CLI/API без копирования кода, если лицензия, масштаб или язык проекта делают прямой перенос неразумным.
 
@@ -172,6 +192,8 @@ Native live-модули используют публичные HTTP(S) URL che
 - `scan --region` — фильтр URL-шаблонов или workflow по региону.
 - `investigate --include-adapters` — добавить dry-run команды совместимых upstream adapters.
 - `investigate --format markdown|json` — формат отчёта по кейсу.
+- `investigate --case-db` — SQLite-файл для сохранения кейса.
+- `investigate --case-id` — стабильный ID кейса, если нужен повторяемый ключ.
 
 ## Команды запуска, тестирования, проверки и отладки
 
@@ -192,6 +214,9 @@ python -m osint_toolkit adapters
 python -m osint_toolkit doctor
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
 python -m osint_toolkit investigate --username example_user --domain example.com --telegram "@durov" --include-adapters
+python -m osint_toolkit investigate --email person@example.com --case-db cases.sqlite --case-id case-001
+python -m osint_toolkit cases --case-db cases.sqlite
+python -m osint_toolkit case-show --case-db cases.sqlite case-001 --format json
 python -m osint_toolkit recommend username --region ru
 python -m osint_toolkit brief --task username --target-value example --out reports/example.md
 ```
@@ -215,6 +240,7 @@ osint-toolkit stats
 - CLI читает уже проверенные CSV, а не тянет актуальные данные из GitHub. Это делает результаты воспроизводимыми.
 - Система строится вокруг единого `Finding`, чтобы результаты native-модулей и external adapters можно было объединять.
 - `Entity` отделён от `Finding`: finding описывает источник и сигнал, entity описывает нормализованный объект для сводки кейса и будущего графа.
+- SQLite case store отделён от engine: сканирование можно использовать без записи на диск, а сохранение включается явно через `--case-db`.
 - Dry-run используется по умолчанию для scan-команд. Live-сетевые проверки требуют явного `--live`.
 - Лицензионно сложные или большие проекты подключаются adapters вместо прямого копирования кода.
 - Password recovery flows, email-to-account и phone-to-account механики не переносятся в native-код без restricted-режима.
@@ -236,8 +262,8 @@ osint-toolkit stats
 - Telegram module пока не использует Telegram API и не получает private/group data.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
-- Entity summary пока строится только в памяти для одного отчёта; persistent graph/database ещё нет.
-- Investigation runner пока не хранит историю кейсов в базе данных; отчёт пишется в файл или stdout.
+- Entity summary сохраняется вместе с кейсом, но graph edges/relations между сущностями пока не моделируются.
+- SQLite schema сейчас версии 1; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
 
@@ -247,6 +273,7 @@ osint-toolkit stats
 - При добавлении native-модуля обновлять `engine.py`, `cli.py`, README и тесты.
 - При подключении upstream-проекта обновлять `adapters.py`, указать лицензию, режим интеграции и parity gap.
 - При изменении схемы сущностей обновлять `entities.py`, `investigation.py`, README и тесты JSON/Markdown.
+- При изменении SQLite-схемы обновлять `case_store.py`, schema version, тесты сохранения и документацию.
 - При добавлении команд обновлять `README.md` и этот анализ.
 - При изменении safety-границ обновлять `README.md`, `workflows.py` и тесты brief/recommend.
 - При новом snapshot обновлять дату в `catalog.py` или добавить явный выбор snapshot.
@@ -256,3 +283,4 @@ osint-toolkit stats
 - 2026-06-24: добавлен Python CLI `osint_toolkit` поверх существующих OSINT snapshot CSV.
 - 2026-06-24: цель уточнена до единой OSINT-системы с 1:1 functional parity; добавлены engine, native scan modules и adapter manifest.
 - 2026-06-24: добавлен report-level entity summary для объединения seed values, native findings и adapter dry-runs в расследовании.
+- 2026-06-24: добавлено SQLite-хранилище кейсов и CLI-команды `cases`/`case-show`.

@@ -5,6 +5,7 @@ import sys
 
 from .adapter_runner import run_adapter
 from .adapters import filter_adapters
+from .case_store import CaseStore, CaseStoreError
 from .catalog import Catalog, CatalogError
 from .doctor import inspect_adapters
 from .engine import RunConfig, ScanTarget
@@ -14,7 +15,15 @@ from .investigation import (
     run_investigation,
     write_investigation,
 )
-from .output import format_adapters, format_findings, format_project_detail, format_projects, format_stats
+from .output import (
+    format_adapters,
+    format_case_detail,
+    format_cases,
+    format_findings,
+    format_project_detail,
+    format_projects,
+    format_stats,
+)
 from .runtime import build_default_engine
 from .workflows import TASK_PROFILES, recommend_projects, render_brief, render_recommendation, write_brief
 
@@ -24,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.handler(args)
-    except (CatalogError, ValueError) as exc:
+    except (CaseStoreError, CatalogError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
@@ -120,7 +129,21 @@ def build_parser() -> argparse.ArgumentParser:
     investigate.add_argument("--timeout", type=float, default=10.0)
     investigate.add_argument("--format", choices=("markdown", "json"), default="markdown")
     investigate.add_argument("--out", help="Write investigation report to this path.")
+    investigate.add_argument("--case-db", help="SQLite database path for saving the case.")
+    investigate.add_argument("--case-id", help="Optional stable case id when --case-db is used.")
     investigate.set_defaults(handler=handle_investigate)
+
+    cases = subparsers.add_parser("cases", help="List saved investigation cases.")
+    cases.add_argument("--case-db", required=True, help="SQLite database path.")
+    cases.add_argument("--limit", type=int, default=20)
+    cases.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
+    cases.set_defaults(handler=handle_cases)
+
+    case_show = subparsers.add_parser("case-show", help="Show one saved investigation case.")
+    case_show.add_argument("--case-db", required=True, help="SQLite database path.")
+    case_show.add_argument("case_id")
+    case_show.add_argument("--format", choices=("table", "markdown", "json"), default="json")
+    case_show.set_defaults(handler=handle_case_show)
 
     return parser
 
@@ -203,6 +226,8 @@ def handle_investigate(args: argparse.Namespace) -> int:
     targets = _targets_from_args(args)
     if not targets:
         raise ValueError("At least one investigation seed is required.")
+    if args.case_id and not args.case_db:
+        raise ValueError("--case-id requires --case-db.")
     result = run_investigation(
         targets,
         title=args.title,
@@ -216,11 +241,32 @@ def handle_investigate(args: argparse.Namespace) -> int:
         if args.format == "json"
         else render_investigation_markdown(result)
     )
+    saved_message = ""
+    if args.case_db:
+        case_id = CaseStore(args.case_db).save(result, case_id=args.case_id)
+        saved_message = f"Saved case {case_id} to {args.case_db}"
     if args.out:
         path = write_investigation(args.out, content)
         print(f"Wrote {path}")
     else:
         print(content)
+    if saved_message:
+        if args.out:
+            print(saved_message)
+        else:
+            print(saved_message, file=sys.stderr)
+    return 0
+
+
+def handle_cases(args: argparse.Namespace) -> int:
+    records = CaseStore(args.case_db).list_cases(limit=args.limit)
+    print(format_cases(records, output_format=args.format))
+    return 0
+
+
+def handle_case_show(args: argparse.Namespace) -> int:
+    payload = CaseStore(args.case_db).load_case(args.case_id)
+    print(format_case_detail(payload, output_format=args.format))
     return 0
 
 

@@ -239,6 +239,9 @@ Gap:
 ```powershell
 python -m osint_toolkit investigate --username <name> --email <email> --domain <domain>
 python -m osint_toolkit investigate --username <name> --include-adapters --out reports/case.md
+python -m osint_toolkit investigate --username <name> --case-db cases.sqlite --case-id case-001
+python -m osint_toolkit cases --case-db cases.sqlite
+python -m osint_toolkit case-show --case-db cases.sqlite case-001
 ```
 
 Уже реализовано:
@@ -248,12 +251,14 @@ python -m osint_toolkit investigate --username <name> --include-adapters --out r
 - optional adapter dry-runs;
 - Markdown/JSON report;
 - Entity Summary from targets, finding URLs, evidence and metadata;
+- SQLite persistence for cases, targets, entities and findings;
+- list/show saved cases through CLI;
 - review checklist in every Markdown report.
 
 Gap:
 
-- нет persistent case database;
-- entity merge пока только in-memory внутри одного отчёта, без persistent graph;
+- entity merge пока только внутри одного кейса, без persistent graph edges;
+- нет graph edges/relations между сущностями;
 - нет parser-слоя для executed adapter outputs;
 - нет UI для просмотра кейса.
 

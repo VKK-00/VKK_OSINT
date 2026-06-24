@@ -45,6 +45,9 @@ python -m osint_toolkit adapters
 python -m osint_toolkit doctor
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
 python -m osint_toolkit investigate --username example_user --domain example.com --telegram "@durov" --include-adapters
+python -m osint_toolkit investigate --title "case one" --email person@example.com --case-db cases.sqlite --case-id case-one
+python -m osint_toolkit cases --case-db cases.sqlite
+python -m osint_toolkit case-show --case-db cases.sqlite case-one --format markdown
 python -m osint_toolkit recommend username --region ru --limit 8
 python -m osint_toolkit brief --task telegram --region ua --target-value "public channel" --out reports/telegram_ua.md
 ```
@@ -153,9 +156,23 @@ python -m osint_toolkit doctor --status planned --format markdown
 python -m osint_toolkit investigate --title "example case" --username example_user --email person@example.com --domain example.com
 python -m osint_toolkit investigate --username example_user --telegram "@durov" --ru-ua all --region ua --include-adapters --out reports/example_case.md
 python -m osint_toolkit investigate --domain example.com --live --format json
+python -m osint_toolkit investigate --title "saved case" --email person@example.com --case-db cases.sqlite --case-id case-001
 ```
 
 Отчёт содержит `Entity Summary`: нормализованные email, phone, domain, URL, Telegram handle, country/region и другие сущности, извлечённые из входных seed values, native findings и adapter dry-runs. Это общий слой для будущего case graph.
+
+Если указан `--case-db`, кейс сохраняется в SQLite: targets, findings и entities можно открыть позже через `cases` и `case-show`.
+
+### `cases` и `case-show`
+
+Работа с сохранёнными расследованиями.
+
+```powershell
+python -m osint_toolkit cases --case-db cases.sqlite
+python -m osint_toolkit cases --case-db cases.sqlite --format json
+python -m osint_toolkit case-show --case-db cases.sqlite case-001
+python -m osint_toolkit case-show --case-db cases.sqlite case-001 --format markdown
+```
 
 Статусы:
 

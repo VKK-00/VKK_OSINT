@@ -6,6 +6,7 @@ import json
 from typing import Iterable
 
 from .adapters import AdapterSpec
+from .case_store import CaseRecord
 from .engine import Finding
 from .models import OsintProject
 
@@ -145,6 +146,134 @@ def format_adapters(adapters: Iterable[AdapterSpec], *, output_format: str = "ta
             for adapter in adapter_list
         ]
         return _format_table(headers, rows)
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
+def format_cases(cases: Iterable[CaseRecord], *, output_format: str = "table") -> str:
+    case_list = tuple(cases)
+    if output_format == "json":
+        return json.dumps([case.to_dict() for case in case_list], ensure_ascii=False, indent=2)
+    if output_format == "markdown":
+        lines = [
+            "| Case ID | Title | Saved | Targets | Entities | Findings |",
+            "|---|---|---|---:|---:|---:|",
+        ]
+        for case in case_list:
+            lines.append(
+                f"| {case.case_id} | {_escape_md(case.title)} | {case.saved_at} | "
+                f"{case.target_count} | {case.entity_count} | {case.finding_count} |"
+            )
+        return "\n".join(lines)
+    if output_format == "csv":
+        buffer = io.StringIO()
+        writer = csv.DictWriter(
+            buffer,
+            fieldnames=(
+                "case_id",
+                "title",
+                "generated_at",
+                "saved_at",
+                "target_count",
+                "entity_count",
+                "finding_count",
+            ),
+            lineterminator="\n",
+        )
+        writer.writeheader()
+        for case in case_list:
+            writer.writerow(case.to_dict())
+        return buffer.getvalue().strip()
+    if output_format == "table":
+        headers = ("Case ID", "Title", "Saved", "Targets", "Entities", "Findings")
+        rows = [
+            (
+                case.case_id,
+                _short(case.title, 34),
+                case.saved_at,
+                str(case.target_count),
+                str(case.entity_count),
+                str(case.finding_count),
+            )
+            for case in case_list
+        ]
+        return _format_table(headers, rows)
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
+def format_case_detail(payload: dict[str, object], *, output_format: str = "json") -> str:
+    if output_format == "json":
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+
+    case = payload["case"]
+    targets = payload["targets"]
+    entities = payload["entities"]
+    findings = payload["findings"]
+    valid_payload = (
+        isinstance(case, dict)
+        and isinstance(targets, list)
+        and isinstance(entities, list)
+        and isinstance(findings, list)
+    )
+    if not valid_payload:
+        raise ValueError("Invalid case payload.")
+
+    if output_format == "markdown":
+        lines = [
+            f"# {case['title']}",
+            "",
+            f"- Case ID: `{case['case_id']}`",
+            f"- Generated: {case['generated_at']}",
+            f"- Saved: {case['saved_at']}",
+            "",
+            "## Targets",
+            "",
+            "| Kind | Value | Region |",
+            "|---|---|---|",
+        ]
+        for target in targets:
+            lines.append(f"| {target['kind']} | {_escape_md(str(target['value']))} | {target['region']} |")
+        lines.extend(
+            [
+                "",
+                "## Entities",
+                "",
+                "| Kind | Value | Confidence | Source |",
+                "|---|---|---|---|",
+            ]
+        )
+        for entity in entities:
+            lines.append(
+                f"| {entity['kind']} | {_escape_md(str(entity['value']))} | "
+                f"{entity['confidence']} | {_escape_md(str(entity['source']))} |"
+            )
+        lines.extend(
+            [
+                "",
+                "## Findings",
+                "",
+                "| Collection | Module | Source | Status | Confidence | Target |",
+                "|---|---|---|---|---|---|",
+            ]
+        )
+        for finding in findings:
+            lines.append(
+                f"| {finding['collection']} | {finding['module']} | {_escape_md(str(finding['source']))} | "
+                f"{finding['status']} | {finding['confidence']} | {_escape_md(str(finding['target']))} |"
+            )
+        return "\n".join(lines)
+
+    if output_format == "table":
+        lines = [
+            f"Case ID:     {case['case_id']}",
+            f"Title:       {case['title']}",
+            f"Generated:   {case['generated_at']}",
+            f"Saved:       {case['saved_at']}",
+            f"Targets:     {len(targets)}",
+            f"Entities:    {len(entities)}",
+            f"Findings:    {len(findings)}",
+        ]
+        return "\n".join(lines)
+
     raise ValueError(f"Unsupported output format: {output_format}")
 
 

@@ -129,6 +129,42 @@ class CliTests(unittest.TestCase):
         self.assertIn(("telegram", "@durov"), entities)
         self.assertIn(("url", "https://t.me/durov"), entities)
 
+    def test_investigate_can_save_and_show_case(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "cases.sqlite"
+            report_path = Path(tmpdir) / "case.md"
+            save_result = self.run_cli(
+                "investigate",
+                "--title",
+                "saved case",
+                "--email",
+                "person@example.com",
+                "--telegram",
+                "@durov",
+                "--case-db",
+                str(db_path),
+                "--case-id",
+                "case-1",
+                "--out",
+                str(report_path),
+            )
+            self.assertEqual(save_result.returncode, 0, save_result.stderr)
+            self.assertTrue(db_path.exists())
+            self.assertIn("Saved case case-1", save_result.stdout)
+
+            list_result = self.run_cli("cases", "--case-db", str(db_path))
+            self.assertEqual(list_result.returncode, 0, list_result.stderr)
+            self.assertIn("case-1", list_result.stdout)
+            self.assertIn("saved case", list_result.stdout)
+
+            show_result = self.run_cli("case-show", "--case-db", str(db_path), "case-1", "--format", "json")
+            self.assertEqual(show_result.returncode, 0, show_result.stderr)
+            payload = json.loads(show_result.stdout)
+            self.assertEqual(payload["case"]["title"], "saved case")
+            entities = {(entity["kind"], entity["value"].lower()) for entity in payload["entities"]}
+            self.assertIn(("email", "person@example.com"), entities)
+            self.assertIn(("domain", "example.com"), entities)
+
     def test_brief_command_writes_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "brief.md"
