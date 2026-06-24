@@ -5,7 +5,7 @@ import re
 import ssl
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,7 @@ class HttpResult:
     title: str = ""
     content_type: str = ""
     error: str = ""
+    headers: dict[str, str] = field(default_factory=dict)
 
 
 class HttpClient:
@@ -48,6 +49,7 @@ class HttpClient:
                     status_code=response.getcode(),
                     title=_extract_title(body, content_type),
                     content_type=content_type,
+                    headers={key.lower(): value for key, value in response.headers.items()},
                 )
         except urllib.error.HTTPError as exc:
             body = exc.read(262_144) if read_body else b""
@@ -59,6 +61,7 @@ class HttpClient:
                 title=_extract_title(body, content_type),
                 content_type=content_type,
                 error=str(exc),
+                headers={key.lower(): value for key, value in exc.headers.items()} if exc.headers else {},
             )
         except urllib.error.URLError as exc:
             return HttpResult(url=url, final_url=url, status_code=None, error=str(exc.reason))
@@ -74,4 +77,3 @@ def _extract_title(body: bytes, content_type: str) -> str:
     if not match:
         return ""
     return html.unescape(re.sub(r"\s+", " ", match.group(1))).strip()
-

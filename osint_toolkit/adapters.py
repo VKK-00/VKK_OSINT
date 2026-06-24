@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .engine import ScanTarget
+
 
 @dataclass(frozen=True)
 class AdapterSpec:
@@ -12,6 +14,8 @@ class AdapterSpec:
     status: str
     command_hint: str = ""
     note: str = ""
+    target_kinds: tuple[str, ...] = ()
+    command_template: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, str]:
         return {
@@ -22,7 +26,17 @@ class AdapterSpec:
             "status": self.status,
             "command_hint": self.command_hint,
             "note": self.note,
+            "target_kinds": ", ".join(self.target_kinds),
+            "command_template": " ".join(self.command_template),
         }
+
+    def render_command(self, target: ScanTarget) -> tuple[str, ...]:
+        if self.target_kinds and target.kind not in self.target_kinds:
+            return ()
+        return tuple(
+            part.format(target_value=target.value, target_kind=target.kind, region=target.region)
+            for part in self.command_template
+        )
 
 
 ADAPTERS: tuple[AdapterSpec, ...] = (
@@ -34,6 +48,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "partial_native",
         "sherlock <username>",
         "Native username module covers public profile URL checks; full parity needs Sherlock site dataset/error rules.",
+        ("username",),
+        ("sherlock", "{target_value}"),
     ),
     AdapterSpec(
         "soxoj/maigret",
@@ -43,6 +59,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "planned",
         "maigret <username>",
         "Large upstream dataset and enrichment logic should be used through adapter or imported with license notice.",
+        ("username",),
+        ("maigret", "{target_value}"),
     ),
     AdapterSpec(
         "WebBreacher/WhatsMyName",
@@ -61,6 +79,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "planned",
         "instaloader profile <profile>",
         "Use upstream CLI for full Instagram behavior instead of reimplementing platform edge cases.",
+        ("username",),
+        ("instaloader", "profile", "{target_value}"),
     ),
     AdapterSpec(
         "Owez/yark",
@@ -70,6 +90,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "planned",
         "yark new <channel_url>",
         "Adapter should normalize archive outputs into unified Finding records.",
+        ("url",),
+        ("yark", "new", "{target_value}"),
     ),
     AdapterSpec(
         "alpkeskin/mosint",
@@ -79,6 +101,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "partial_native",
         "mosint <email>",
         "Native email module covers syntax/domain-resolution baseline; full parity needs upstream enrichment modules.",
+        ("email",),
+        ("mosint", "{target_value}"),
     ),
     AdapterSpec(
         "thewhiteh4t/pwnedOrNot",
@@ -88,6 +112,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "planned",
         "pwnedornot <email>",
         "Should be opt-in and avoid printing sensitive breach payloads by default.",
+        ("email",),
+        ("pwnedornot", "{target_value}"),
     ),
     AdapterSpec(
         "thewhiteh4t/nexfil",
@@ -97,6 +123,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "planned",
         "nexfil -u <username>",
         "Candidate for second native-compatible username backend.",
+        ("username",),
+        ("nexfil", "-u", "{target_value}"),
     ),
     AdapterSpec(
         "martinvigo/email2phonenumber",
@@ -133,6 +161,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "partial_native",
         "phoneinfoga scan -n <number>",
         "Native phone module covers normalization/prefix baseline; full parity should use external adapter.",
+        ("phone",),
+        ("phoneinfoga", "scan", "-n", "{target_value}"),
     ),
     AdapterSpec(
         "smicallef/spiderfoot",
@@ -151,6 +181,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "planned",
         "snoop <username>",
         "Important RU/UA username backend; needs license confirmation before code reuse.",
+        ("username",),
+        ("snoop", "{target_value}"),
     ),
     AdapterSpec(
         "Yvesssn/DetectDee",
@@ -168,3 +200,11 @@ def filter_adapters(status: str | None = None) -> tuple[AdapterSpec, ...]:
     if not status:
         return ADAPTERS
     return tuple(adapter for adapter in ADAPTERS if adapter.status == status)
+
+
+def find_adapter(repository: str) -> AdapterSpec:
+    normalized = repository.lower()
+    for adapter in ADAPTERS:
+        if adapter.repository.lower() == normalized:
+            return adapter
+    raise ValueError(f"Unknown adapter repository: {repository}")

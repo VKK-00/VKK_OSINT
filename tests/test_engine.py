@@ -1,8 +1,10 @@
 import unittest
 
 from osint_toolkit.adapters import filter_adapters
+from osint_toolkit.adapter_runner import run_adapter
 from osint_toolkit.engine import Engine, RunConfig, ScanTarget
-from osint_toolkit.modules import EmailScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
+from osint_toolkit.modules import DomainScanModule, EmailScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
+from osint_toolkit.modules.domain import normalize_domain
 from osint_toolkit.modules.phone import detect_country, is_e164_like, normalize_phone
 
 
@@ -32,6 +34,20 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].status, "planned")
         self.assertEqual(findings[0].url, "https://example.com")
+
+    def test_domain_scan_dry_run_plans_dns_and_http_metadata(self):
+        engine = Engine([DomainScanModule()])
+        findings = engine.scan(ScanTarget(kind="domain", value="https://example.com/path"), RunConfig())
+
+        self.assertEqual(len(findings), 3)
+        self.assertEqual(findings[0].source, "dns-resolution")
+        self.assertEqual(findings[0].metadata["domain"], "example.com")
+        self.assertEqual(findings[1].url, "https://example.com")
+        self.assertEqual(findings[2].url, "http://example.com")
+
+    def test_domain_normalizer_rejects_invalid_values(self):
+        self.assertEqual(normalize_domain("https://Example.COM/a"), "example.com")
+        self.assertEqual(normalize_domain("not a domain"), "")
 
     def test_email_scan_validates_syntax_and_plans_domain_resolution(self):
         engine = Engine([EmailScanModule()])
@@ -71,6 +87,23 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(any(adapter.repository == "alpkeskin/mosint" for adapter in partial))
         self.assertTrue(any(adapter.repository == "sundowndev/phoneinfoga" for adapter in partial))
         self.assertTrue(any(adapter.repository == "megadose/holehe" for adapter in restricted))
+
+    def test_adapter_runner_dry_run_renders_command(self):
+        finding = run_adapter(
+            "sherlock-project/sherlock",
+            ScanTarget(kind="username", value="example_user"),
+        )
+
+        self.assertEqual(finding.status, "planned")
+        self.assertIn("sherlock example_user", finding.evidence)
+
+    def test_adapter_runner_blocks_restricted_by_default(self):
+        finding = run_adapter(
+            "megadose/holehe",
+            ScanTarget(kind="email", value="person@example.com"),
+        )
+
+        self.assertEqual(finding.status, "restricted")
 
 
 if __name__ == "__main__":

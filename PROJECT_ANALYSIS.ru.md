@@ -20,7 +20,9 @@ CLI работает в двух режимах:
 - username public profile checks по URL-шаблонам, совместимые по классу задачи с Sherlock/Maigret/WhatsMyName/Nexfil;
 - email baseline checks: синтаксис и live domain resolution;
 - phone baseline checks: нормализация, E.164-like validation и country-prefix signal;
+- domain baseline recon: DNS resolution, HTTP/HTTPS metadata и presence security headers;
 - базовый web metadata scan по URL, совместимый с начальным web-check слоем;
+- external adapter dry-run/execute runner для настроенных upstream CLI;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
 
@@ -55,10 +57,14 @@ CLI работает в двух режимах:
   - `EmailScanModule` — базовая проверка email: синтаксис и доменное разрешение.
 - `osint_toolkit/modules/phone.py`
   - `PhoneScanModule` — нормализация и country-prefix сигнал для телефонных номеров.
+- `osint_toolkit/modules/domain.py`
+  - `DomainScanModule` — DNS и HTTP/HTTPS baseline для доменов.
 - `osint_toolkit/modules/web.py`
   - `WebMetadataModule` — HTTP status/final URL/title.
 - `osint_toolkit/adapters.py`
   - `AdapterSpec` — карта upstream-проектов, лицензий, режима интеграции и текущего статуса.
+- `osint_toolkit/adapter_runner.py`
+  - `run_adapter()` — dry-run или явный запуск внешнего CLI adapter без shell.
 - `osint_toolkit/workflows.py`
   - `recommend_projects()` — подбор ресурсов под тип задачи.
   - `render_brief()` — генерация Markdown-brief.
@@ -85,6 +91,14 @@ Scan-поток:
 4. В dry-run модуль возвращает planned findings без сетевых запросов.
 5. В live-режиме модуль выполняет публичные HTTP checks и возвращает `Finding`.
 
+Adapter-поток:
+
+1. Пользователь запускает `python -m osint_toolkit run-adapter <repo> <kind> <value>`.
+2. `find_adapter()` находит `AdapterSpec`.
+3. По умолчанию возвращается planned finding с командой.
+4. При `--execute` команда запускается через `subprocess.run()` без shell, только если executable найден в `PATH`.
+5. Restricted adapters требуют отдельный `--allow-restricted`.
+
 ## Поток данных
 
 Источник истины — локальные CSV-файлы. Код не изменяет эти CSV при обычной работе.
@@ -98,6 +112,10 @@ Scan-поток:
 Сканирование:
 
 `CLI target -> ScanTarget -> Engine -> ScanModule[] -> Finding[] -> table/Markdown/CSV/JSON`
+
+Адаптеры:
+
+`CLI adapter request -> AdapterSpec -> command_template -> dry-run/external process -> Finding`
 
 ## Внешние интеграции
 
@@ -133,8 +151,10 @@ python -m osint_toolkit scan username example_user --limit 10
 python -m osint_toolkit scan username example_user --region ru --live --limit 5
 python -m osint_toolkit scan email person@example.com --live
 python -m osint_toolkit scan phone +380441234567
+python -m osint_toolkit scan domain example.com --live
 python -m osint_toolkit scan url https://example.com --live
 python -m osint_toolkit adapters
+python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
 python -m osint_toolkit recommend username --region ru
 python -m osint_toolkit brief --task username --target-value example --out reports/example.md
 ```
@@ -175,7 +195,7 @@ osint-toolkit stats
 - Первый native username module покрывает только URL-template/status-code слой, а не всю логику Sherlock/Maigret: нет полного upstream site dataset, custom error rules, rate-limit logic и enrichment.
 - Native email module пока не делает MX lookup, breach lookup или external API enrichment.
 - Native phone module пока не делает carrier lookup, reputation lookup или external API enrichment.
-- Adapter manifest пока не запускает внешние CLI; это следующий этап.
+- Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
 

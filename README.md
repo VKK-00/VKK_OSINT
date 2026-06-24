@@ -19,8 +19,9 @@
 - выполнять native username profile checks по публичным URL-шаблонам;
 - выполнять baseline email checks: синтаксис и live domain resolution;
 - выполнять baseline phone checks: E.164-like нормализация и префикс региона;
+- выполнять baseline domain recon: DNS resolution, HTTP/HTTPS metadata и security header presence;
 - получать базовые web metadata по URL;
-- показывать карту upstream-адаптеров для дальнейшего 1:1 functional parity;
+- показывать карту upstream-адаптеров и dry-run/execute запускать настроенные внешние CLI;
 - получать безопасный workflow под задачу;
 - генерировать Markdown-brief для кейса.
 
@@ -34,8 +35,10 @@ python -m osint_toolkit scan username example_user --limit 8
 python -m osint_toolkit scan username example_user --region ru --live --limit 5
 python -m osint_toolkit scan email person@example.com --live
 python -m osint_toolkit scan phone +380441234567
+python -m osint_toolkit scan domain example.com --live
 python -m osint_toolkit scan url https://example.com --live
 python -m osint_toolkit adapters
+python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
 python -m osint_toolkit recommend username --region ru --limit 8
 python -m osint_toolkit brief --task telegram --region ua --target-value "public channel" --out reports/telegram_ua.md
 ```
@@ -91,12 +94,15 @@ python -m osint_toolkit scan username example_user --limit 10
 python -m osint_toolkit scan username example_user --region ru --live --limit 10
 python -m osint_toolkit scan email person@example.com --live --format json
 python -m osint_toolkit scan phone +380441234567
+python -m osint_toolkit scan domain example.com --live
 python -m osint_toolkit scan url https://example.com --live --format json
 ```
 
 Сейчас native username module покрывает Sherlock/Maigret/WhatsMyName-подобный слой публичных profile URL checks. Полное 1:1 покрытие требует импорта upstream datasets и error rules либо подключения внешних CLI через adapters.
 
 Native email/phone modules являются baseline-слоем для Mosint/h8mail/pwnedOrNot/PhoneInfoga-подобных adapters. Они не делают account-enumeration и не запускают password recovery flows.
+
+Native domain module является baseline-слоем для web-check/theHarvester/SpiderFoot/Amass/Subfinder-подобного web/domain recon. Он не делает brute force, port scanning или subdomain enumeration.
 
 ### `adapters`
 
@@ -107,6 +113,18 @@ python -m osint_toolkit adapters
 python -m osint_toolkit adapters --status planned --format markdown
 python -m osint_toolkit adapters --status restricted
 ```
+
+### `run-adapter`
+
+Dry-run или явный запуск настроенного upstream CLI adapter. По умолчанию команда не запускается, а только показывается.
+
+```powershell
+python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
+python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user --execute
+python -m osint_toolkit run-adapter sundowndev/phoneinfoga phone +380441234567
+```
+
+Restricted adapters требуют дополнительный флаг `--allow-restricted`; без него возвращается `restricted`.
 
 Статусы:
 

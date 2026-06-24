@@ -3,10 +3,11 @@ from __future__ import annotations
 import argparse
 import sys
 
+from .adapter_runner import run_adapter
 from .adapters import filter_adapters
 from .catalog import Catalog, CatalogError
 from .engine import Engine, RunConfig, ScanTarget
-from .modules import EmailScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
+from .modules import DomainScanModule, EmailScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
 from .output import format_adapters, format_findings, format_project_detail, format_projects, format_stats
 from .workflows import TASK_PROFILES, recommend_projects, render_brief, render_recommendation, write_brief
 
@@ -50,7 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     show.set_defaults(handler=handle_show)
 
     scan = subparsers.add_parser("scan", help="Run native unified OSINT scan modules.")
-    scan.add_argument("target_kind", choices=("username", "email", "phone", "url"))
+    scan.add_argument("target_kind", choices=("username", "email", "phone", "domain", "url"))
     scan.add_argument("target_value")
     scan.add_argument("--region", choices=("all", "ru", "ua"), default="all")
     scan.add_argument("--live", action="store_true", help="Perform network checks. Default is dry-run planning.")
@@ -63,6 +64,17 @@ def build_parser() -> argparse.ArgumentParser:
     adapters.add_argument("--status", choices=("partial_native", "planned", "restricted"))
     adapters.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     adapters.set_defaults(handler=handle_adapters)
+
+    run = subparsers.add_parser("run-adapter", help="Dry-run or execute one configured upstream adapter.")
+    run.add_argument("repository", help="Adapter repository, for example sherlock-project/sherlock.")
+    run.add_argument("target_kind", choices=("username", "email", "phone", "domain", "url"))
+    run.add_argument("target_value")
+    run.add_argument("--region", choices=("all", "ru", "ua"), default="all")
+    run.add_argument("--execute", action="store_true", help="Actually run the external command. Default is dry-run.")
+    run.add_argument("--allow-restricted", action="store_true", help="Allow restricted adapters after scope review.")
+    run.add_argument("--timeout", type=float, default=60.0)
+    run.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
+    run.set_defaults(handler=handle_run_adapter)
 
     recommend = subparsers.add_parser("recommend", help="Recommend a safe workflow and relevant catalog entries.")
     _add_data_dir(recommend)
@@ -110,7 +122,7 @@ def handle_show(args: argparse.Namespace) -> int:
 
 
 def handle_scan(args: argparse.Namespace) -> int:
-    engine = Engine([UsernameScanModule(), EmailScanModule(), PhoneScanModule(), WebMetadataModule()])
+    engine = Engine([UsernameScanModule(), EmailScanModule(), PhoneScanModule(), DomainScanModule(), WebMetadataModule()])
     target = ScanTarget(kind=args.target_kind, value=args.target_value, region=args.region)
     config = RunConfig(live=args.live, timeout=args.timeout, limit=args.limit)
     findings = engine.scan(target, config)
@@ -120,6 +132,19 @@ def handle_scan(args: argparse.Namespace) -> int:
 
 def handle_adapters(args: argparse.Namespace) -> int:
     print(format_adapters(filter_adapters(args.status), output_format=args.format))
+    return 0
+
+
+def handle_run_adapter(args: argparse.Namespace) -> int:
+    target = ScanTarget(kind=args.target_kind, value=args.target_value, region=args.region)
+    finding = run_adapter(
+        args.repository,
+        target,
+        execute=args.execute,
+        allow_restricted=args.allow_restricted,
+        timeout=args.timeout,
+    )
+    print(format_findings((finding,), output_format=args.format))
     return 0
 
 

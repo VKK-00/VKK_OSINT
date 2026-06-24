@@ -45,10 +45,27 @@ class CliTests(unittest.TestCase):
         self.assertIn("phone-baseline", result.stdout)
         self.assertIn("Ukraine", result.stdout)
 
+    def test_scan_domain_dry_run_command(self):
+        result = self.run_cli("scan", "domain", "example.com")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("domain-baseline", result.stdout)
+        self.assertIn("dns-resolution", result.stdout)
+
     def test_adapters_command(self):
         result = self.run_cli("adapters", "--status", "partial_native")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("sherlock-project/sherlock", result.stdout)
+
+    def test_run_adapter_dry_run_command(self):
+        result = self.run_cli("run-adapter", "sherlock-project/sherlock", "username", "example_user")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("planned", result.stdout)
+        self.assertIn("sherlock example_user", result.stdout)
+
+    def test_run_adapter_restricted_command(self):
+        result = self.run_cli("run-adapter", "megadose/holehe", "email", "person@example.com")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("restricted", result.stdout)
 
     def test_brief_command_writes_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -116,7 +116,17 @@ def format_adapters(adapters: Iterable[AdapterSpec], *, output_format: str = "ta
         buffer = io.StringIO()
         writer = csv.DictWriter(
             buffer,
-            fieldnames=("repository", "capability", "integration", "status", "license", "command_hint", "note"),
+            fieldnames=(
+                "repository",
+                "capability",
+                "integration",
+                "status",
+                "license",
+                "command_hint",
+                "target_kinds",
+                "command_template",
+                "note",
+            ),
             lineterminator="\n",
         )
         writer.writeheader()

@@ -169,11 +169,51 @@ Gap:
 - `blacklanternsecurity/bbot`
 - `jasonxtn/Argus`
 
+Уже реализовано:
+
+- `python -m osint_toolkit scan domain <domain>`;
+- live DNS resolution;
+- HTTPS/HTTP status, redirect final URL, title and content-type;
+- presence list for common security headers.
+
+Gap:
+
+- нет subdomain enumeration;
+- нет WHOIS/RDAP;
+- нет certificate transparency;
+- нет crawler/email extraction;
+- нет Amass/Subfinder/httpx/SpiderFoot adapters.
+
 План:
 
 1. Native: HTTP status, redirects, title, basic headers.
 2. Adapter: `httpx`, `theHarvester`, `spiderfoot`, `amass`, `subfinder`.
 3. Normalize domains, URLs, emails, subdomains into shared entity model.
+
+## External adapter runner
+
+Команда:
+
+```powershell
+python -m osint_toolkit run-adapter <repository> <target_kind> <target_value>
+python -m osint_toolkit run-adapter <repository> <target_kind> <target_value> --execute
+```
+
+Уже реализовано:
+
+- dry-run command rendering from `AdapterSpec.command_template`;
+- explicit `--execute`;
+- executable lookup in `PATH`;
+- no shell execution;
+- timeout handling;
+- restricted adapter guard via `--allow-restricted`.
+
+Gap:
+
+- нет установки upstream CLI;
+- нет богатого parser-слоя для stdout каждого инструмента;
+- нет нормализации complex outputs в сущности graph model;
+- нет per-adapter config/API key handling.
 
 ## Adapter statuses
 
