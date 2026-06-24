@@ -327,6 +327,8 @@ def _metadata_edge(key: str) -> tuple[str, str] | None:
         "registrar": ("registered_via", "registrar"),
         "nameserver": ("uses_nameserver", "nameserver"),
         "nameservers": ("uses_nameserver", "nameserver"),
+        "whois_server": ("queried_whois_server", "whois-server"),
+        "whois_referral_server": ("referred_whois_server", "whois-server"),
     }
     return mapping.get(key)
 
@@ -347,6 +349,8 @@ def _metadata_values(key: str, value: str) -> tuple[str, ...]:
         "subdomains",
         "nameserver",
         "nameservers",
+        "whois_server",
+        "whois_referral_server",
     }:
         parts = [part.strip() for part in value.replace("|", ",").split(",")]
         return tuple(part for part in parts if part)

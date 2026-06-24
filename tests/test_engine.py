@@ -18,6 +18,7 @@ from osint_toolkit.modules.phone import detect_country, is_e164_like, normalize_
 from osint_toolkit.modules.ru_ua_sources import RuUaSourcePackModule
 from osint_toolkit.modules.telegram import TelegramScanModule, normalize_telegram_target
 from osint_toolkit.modules.username import classify_username_http_result, normalize_username
+from osint_toolkit.whois_lookup import WhoisDomainRecord, parse_whois_domain_record
 from osint_toolkit.sites import (
     MAIGRET_IMPORTED_SITE_COUNT,
     SHERLOCK_IMPORTED_SITE_COUNT,
@@ -700,7 +701,7 @@ class EngineTests(unittest.TestCase):
         engine = Engine([DomainScanModule()])
         findings = engine.scan(ScanTarget(kind="domain", value="https://example.com/path"), RunConfig())
 
-        self.assertEqual(len(findings), 7)
+        self.assertEqual(len(findings), 8)
         self.assertEqual(findings[0].source, "dns-resolution")
         self.assertEqual(findings[0].metadata["domain"], "example.com")
         self.assertEqual(findings[1].url, "https://example.com")
@@ -711,6 +712,7 @@ class EngineTests(unittest.TestCase):
         self.assertIn("crt.sh", findings[5].url)
         self.assertEqual(findings[6].source, "rdap-domain")
         self.assertIn("rdap.org/domain/example.com", findings[6].url)
+        self.assertEqual(findings[7].source, "whois-domain")
 
     def test_domain_normalizer_rejects_invalid_values(self):
         self.assertEqual(normalize_domain("https://Example.COM/a"), "example.com")
@@ -752,6 +754,29 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(record.registrar, "Example Registrar, Inc.")
         self.assertEqual(record.handle, "2336799_DOMAIN_COM-VRSN")
         self.assertEqual(record.nameservers, ("a.iana-servers.net", "b.iana-servers.net"))
+        self.assertEqual(record.created_at, "1995-08-14T04:00:00Z")
+        self.assertEqual(record.expires_at, "2026-08-13T04:00:00Z")
+
+    def test_parse_whois_domain_record_extracts_registration_metadata(self):
+        body = """
+        Domain Name: EXAMPLE.COM
+        Registrar: Example Registrar, Inc.
+        Whois Server: whois.example-registrar.test
+        Creation Date: 1995-08-14T04:00:00Z
+        Updated Date: 2025-08-14T04:00:00Z
+        Registry Expiry Date: 2026-08-13T04:00:00Z
+        Name Server: A.IANA-SERVERS.NET
+        Name Server: b.iana-servers.net.
+        Domain Status: clientTransferProhibited
+        """
+
+        record = parse_whois_domain_record(body, "example.com", server="whois.verisign-grs.com")
+
+        self.assertTrue(record.found)
+        self.assertEqual(record.registrar, "Example Registrar, Inc.")
+        self.assertEqual(record.referral_server, "whois.example-registrar.test")
+        self.assertEqual(record.nameservers, ("a.iana-servers.net", "b.iana-servers.net"))
+        self.assertEqual(record.statuses, ("clientTransferProhibited",))
         self.assertEqual(record.created_at, "1995-08-14T04:00:00Z")
         self.assertEqual(record.expires_at, "2026-08-13T04:00:00Z")
 
@@ -836,10 +861,27 @@ class EngineTests(unittest.TestCase):
             )
         )
 
+        whois_record = WhoisDomainRecord(
+            domain="example.com",
+            server="whois.verisign-grs.com",
+            referral_server="whois.example-registrar.test",
+            registrar="Example Registrar, Inc.",
+            statuses=("clientTransferProhibited",),
+            nameservers=("a.iana-servers.net", "b.iana-servers.net"),
+            created_at="1995-08-14T04:00:00Z",
+            updated_at="2025-08-14T04:00:00Z",
+            expires_at="2026-08-13T04:00:00Z",
+            raw_line_count=10,
+            found=True,
+        )
+
         with patch(
             "osint_toolkit.modules.domain.socket.getaddrinfo",
             return_value=[(socket.AF_INET, None, None, "", ("93.184.216.34", 0))],
-        ), patch("osint_toolkit.modules.domain.HttpClient", return_value=fake_client):
+        ), patch("osint_toolkit.modules.domain.HttpClient", return_value=fake_client), patch(
+            "osint_toolkit.modules.domain.lookup_whois_domain",
+            return_value=whois_record,
+        ) as whois_lookup:
             findings = Engine([DomainScanModule()]).scan(
                 ScanTarget(kind="domain", value="example.com"),
                 RunConfig(live=True),
@@ -865,6 +907,12 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(sources["rdap-domain"].metadata["nameservers"], "a.iana-servers.net, b.iana-servers.net")
         self.assertEqual(sources["rdap-domain"].metadata["expires_at"], "2026-08-13T04:00:00Z")
         self.assertEqual(fake_client.requests[6][2], {"Accept": "application/rdap+json, application/json"})
+        self.assertEqual(sources["whois-domain"].status, "candidate")
+        self.assertEqual(sources["whois-domain"].metadata["whois_server"], "whois.verisign-grs.com")
+        self.assertEqual(sources["whois-domain"].metadata["whois_referral_server"], "whois.example-registrar.test")
+        self.assertEqual(sources["whois-domain"].metadata["registrar"], "Example Registrar, Inc.")
+        self.assertEqual(sources["whois-domain"].metadata["raw_text_available"], "yes")
+        whois_lookup.assert_called_once_with("example.com", timeout=10.0)
 
     def test_telegram_scan_normalizes_handle_and_post_url(self):
         engine = Engine([TelegramScanModule()])

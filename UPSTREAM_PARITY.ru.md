@@ -238,18 +238,20 @@ Gap:
 - CT-derived `subdomain` entities and graph edges `domain -> subdomain`;
 - RDAP registration lookup via `rdap.org` JSON in live mode;
 - RDAP-derived `registrar`/`nameserver` entities and graph edges `domain -> registrar|nameserver`;
+- raw WHOIS lookup via TCP port 43 for common/global and RU/UA-relevant TLDs;
+- WHOIS-derived registrar, nameserver, domain status, date and WHOIS server metadata without copying contact-like raw text into evidence;
 - crawler-derived `url`/`email`/`phone`/`web-path` entities and graph edges for discovered/internal/external/social links, sitemap URLs, robots disallow paths and page contacts.
 
 Gap:
 
 - нет brute-force/passive subdomain enumeration за пределами crt.sh;
-- нет raw WHOIS text lookup;
+- raw WHOIS full-text export is intentionally not included in reports; parser keeps domain-level fields only by default;
 - crawler bounded и mostly HTML/XML/text-only: нет JavaScript rendering, form submission, full robots policy enforcement, authentication, headless browser или broad SpiderFoot/Photon-style crawling;
 - нет Amass/Subfinder/httpx/SpiderFoot adapters.
 
 План:
 
-1. Native: дальше расширять passive domain recon: raw WHOIS fallback, richer document metadata extraction и optional sitemap/robots policy tuning.
+1. Native: дальше расширять passive domain recon: richer document metadata extraction, optional sitemap/robots policy tuning and more TLD-specific WHOIS parsing.
 2. Adapter: `httpx`, `theHarvester`, `spiderfoot`, `amass`, `subfinder`.
 3. Normalize domains, URLs, emails, subdomains into shared entity model.
 

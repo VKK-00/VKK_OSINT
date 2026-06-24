@@ -26,7 +26,7 @@ CLI работает в трёх режимах:
 - content marker rules для live username checks: profile markers повышают confidence, soft-404 markers дают `not_found`;
 - email baseline checks: синтаксис, live domain resolution, MX/NS/TXT lookup, SPF, DMARC, MTA-STS, TLS-RPT, BIMI и TXT service signal classification;
 - phone baseline checks: нормализация, E.164-like validation и country-prefix signal;
-- domain baseline recon: DNS resolution, HTTP/HTTPS metadata, bounded same-site crawler, robots/sitemap discovery, public email/phone/social link extraction, presence security headers, certificate transparency subdomain discovery и RDAP registration lookup;
+- domain baseline recon: DNS resolution, HTTP/HTTPS metadata, bounded same-site crawler, robots/sitemap discovery, public email/phone/social link extraction, presence security headers, certificate transparency subdomain discovery, RDAP registration lookup и raw WHOIS fallback;
 - Telegram baseline: handle/post URL normalization и optional live public metadata;
 - RU/UA source pack: curated карты, Telegram/RU platforms, geospatial и pastebin источники;
 - базовый web metadata scan, public email extraction, robots/sitemap discovery и bounded same-site crawl по URL, совместимый с начальным web-check/Photon слоем;
@@ -111,9 +111,12 @@ CLI работает в трёх режимах:
 - `osint_toolkit/modules/phone.py`
   - `PhoneScanModule` — нормализация и country-prefix сигнал для телефонных номеров.
 - `osint_toolkit/modules/domain.py`
-  - `DomainScanModule` — DNS, HTTP/HTTPS baseline, bounded same-site crawler, certificate transparency lookup и RDAP lookup для доменов.
+  - `DomainScanModule` — DNS, HTTP/HTTPS baseline, bounded same-site crawler, certificate transparency lookup, RDAP lookup и WHOIS lookup для доменов.
   - `parse_crtsh_subdomains()` — parser `crt.sh` JSON, который нормализует wildcard/common-name значения в bounded `subdomain` signals.
   - `parse_rdap_domain_record()` — parser RDAP JSON, который извлекает registrar, domain handle, statuses, nameservers и registration/expiration dates.
+- `osint_toolkit/whois_lookup.py`
+  - `lookup_whois_domain()` — raw WHOIS query через TCP port 43 с TLD server mapping и optional registrar WHOIS referral.
+  - `parse_whois_domain_record()` — parser WHOIS text, который извлекает registrar, WHOIS server, nameservers, statuses и dates без переноса контактоподобного сырого текста в evidence.
 - `osint_toolkit/web_extract.py`
   - `extract_public_emails()` — bounded extraction публичных email-адресов из уже загруженного HTML/text.
   - `extract_public_phones()` — bounded extraction E.164-like phone values из HTML/text.
@@ -160,7 +163,7 @@ CLI работает в трёх режимах:
   - `merge_entities()` — дедупликация сущностей с учётом confidence.
 - `osint_toolkit/graph.py`
   - `GraphEdge` — отношение между двумя сущностями.
-  - `graph_edges_from_case()` — построение связей `email -> domain`, `email -> related_email`, `domain|url -> page_contact_email/page_contact_phone/discovered_url/social_url/sitemap_url/robots_disallow_path`, `url -> domain`, `target -> finding URL`, `phone -> country/normalized/carrier/location/line-type/phone-range/postal-code`.
+  - `graph_edges_from_case()` — построение связей `email -> domain`, `email -> related_email`, `domain|url -> page_contact_email/page_contact_phone/discovered_url/social_url/sitemap_url/robots_disallow_path`, `domain -> whois-server`, `url -> domain`, `target -> finding URL`, `phone -> country/normalized/carrier/location/line-type/phone-range/postal-code`.
   - `analyze_case_graph()` — аналитика сохранённого кейса: node/edge counts, relation counts, kind counts, top connected nodes и соседи выбранной сущности.
 - `osint_toolkit/case_store.py`
   - `CaseStore` — SQLite-хранилище расследований.
@@ -386,6 +389,7 @@ osint-toolkit stats
 - Username live classifier сначала учитывает title/body markers, затем site-specific status rules из WhatsMyName/Maigret: soft-404 marker сильнее HTTP status, profile marker повышает confidence, а `m_code`/`e_code` и status-code rules помогают классифицировать сайты без body marker.
 - HTTP live checks повторяют 429 и temporary 5xx с `Retry-After` или exponential backoff; username scan поддерживает операторский `--request-delay` между live URL checks.
 - Web/domain crawler bounded по страницам и глубине: по умолчанию 5 страниц и глубина 1, читает `robots.txt`, sitemap XML/text и HTTP(S) same-site links, без JavaScript rendering, форм и авторизации.
+- WHOIS lookup выполняется через port 43 и сохраняет только доменные поля. Полный raw WHOIS text не попадает в evidence, потому что он часто содержит контактные данные.
 - Adapter parser не считается источником истины: он нормализует stdout уже запущенного upstream CLI, а не заменяет native logic upstream-проекта.
 - Generated report files читаются из временной директории или временного файла и удаляются после parsing; постоянное хранение остаётся задачей case store/report output.
 - Investigation adapter execution является opt-in: `--include-adapters` остаётся dry-run, а запуск внешнего кода требует отдельного `--execute-adapters`.
@@ -417,6 +421,7 @@ osint-toolkit stats
 - Native email module делает MX/NS/TXT lookup, SPF/DMARC/MTA-STS/TLS-RPT/BIMI classifiers и root TXT service signal classifier, но пока не делает native breach lookup, local cache или own API enrichment; Mosint/h8mail покрывают часть enrichment через external adapters.
 - Native phone module пока не делает carrier lookup, reputation lookup или external API enrichment.
 - Native web/domain crawler уже собирает robots/sitemap URLs, robots disallow paths, same-site URLs, external URLs, social URLs, public emails и E.164-like phones, но остаётся bounded и mostly HTML/XML/text-only: нет headless browser, JavaScript rendering, form submission, full robots policy enforcement и широкого SpiderFoot/Photon-style обхода.
+- Native WHOIS parser покрывает common WHOIS field names и несколько TLD server mappings, но не все registry-specific formats и не экспортирует полный raw WHOIS text.
 - Telegram module пока не использует Telegram API и не получает private/group data.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
@@ -424,7 +429,7 @@ osint-toolkit stats
 - Adapter manifest теперь включает generated CSV/TXT folder template для `sherlock-project/sherlock`, isolated workdir TXT ingestion для `thewhiteh4t/nexfil`, generated JSON-file templates для `alpkeskin/mosint` и `h8mail`, generated JSON-report folder template для `soxoj/maigret`, target-specific executable templates для `user-scanner`, region-aware template для `snooppr/snoop` и executable template для `sundowndev/phoneinfoga`; более сложные adapters могут потребовать richer per-mode config.
 - Adapter parser покрывает общие URL/email/phone/key-value patterns, Sherlock stdout/CSV/TXT reports, Nexfil stdout/TXT reports, Mosint JSON reports, h8mail JSON reports, Maigret JSON/CSV reports, `user-scanner` JSON/verbose output, Snoop stdout/CSV output и PhoneInfoga CLI/API output; сложные JSON/CSV/HTML exports остальных upstream ещё не разобраны.
 - Adapter profiles пока статические; нет пользовательских профилей и per-case persistent adapter policy.
-- Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> email`, `domain -> phone`, `domain -> discovered/social/sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics и cross-case entity index, но нет weighted path finding, cross-case edge graph и визуального UI.
+- Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> email`, `domain -> phone`, `domain -> discovered/social/sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois-server` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics и cross-case entity index, но нет weighted path finding, cross-case edge graph и визуального UI.
 - SQLite schema сейчас версии 2; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
@@ -436,6 +441,7 @@ osint-toolkit stats
 - При изменении username site dataset/rules обновлять `sites.py`, username tests, README и parity-карту.
 - При изменении HTTP body/title parsing обновлять `http_client.py`, username classifier tests и safety notes в README/analysis.
 - При изменении web crawler или metadata extraction обновлять `web_extract.py`, `web_crawler.py`, web/domain tests, graph/entity mapping, README и parity-карту.
+- При изменении WHOIS lookup/parser обновлять `whois_lookup.py`, `modules/domain.py`, graph/entity mapping, README и parity-карту.
 - При изменении DNS lookup или email auth classification обновлять `dns_lookup.py`, `email_auth.py`, email tests, README и parity-карту.
 - При изменении person-name expansion обновлять `modules/person.py`, graph/entity mapping, investigation tests и parity-карту.
 - При подключении upstream-проекта обновлять `adapters.py`, указать лицензию, режим интеграции и parity gap.
@@ -492,3 +498,4 @@ osint-toolkit stats
 - 2026-06-24: добавлен native public page email extraction для domain/url recon: emails из fetched landing pages попадают в `page-email-extraction` findings, `email` entities и graph edges `domain|url -> email`.
 - 2026-06-24: добавлен bounded same-site crawler для domain/url recon: `--crawl-pages` и `--crawl-depth` ограничивают HTML-only обход, а найденные URLs/emails/phones/social links попадают в `web-crawl` findings, entities и graph edges.
 - 2026-06-24: crawler расширен robots/sitemap discovery: `robots.txt` `Sitemap:`/`Disallow` и sitemap XML/text URLs нормализуются в `web-crawl` metadata, entities и graph edges.
+- 2026-06-24: добавлен raw WHOIS fallback для domain recon: WHOIS port 43 parser извлекает registrar/nameservers/statuses/dates и WHOIS server metadata без копирования полного сырого WHOIS текста в evidence.

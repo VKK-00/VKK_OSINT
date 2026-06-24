@@ -135,6 +135,41 @@ class GraphAnalysisTests(unittest.TestCase):
         self.assertIn(("domain", "example.com", "registered_via", "registrar", "Example Registrar, Inc."), edge_keys)
         self.assertIn(("domain", "example.com", "uses_nameserver", "nameserver", "a.iana-servers.net"), edge_keys)
 
+    def test_whois_metadata_edges(self):
+        target = ScanTarget(kind="domain", value="example.com")
+        findings = (
+            Finding(
+                module="domain-baseline",
+                source="whois-domain",
+                target="example.com",
+                status="candidate",
+                confidence="medium",
+                evidence="WHOIS domain registration record found.",
+                metadata={
+                    "domain": "example.com",
+                    "whois_server": "whois.verisign-grs.com",
+                    "whois_referral_server": "whois.example-registrar.test",
+                    "registrar": "Example Registrar, Inc.",
+                    "nameservers": "a.iana-servers.net, b.iana-servers.net",
+                },
+            ),
+        )
+
+        entities = merge_entities(entities_from_targets((target,)), entities_from_findings(findings))
+        entity_keys = {(entity.kind, entity.value.lower()) for entity in entities}
+        self.assertIn(("whois-server", "whois.verisign-grs.com"), entity_keys)
+        self.assertIn(("whois-server", "whois.example-registrar.test"), entity_keys)
+        self.assertIn(("registrar", "example registrar, inc."), entity_keys)
+
+        edges = graph_edges_from_case((target,), findings, entities)
+        edge_keys = {
+            (edge.source_kind, edge.source_value, edge.relation, edge.target_kind, edge.target_value)
+            for edge in edges
+        }
+        self.assertIn(("domain", "example.com", "queried_whois_server", "whois-server", "whois.verisign-grs.com"), edge_keys)
+        self.assertIn(("domain", "example.com", "referred_whois_server", "whois-server", "whois.example-registrar.test"), edge_keys)
+        self.assertIn(("domain", "example.com", "registered_via", "registrar", "Example Registrar, Inc."), edge_keys)
+
     def test_page_email_metadata_edges(self):
         target = ScanTarget(kind="domain", value="example.com")
         findings = (

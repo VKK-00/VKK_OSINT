@@ -9,6 +9,7 @@ from ..engine import Finding, RunConfig, ScanTarget
 from ..http_client import HttpClient, HttpResult
 from ..web_crawler import CrawlResult, crawl_metadata, crawl_public_site
 from ..web_extract import extract_public_emails, split_emails_by_domain
+from ..whois_lookup import WhoisDomainRecord, lookup_whois_domain
 
 SECURITY_HEADERS = (
     "strict-transport-security",
@@ -115,6 +116,15 @@ class DomainScanModule:
                     evidence="Dry run only. Pass --live to query RDAP domain registration data.",
                     metadata={"domain": domain, "provider": "rdap.org"},
                 ),
+                Finding(
+                    module=self.name,
+                    source="whois-domain",
+                    target=target.value,
+                    status="planned",
+                    confidence="not_checked",
+                    evidence="Dry run only. Pass --live to query raw WHOIS domain registration text.",
+                    metadata={"domain": domain, "provider": "whois"},
+                ),
             )
 
         findings: list[Finding] = []
@@ -140,6 +150,7 @@ class DomainScanModule:
         findings.append(_web_crawl(self.name, target.value, domain, crawl))
         findings.append(_certificate_transparency(self.name, target.value, domain, client))
         findings.append(_rdap_domain(self.name, target.value, domain, client))
+        findings.append(_whois_domain(self.name, target.value, domain, timeout=config.timeout))
         return tuple(findings)
 
 
@@ -499,6 +510,59 @@ def _rdap_domain(module: str, original: str, domain: str, client: HttpClient) ->
         evidence="RDAP domain registration record found.",
         metadata=metadata,
     )
+
+
+def _whois_domain(module: str, original: str, domain: str, *, timeout: float) -> Finding:
+    record = lookup_whois_domain(domain, timeout=timeout)
+    metadata = _whois_metadata(record)
+    if record.error:
+        return Finding(
+            module=module,
+            source="whois-domain",
+            target=original,
+            status="error",
+            confidence="low",
+            evidence=record.error,
+            metadata=metadata,
+        )
+    if not record.found:
+        return Finding(
+            module=module,
+            source="whois-domain",
+            target=original,
+            status="not_found",
+            confidence="medium",
+            evidence="WHOIS returned no domain registration record.",
+            metadata=metadata,
+        )
+    return Finding(
+        module=module,
+        source="whois-domain",
+        target=original,
+        status="candidate",
+        confidence="medium",
+        evidence="WHOIS domain registration record found; contact-like raw values are not copied into evidence.",
+        metadata=metadata,
+    )
+
+
+def _whois_metadata(record: WhoisDomainRecord) -> dict[str, str]:
+    return {
+        "domain": record.domain,
+        "provider": "whois",
+        "whois_server": record.server,
+        "whois_referral_server": record.referral_server,
+        "registrar": record.registrar,
+        "domain_statuses": ", ".join(record.statuses),
+        "nameservers": ", ".join(record.nameservers[:RDAP_NAMESERVER_LIMIT]),
+        "nameserver_count": str(len(record.nameservers)),
+        "nameservers_truncated": "yes" if len(record.nameservers) > RDAP_NAMESERVER_LIMIT else "no",
+        "created_at": record.created_at,
+        "updated_at": record.updated_at,
+        "expires_at": record.expires_at,
+        "raw_line_count": str(record.raw_line_count),
+        "raw_text_available": "yes" if record.raw_line_count else "no",
+    }
 
 
 def parse_rdap_domain_record(body_text: str, domain: str) -> RdapDomainRecord:
