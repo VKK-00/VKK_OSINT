@@ -27,6 +27,10 @@ SNOOP_LINE_RE = re.compile(
     r"^\s*(?:\[[+\-]\]\s*)?(?P<site>[^:]{2,120}):\s*(?P<rest>.+?)\s*$",
     re.IGNORECASE,
 )
+SHERLOCK_LINE_RE = re.compile(
+    r"^\s*(?:\[(?P<marker>[+\-])\]\s*)?(?P<site>[^:]{2,120}):\s*(?P<rest>.+?)\s*$",
+    re.IGNORECASE,
+)
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 PARSER_REPOSITORIES = {
@@ -69,6 +73,8 @@ def parse_adapter_output(
     if not text or repository not in PARSER_REPOSITORIES:
         return ()
 
+    if repository == "sherlock-project/sherlock":
+        return _sherlock_findings(repository, target, text)
     if repository == "kaifcodec/user-scanner":
         return _user_scanner_findings(repository, target, text)
     if repository == "snooppr/snoop":
@@ -1457,6 +1463,284 @@ def _truthy(value: object) -> bool:
 def _append_if(findings: list[Finding], finding: Finding | None) -> None:
     if finding:
         findings.append(finding)
+
+
+def _sherlock_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    for row in _sherlock_csv_rows(text):
+        finding = _sherlock_record_finding(repository, target, row, seen)
+        if finding:
+            findings.append(finding)
+
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact:
+            continue
+        if compact.lower().startswith("total websites username detected on"):
+            continue
+        if _looks_like_sherlock_csv_line(compact):
+            continue
+        finding = _sherlock_line_finding(repository, target, compact, seen)
+        if finding:
+            findings.append(finding)
+            continue
+        findings.extend(_sherlock_txt_url_findings(repository, target, compact, seen))
+    return tuple(findings)
+
+
+def _sherlock_csv_rows(text: str) -> tuple[dict[str, str], ...]:
+    lines = [line for line in text.strip("\ufeff \n\t").splitlines() if line.strip()]
+    header_index = -1
+    for index, line in enumerate(lines):
+        normalized = line.strip("\ufeff ").lower()
+        if normalized.startswith("username,name,url_main,url_user,exists,http_status,response_time_s"):
+            header_index = index
+            break
+    if header_index == -1:
+        return ()
+
+    reader = csv.DictReader(io.StringIO("\n".join(lines[header_index:])))
+    rows: list[dict[str, str]] = []
+    for row in reader:
+        if row and any(value for value in row.values() if value):
+            rows.append({(key or "").strip("\ufeff "): (value or "").strip() for key, value in row.items()})
+    return tuple(rows)
+
+
+def _looks_like_sherlock_csv_line(line: str) -> bool:
+    lowered = line.strip("\ufeff ").lower()
+    if lowered.startswith("username,name,url_main,url_user,exists,http_status,response_time_s"):
+        return True
+    return line.count(",") >= 6 and "://" in line
+
+
+def _sherlock_record_finding(
+    repository: str,
+    target: ScanTarget,
+    row: dict[str, str],
+    seen: set[tuple[str, str, str]],
+) -> Finding | None:
+    site_name = _csv_row_value(row, "name")
+    identity = _csv_row_value(row, "username") or target.value
+    url = _csv_row_value(row, "url_user")
+    site_url = _csv_row_value(row, "url_main")
+    raw_status = _csv_row_value(row, "exists")
+    http_status = _csv_row_value(row, "http_status")
+    response_time_s = _csv_row_value(row, "response_time_s")
+    if not site_name and not url and not raw_status:
+        return None
+    return _sherlock_finding(
+        repository=repository,
+        target=target,
+        site_name=site_name,
+        identity=identity,
+        raw_status=raw_status,
+        url=url,
+        site_url=site_url,
+        http_status=http_status,
+        response_time_s=response_time_s,
+        evidence="",
+        seen=seen,
+    )
+
+
+def _sherlock_line_finding(
+    repository: str,
+    target: ScanTarget,
+    line: str,
+    seen: set[tuple[str, str, str]],
+) -> Finding | None:
+    match = SHERLOCK_LINE_RE.match(_strip_prefix(line))
+    if not match:
+        return None
+
+    site_name = " ".join(match.group("site").split()).strip()
+    rest = match.group("rest").strip()
+    marker = (match.group("marker") or "").strip()
+    if not site_name or site_name.lower() in {"checking username", "search completed with"}:
+        return None
+
+    raw_status = _sherlock_status_from_line(marker, rest)
+    url = rest if rest.startswith(("http://", "https://")) else ""
+    return _sherlock_finding(
+        repository=repository,
+        target=target,
+        site_name=site_name,
+        identity=target.value,
+        raw_status=raw_status,
+        url=url,
+        site_url="",
+        http_status="",
+        response_time_s="",
+        evidence=line,
+        seen=seen,
+    )
+
+
+def _sherlock_txt_url_findings(
+    repository: str,
+    target: ScanTarget,
+    line: str,
+    seen: set[tuple[str, str, str]],
+) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    for raw_url in URL_RE.findall(line):
+        url = raw_url.rstrip(".,;")
+        finding = _sherlock_finding(
+            repository=repository,
+            target=target,
+            site_name=(urlparse(url).hostname or "").lower(),
+            identity=target.value,
+            raw_status="Claimed",
+            url=url,
+            site_url="",
+            http_status="",
+            response_time_s="",
+            evidence=line,
+            seen=seen,
+        )
+        if finding:
+            findings.append(finding)
+    return tuple(findings)
+
+
+def _sherlock_finding(
+    *,
+    repository: str,
+    target: ScanTarget,
+    site_name: str,
+    identity: str,
+    raw_status: str,
+    url: str,
+    site_url: str,
+    http_status: str,
+    response_time_s: str,
+    evidence: str,
+    seen: set[tuple[str, str, str]],
+) -> Finding | None:
+    normalized_status = _sherlock_normalize_status(raw_status)
+    status, confidence = _sherlock_status(normalized_status)
+    finding_url = url if status == "candidate" and url.startswith(("http://", "https://")) else ""
+    if finding_url:
+        url_key = ("sherlock-url", identity.lower(), finding_url.lower())
+        if url_key in seen:
+            return None
+        seen.add(url_key)
+    key = ("sherlock", site_name.lower(), identity.lower(), normalized_status.lower(), (url or site_url).lower())
+    if key in seen:
+        return None
+    seen.add(key)
+
+    metadata = _sherlock_metadata(
+        repository=repository,
+        site_name=site_name,
+        raw_status=normalized_status,
+        identity=identity,
+        url=finding_url,
+        checked_url="" if finding_url else url,
+        site_url=site_url,
+        http_status=http_status,
+        response_time_s=response_time_s,
+    )
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status=status,
+        url=finding_url,
+        confidence=confidence,
+        evidence=_short(evidence or _sherlock_evidence(site_name, normalized_status, url)),
+        metadata=metadata,
+    )
+
+
+def _sherlock_status_from_line(marker: str, value: str) -> str:
+    normalized = " ".join(value.lower().strip(" !").split())
+    if value.startswith(("http://", "https://")) or marker == "+":
+        return "Claimed"
+    if "not found" in normalized:
+        return "Available"
+    if "illegal username" in normalized:
+        return "Illegal"
+    if "blocked by bot detection" in normalized or "waf" in normalized:
+        return "WAF"
+    return "Unknown"
+
+
+def _sherlock_normalize_status(raw_status: str) -> str:
+    normalized = " ".join(str(raw_status).strip(" !").split())
+    lowered = normalized.lower()
+    if lowered in {"claimed", "found", "true"}:
+        return "Claimed"
+    if lowered in {"available", "not found", "false"}:
+        return "Available"
+    if lowered in {"illegal", "illegal username format for this site"}:
+        return "Illegal"
+    if lowered in {"waf", "blocked by bot detection"}:
+        return "WAF"
+    if lowered in {"unknown", "error"}:
+        return "Unknown"
+    return normalized or "Unknown"
+
+
+def _sherlock_status(raw_status: str) -> tuple[str, str]:
+    normalized = raw_status.lower()
+    if normalized == "claimed":
+        return "candidate", "high"
+    if normalized == "available":
+        return "not_found", "medium"
+    if normalized == "illegal":
+        return "skipped", "high"
+    if normalized == "waf":
+        return "error", "low"
+    if normalized == "unknown":
+        return "error", "low"
+    return "observed", "medium"
+
+
+def _sherlock_metadata(
+    *,
+    repository: str,
+    site_name: str,
+    raw_status: str,
+    identity: str,
+    url: str,
+    checked_url: str,
+    site_url: str,
+    http_status: str,
+    response_time_s: str,
+) -> dict[str, str]:
+    metadata = {
+        "repository": repository,
+        "parser": "sherlock",
+        "raw_status": raw_status,
+        "username": identity,
+    }
+    if site_name:
+        metadata["site_name"] = site_name
+    if url:
+        metadata["url"] = url
+        domain = (urlparse(url).hostname or "").lower()
+        if domain:
+            metadata["domain"] = domain
+    if checked_url:
+        metadata["checked_url"] = checked_url
+    if site_url:
+        metadata["site_url"] = site_url
+    if http_status:
+        metadata["http_status"] = http_status
+    if response_time_s:
+        metadata["response_time_s"] = response_time_s
+    return metadata
+
+
+def _sherlock_evidence(site_name: str, raw_status: str, url: str) -> str:
+    evidence = f"Sherlock {site_name or 'site'}: {raw_status or 'observed'}"
+    if url:
+        evidence += f" {url}"
+    return evidence
 
 
 def _maigret_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:

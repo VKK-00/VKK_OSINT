@@ -25,7 +25,38 @@ class AdapterParserTests(unittest.TestCase):
         self.assertIn("https://github.com/example_user", urls)
         self.assertIn("https://www.reddit.com/user/example_user", urls)
         self.assertTrue(all(finding.module == "external-adapter-parser" for finding in findings))
-        self.assertTrue(any(finding.metadata["source_label"] == "GitHub" for finding in findings))
+        self.assertTrue(any(finding.metadata["site_name"] == "GitHub" for finding in findings))
+        instagram = next(finding for finding in findings if finding.metadata["site_name"] == "Instagram")
+        self.assertEqual(instagram.status, "not_found")
+        self.assertEqual(instagram.metadata["raw_status"], "Available")
+
+    def test_parse_sherlock_csv_report(self):
+        findings = parse_adapter_output(
+            "sherlock-project/sherlock",
+            ScanTarget(kind="username", value="example_user"),
+            """
+            username,name,url_main,url_user,exists,http_status,response_time_s
+            example_user,GitHub,https://github.com,https://github.com/example_user,Claimed,200,0.12
+            example_user,Instagram,https://www.instagram.com,https://www.instagram.com/example_user,Available,404,0.08
+            example_user,TikTok,https://www.tiktok.com,https://www.tiktok.com/@example_user,WAF,403,0.30
+            example_user,Chess,https://chess.example,https://chess.example/example_user,Illegal,,0.01
+            """,
+        )
+
+        statuses = {finding.metadata["site_name"]: finding.status for finding in findings}
+        self.assertEqual(statuses["GitHub"], "candidate")
+        self.assertEqual(statuses["Instagram"], "not_found")
+        self.assertEqual(statuses["TikTok"], "error")
+        self.assertEqual(statuses["Chess"], "skipped")
+
+        github = next(finding for finding in findings if finding.metadata["site_name"] == "GitHub")
+        instagram = next(finding for finding in findings if finding.metadata["site_name"] == "Instagram")
+        self.assertEqual(github.url, "https://github.com/example_user")
+        self.assertEqual(github.metadata["domain"], "github.com")
+        self.assertEqual(github.metadata["http_status"], "200")
+        self.assertEqual(github.metadata["response_time_s"], "0.12")
+        self.assertEqual(instagram.url, "")
+        self.assertEqual(instagram.metadata["checked_url"], "https://www.instagram.com/example_user")
 
     def test_parse_mosint_style_key_values(self):
         findings = parse_adapter_output(
@@ -550,6 +581,46 @@ class AdapterParserTests(unittest.TestCase):
         self.assertEqual(findings[0].module, "external-adapter")
         self.assertEqual(findings[0].status, "completed")
         self.assertTrue(any(finding.url == "https://github.com/example_user" for finding in findings[1:]))
+
+    def test_run_sherlock_adapter_reads_generated_csv_report_after_execution(self):
+        def fake_run(args, **kwargs):
+            self.assertIn("--csv", args)
+            self.assertIn("--txt", args)
+            self.assertIn("--print-all", args)
+            output_dir = Path(args[args.index("--folderoutput") + 1])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "example_user.csv").write_text(
+                "username,name,url_main,url_user,exists,http_status,response_time_s\n"
+                "example_user,GitHub,https://github.com,https://github.com/example_user,Claimed,200,0.1\n"
+                "example_user,Instagram,https://www.instagram.com,https://www.instagram.com/example_user,Available,404,0.1\n",
+                encoding="utf-8",
+            )
+            (output_dir / "example_user.txt").write_text(
+                "https://github.com/example_user\nTotal Websites Username Detected On : 1\n",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="Search completed\n", stderr="")
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="sherlock"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            findings = run_adapter_findings(
+                "sherlock-project/sherlock",
+                ScanTarget(kind="username", value="example_user"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertEqual(findings[0].metadata["generated_output_files"], "2")
+        self.assertIn("--folderoutput", findings[0].metadata["command"])
+        statuses = {finding.metadata.get("site_name"): finding.status for finding in findings[1:]}
+        self.assertEqual(statuses["GitHub"], "candidate")
+        self.assertEqual(statuses["Instagram"], "not_found")
+        self.assertEqual(
+            sum(1 for finding in findings[1:] if finding.url == "https://github.com/example_user"),
+            1,
+        )
 
     def test_run_maigret_adapter_reads_generated_json_report_after_execution(self):
         def fake_run(args, **kwargs):

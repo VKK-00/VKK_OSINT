@@ -19,6 +19,11 @@ class AdapterSetupTests(unittest.TestCase):
         self.assertEqual(setup.install_kind, "pipx")
         self.assertEqual(setup.install_command, "pipx install sherlock-project")
         self.assertIn("sherlockproject.xyz", setup.docs_url)
+        self.assertEqual(
+            adapter.render_output_dir_args("C:\\tmp\\sherlock"),
+            ("--no-color", "--print-all", "--csv", "--txt", "--folderoutput", "C:\\tmp\\sherlock"),
+        )
+        self.assertEqual(adapter.generated_output_patterns, ("*.csv", "*.txt"))
 
     def test_setup_reports_ready_when_executable_exists(self):
         adapter = find_adapter("soxoj/maigret")

@@ -42,6 +42,8 @@ python -m osint_toolkit scan username <username> --live
 - executable target-specific adapter для `kaifcodec/user-scanner`: `user-scanner -u <username> -f json`;
 - executable RU/UA-aware adapter для `snooppr/snoop`: `snoop --no-func --found-print [--include RU|UA] <username>`;
 - parser для Snoop stdout/CSV results: `найден!` -> `candidate`, `Увы!` -> `not_found`, `блок`/ошибки -> `error`;
+- executable adapter для `sherlock-project/sherlock`: при `--execute` добавляются `--no-color --print-all --csv --txt --folderoutput <tempdir>`;
+- parser для Sherlock stdout и CSV/TXT reports: `Claimed` -> `candidate`, `Available` -> `not_found`, `Unknown`/`WAF` -> `error`, `Illegal` -> `skipped`;
 - `investigate --person` автоматически прогоняет derived username targets через native username scan и совместимые adapters при `--include-adapters`.
 
 Связанные upstream-проекты:
@@ -252,8 +254,9 @@ python -m osint_toolkit adapter-setup <repository>
 - timeout handling;
 - restricted adapter guard via `--allow-restricted`;
 - `run_adapter_findings()` returns summary + parsed findings;
-- stdout parser for common URL/email/phone/key-value lines from Sherlock/Maigret/Nexfil/Mosint/PhoneInfoga-like output;
+- stdout parser for common URL/email/phone/key-value lines from Nexfil-like output;
 - generated report ingestion: adapters can run with a temporary output folder or temporary output file and feed generated files back into `parse_adapter_output()`;
+- adapter-specific parser for Sherlock stdout and generated CSV/TXT report rows;
 - adapter-specific parser for Mosint JSON report rows with credential-value redaction;
 - adapter-specific parser for h8mail JSON report rows with credential-value redaction;
 - adapter-specific parser for Maigret NDJSON/simple JSON and CSV report rows;
@@ -266,7 +269,7 @@ python -m osint_toolkit adapter-setup <repository>
 Gap:
 
 - нет автоматической установки upstream CLI;
-- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV и PhoneInfoga CLI/API output;
+- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV и PhoneInfoga CLI/API output;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.
 
