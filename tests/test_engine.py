@@ -66,6 +66,7 @@ class EngineTests(unittest.TestCase):
     def test_username_site_dataset_imports_sherlock_resource(self):
         sources = {site.name for site in USERNAME_SITES}
         imported_1337x = next(site for site in USERNAME_SITES if site.name == "1337x")
+        anilist = next(site for site in USERNAME_SITES if site.name == "Anilist")
 
         self.assertGreaterEqual(SHERLOCK_IMPORTED_SITE_COUNT, 450)
         self.assertGreaterEqual(len(USERNAME_SITES), 450)
@@ -73,6 +74,10 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(imported_1337x.url_template, "https://www.1337x.to/user/{username}/")
         self.assertEqual(imported_1337x.source_projects, ("sherlock",))
         self.assertIn("<head><title>404 Not Found</title></head>", imported_1337x.not_found_markers)
+        self.assertEqual(anilist.request_method, "POST")
+        self.assertEqual(anilist.url_template, "https://graphql.anilist.co/")
+        self.assertEqual(anilist.profile_url_template, "https://anilist.co/user/{username}/")
+        self.assertIn('"variables":{"name":"{username}"}', anilist.request_body_template)
 
     def test_curated_username_sites_take_precedence_over_sherlock_duplicates(self):
         github = next(site for site in USERNAME_SITES if site.name == "GitHub")
@@ -84,17 +89,23 @@ class EngineTests(unittest.TestCase):
         names = {site.name for site in USERNAME_SITES}
         gitlab_api = next(site for site in USERNAME_SITES if site.name == "GitLab (WhatsMyName)")
         ctf = next(site for site in USERNAME_SITES if site.name == "247CTF")
+        anilist = next(site for site in USERNAME_SITES if site.name == "AniList (WhatsMyName)")
 
-        self.assertGreaterEqual(WHATSMYNAME_IMPORTED_SITE_COUNT, 650)
+        self.assertGreaterEqual(WHATSMYNAME_IMPORTED_SITE_COUNT, 700)
         self.assertGreaterEqual(len(USERNAME_SITES), 1000)
         self.assertIn("Reddit (WhatsMyName)", names)
         self.assertEqual(gitlab_api.url_template, "https://gitlab.com/api/v4/users?username={username}")
+        self.assertEqual(gitlab_api.profile_url_template, "https://gitlab.com/{username}")
         self.assertEqual(gitlab_api.profile_markers, ('"id":',))
         self.assertEqual(gitlab_api.not_found_markers, ("[]",))
         self.assertEqual(gitlab_api.candidate_status_codes, (200,))
         self.assertEqual(gitlab_api.not_found_status_codes, (200,))
         self.assertEqual(ctf.source_projects, ("whatsmyname",))
         self.assertEqual(ctf.not_found_status_codes, (302,))
+        self.assertEqual(anilist.request_method, "POST")
+        self.assertEqual(anilist.url_template, "https://graphql.anilist.co")
+        self.assertIn('{User(name:\\"{username}\\")', anilist.request_body_template)
+        self.assertEqual(anilist.profile_url_template, "https://anilist.co/user/{username}")
 
     def test_username_site_dataset_imports_maigret_resource(self):
         instagram_api = next(site for site in USERNAME_SITES if site.name == "Instagram (Maigret)")
@@ -170,6 +181,65 @@ class EngineTests(unittest.TestCase):
             "https://example.com/realuser",
             fetch_title=True,
             headers={"User-Agent": "WhatsMyName-Test"},
+            method="GET",
+            body="",
+        )
+        self.assertEqual(findings[0].metadata["custom_headers"], "yes")
+
+    def test_username_live_scan_passes_post_body(self):
+        site = UsernameSite(
+            "Example",
+            "https://example.com/graphql",
+            profile_url_template="https://example.com/user/{username}",
+            request_method="POST",
+            request_body_template='{"username":"{username}","query":"query{literal}"}',
+            request_headers=(("Content-Type", "application/json"),),
+        )
+        with patch("osint_toolkit.modules.username.HttpClient.check") as check:
+            check.return_value = HttpResult(
+                url="https://example.com/graphql",
+                final_url="https://example.com/graphql",
+                status_code=200,
+            )
+            findings = Engine([UsernameScanModule(sites=(site,))]).scan(
+                ScanTarget(kind="username", value="realuser"),
+                RunConfig(live=True),
+            )
+
+        check.assert_called_once_with(
+            "https://example.com/graphql",
+            fetch_title=True,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+            body='{"username":"realuser","query":"query{literal}"}',
+        )
+        self.assertEqual(findings[0].metadata["request_method"], "POST")
+        self.assertEqual(findings[0].metadata["profile_url"], "https://example.com/user/realuser")
+
+    def test_username_live_scan_sets_json_content_type_for_post_body(self):
+        site = UsernameSite(
+            "Example",
+            "https://example.com/graphql",
+            request_method="POST",
+            request_body_template='{"username":"{username}"}',
+        )
+        with patch("osint_toolkit.modules.username.HttpClient.check") as check:
+            check.return_value = HttpResult(
+                url="https://example.com/graphql",
+                final_url="https://example.com/graphql",
+                status_code=200,
+            )
+            findings = Engine([UsernameScanModule(sites=(site,))]).scan(
+                ScanTarget(kind="username", value="realuser"),
+                RunConfig(live=True),
+            )
+
+        check.assert_called_once_with(
+            "https://example.com/graphql",
+            fetch_title=True,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+            body='{"username":"realuser"}',
         )
         self.assertEqual(findings[0].metadata["custom_headers"], "yes")
 

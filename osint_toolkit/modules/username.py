@@ -52,7 +52,18 @@ class UsernameScanModule:
             url = site.url_for(username)
             profile_url = site.profile_url_for(username)
             headers = dict(site.request_headers)
-            result = client.check(url, fetch_title=True, headers=headers or None)
+            request_body = site.request_body_for(username)
+            if site.request_method == "POST" and _looks_like_json(request_body):
+                header_names = {header.casefold() for header in headers}
+                if "content-type" not in header_names:
+                    headers["Content-Type"] = "application/json"
+            result = client.check(
+                url,
+                fetch_title=True,
+                headers=headers or None,
+                method=site.request_method,
+                body=request_body,
+            )
             classification = classify_username_http_result(site, username, result)
             metadata = {
                 "region": site.region,
@@ -63,6 +74,7 @@ class UsernameScanModule:
                 "source_projects": ", ".join(site.source_projects),
                 "requested_url": url,
                 "custom_headers": "yes" if headers else "no",
+                "request_method": site.request_method,
             }
             if profile_url:
                 metadata["profile_url"] = profile_url
@@ -151,6 +163,11 @@ def normalize_username(value: str) -> str:
     return value.strip().lstrip("@").strip()
 
 
+def _looks_like_json(value: str) -> bool:
+    stripped = value.lstrip()
+    return stripped.startswith("{") or stripped.startswith("[")
+
+
 def _planned_or_skipped_finding(module: str, original: str, username: str, site: UsernameSite) -> Finding:
     skip_reason = site.validate_username(username)
     if skip_reason:
@@ -164,6 +181,7 @@ def _planned_finding(module: str, original: str, username: str, site: UsernameSi
         "normalized_username": username,
         "rule_status": "matched",
         "source_projects": ", ".join(site.source_projects),
+        "request_method": site.request_method,
     }
     profile_url = site.profile_url_for(username)
     if profile_url:
@@ -186,6 +204,7 @@ def _skipped_finding(module: str, original: str, username: str, site: UsernameSi
         "normalized_username": username,
         "rule_status": "skipped",
         "source_projects": ", ".join(site.source_projects),
+        "request_method": site.request_method,
     }
     profile_url = site.profile_url_for(username)
     if profile_url:

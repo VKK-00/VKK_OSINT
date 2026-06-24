@@ -37,6 +37,8 @@ class UsernameSite:
     candidate_status_codes: tuple[int, ...] = ()
     not_found_status_codes: tuple[int, ...] = ()
     request_headers: tuple[tuple[str, str], ...] = ()
+    request_method: str = "GET"
+    request_body_template: str = ""
 
     def url_for(self, username: str) -> str:
         return self.url_template.format(username=username)
@@ -45,6 +47,9 @@ class UsernameSite:
         if not self.profile_url_template:
             return ""
         return self.profile_url_template.format(username=username)
+
+    def request_body_for(self, username: str) -> str:
+        return self.request_body_template.replace("{username}", username)
 
     def validate_username(self, username: str) -> str:
         if re.fullmatch(self.username_pattern, username):
@@ -293,18 +298,31 @@ def _sherlock_entry_to_username_site(name: str, entry: Any) -> UsernameSite | No
         return None
 
     url = entry.get("url")
-    if not isinstance(url, str) or "{}" not in url:
+    if not isinstance(url, str):
+        return None
+    request_method = entry.get("request_method")
+    request_method = request_method.upper() if isinstance(request_method, str) else "GET"
+    request_body_template = _sherlock_request_body_template(entry.get("request_payload")) if request_method == "POST" else ""
+    request_url = entry.get("urlProbe") if request_method == "POST" and isinstance(entry.get("urlProbe"), str) else url
+    has_url_username = "{}" in request_url
+    has_body_username = "{username}" in request_body_template
+    if not has_url_username and not has_body_username:
         return None
 
     username_pattern = _valid_regex(entry.get("regexCheck")) or DEFAULT_USERNAME_PATTERN
     rule_note = "Sherlock regexCheck" if username_pattern != DEFAULT_USERNAME_PATTERN else DEFAULT_USERNAME_RULE_NOTE
+    profile_url_template = url.replace("{}", "{username}") if request_method == "POST" and "{}" in url else ""
     return UsernameSite(
         name=name,
-        url_template=url.replace("{}", "{username}"),
+        url_template=request_url.replace("{}", "{username}"),
+        profile_url_template=profile_url_template,
         source_projects=(SHERLOCK_SOURCE_PROJECT,),
         username_pattern=username_pattern,
         rule_note=rule_note,
         not_found_markers=_string_tuple(entry.get("errorMsg")),
+        request_headers=_header_tuple(entry.get("headers")),
+        request_method=request_method if request_method == "POST" else "GET",
+        request_body_template=request_body_template,
     )
 
 
@@ -314,22 +332,29 @@ def _whatsmyname_entry_to_username_site(entry: Any) -> UsernameSite | None:
 
     name = entry.get("name")
     url = entry.get("uri_check")
-    if not isinstance(name, str) or not name or not isinstance(url, str) or "{account}" not in url:
+    post_body = entry.get("post_body")
+    has_url_account = isinstance(url, str) and "{account}" in url
+    has_body_account = isinstance(post_body, str) and "{account}" in post_body
+    if not isinstance(name, str) or not name or not isinstance(url, str):
+        return None
+    if not has_url_account and not has_body_account:
         return None
 
-    # Current native HTTP checks are GET-only; POST entries remain documented parity gaps.
-    if entry.get("post_body"):
-        return None
-
+    profile_url = entry.get("uri_pretty") if isinstance(entry.get("uri_pretty"), str) else ""
+    if profile_url:
+        profile_url = profile_url.replace("{account}", "{username}")
     return UsernameSite(
         name=name,
         url_template=url.replace("{account}", "{username}"),
+        profile_url_template=profile_url,
         source_projects=(WHATSMYNAME_SOURCE_PROJECT,),
         profile_markers=_string_tuple(entry.get("e_string")),
         not_found_markers=_string_tuple(entry.get("m_string")),
         candidate_status_codes=_int_tuple(entry.get("e_code")),
         not_found_status_codes=_int_tuple(entry.get("m_code")),
         request_headers=_header_tuple(entry.get("headers")),
+        request_method="POST" if has_body_account else "GET",
+        request_body_template=post_body.replace("{account}", "{username}") if has_body_account else "",
     )
 
 
@@ -414,6 +439,18 @@ def _header_tuple(value: Any) -> tuple[tuple[str, str], ...]:
         for key, header_value in value.items()
         if isinstance(key, str) and isinstance(header_value, str)
     )
+
+
+def _sherlock_request_body_template(value: Any) -> str:
+    if isinstance(value, str):
+        return value.replace("{}", "{username}") if "{}" in value else ""
+    if isinstance(value, (dict, list)):
+        try:
+            rendered = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        except (TypeError, ValueError):
+            return ""
+        return rendered.replace("{}", "{username}") if "{}" in rendered else ""
+    return ""
 
 
 def _merge_username_sites(

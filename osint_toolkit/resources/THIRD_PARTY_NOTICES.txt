@@ -4,7 +4,8 @@ File: sherlock_project/resources/data.json
 Snapshot commit: 206068d
 License: MIT
 
-The copied dataset is used as a native username profile URL template source.
+The copied dataset is used as a native username profile URL and POST check
+template source.
 Curated local site rules in osint_toolkit/sites.py take precedence over
 upstream-imported entries.
 
@@ -15,8 +16,8 @@ Snapshot commit: 7c44595
 License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
 
 The copied dataset is used as a native username check template source.
-GET-compatible entries are loaded into osint_toolkit/sites.py with attribution.
-POST-specific behavior is documented as remaining parity work.
+GET and POST-compatible entries are loaded into osint_toolkit/sites.py with
+attribution. External rate-limit/backoff behavior remains parity work.
 
 Maigret sanitized site dataset
 Source: https://github.com/soxoj/maigret

@@ -26,7 +26,19 @@ class HttpClient:
         self.user_agent = user_agent
         self.context = ssl.create_default_context()
 
-    def check(self, url: str, *, fetch_title: bool = False, headers: dict[str, str] | None = None) -> HttpResult:
+    def check(
+        self,
+        url: str,
+        *,
+        fetch_title: bool = False,
+        headers: dict[str, str] | None = None,
+        method: str = "GET",
+        body: str = "",
+    ) -> HttpResult:
+        method = method.upper()
+        if method == "POST":
+            return self._request(url, method="POST", read_body=True, headers=headers, body=body)
+
         head = self._request(url, method="HEAD", read_body=False, headers=headers)
         if head.status_code and head.status_code not in {405, 403}:
             if fetch_title and head.status_code < 400:
@@ -34,12 +46,21 @@ class HttpClient:
             return head
         return self._request(url, method="GET", read_body=fetch_title, headers=headers)
 
-    def _request(self, url: str, *, method: str, read_body: bool, headers: dict[str, str] | None = None) -> HttpResult:
+    def _request(
+        self,
+        url: str,
+        *,
+        method: str,
+        read_body: bool,
+        headers: dict[str, str] | None = None,
+        body: str = "",
+    ) -> HttpResult:
         request_headers = {"User-Agent": self.user_agent, "Accept": "text/html,application/xhtml+xml"}
         if headers:
             request_headers.update(headers)
         request = urllib.request.Request(
             url,
+            data=body.encode("utf-8") if method == "POST" else None,
             headers=request_headers,
             method=method,
         )
