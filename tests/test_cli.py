@@ -51,6 +51,19 @@ class CliTests(unittest.TestCase):
         self.assertIn("domain-baseline", result.stdout)
         self.assertIn("dns-resolution", result.stdout)
 
+    def test_scan_telegram_dry_run_command(self):
+        result = self.run_cli("scan", "telegram", "@durov")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("telegram-baseline", result.stdout)
+        self.assertIn("https://t.me/durov", result.stdout)
+
+    def test_scan_ru_ua_source_pack_command(self):
+        result = self.run_cli("scan", "ru-ua", "all", "--region", "ua", "--format", "markdown")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("DeepStateMap", result.stdout)
+        self.assertIn("paste.in.ua", result.stdout)
+        self.assertNotIn("| VK |", result.stdout)
+
     def test_adapters_command(self):
         result = self.run_cli("adapters", "--status", "partial_native")
         self.assertEqual(result.returncode, 0, result.stderr)

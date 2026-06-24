@@ -6,6 +6,8 @@ from osint_toolkit.engine import Engine, RunConfig, ScanTarget
 from osint_toolkit.modules import DomainScanModule, EmailScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
 from osint_toolkit.modules.domain import normalize_domain
 from osint_toolkit.modules.phone import detect_country, is_e164_like, normalize_phone
+from osint_toolkit.modules.ru_ua_sources import RuUaSourcePackModule
+from osint_toolkit.modules.telegram import TelegramScanModule, normalize_telegram_target
 
 
 class EngineTests(unittest.TestCase):
@@ -48,6 +50,36 @@ class EngineTests(unittest.TestCase):
     def test_domain_normalizer_rejects_invalid_values(self):
         self.assertEqual(normalize_domain("https://Example.COM/a"), "example.com")
         self.assertEqual(normalize_domain("not a domain"), "")
+
+    def test_telegram_scan_normalizes_handle_and_post_url(self):
+        engine = Engine([TelegramScanModule()])
+        handle = engine.scan(ScanTarget(kind="telegram", value="@durov"), RunConfig())
+        post = engine.scan(ScanTarget(kind="telegram", value="https://t.me/telegram/123"), RunConfig())
+
+        self.assertEqual(handle[0].url, "https://t.me/durov")
+        self.assertEqual(handle[0].metadata["target_type"], "handle")
+        self.assertEqual(post[0].url, "https://t.me/telegram/123")
+        self.assertEqual(post[0].metadata["target_type"], "post")
+
+    def test_telegram_normalizer_rejects_non_telegram_url(self):
+        self.assertIsNone(normalize_telegram_target("https://example.com/durov"))
+
+    def test_ru_ua_source_pack_filters_by_region(self):
+        engine = Engine([RuUaSourcePackModule()])
+        findings = engine.scan(ScanTarget(kind="ru-ua", value="all", region="ua"), RunConfig())
+        sources = {finding.source for finding in findings}
+
+        self.assertIn("DeepStateMap", sources)
+        self.assertIn("paste.in.ua", sources)
+        self.assertNotIn("VK", sources)
+
+    def test_ru_ua_source_pack_platforms_selector(self):
+        engine = Engine([RuUaSourcePackModule()])
+        findings = engine.scan(ScanTarget(kind="ru-ua", value="platforms", region="ru"), RunConfig())
+        sources = {finding.source for finding in findings}
+
+        self.assertIn("VK", sources)
+        self.assertIn("Odnoklassniki", sources)
 
     def test_email_scan_validates_syntax_and_plans_domain_resolution(self):
         engine = Engine([EmailScanModule()])

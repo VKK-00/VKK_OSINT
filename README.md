@@ -20,6 +20,8 @@
 - выполнять baseline email checks: синтаксис и live domain resolution;
 - выполнять baseline phone checks: E.164-like нормализация и префикс региона;
 - выполнять baseline domain recon: DNS resolution, HTTP/HTTPS metadata и security header presence;
+- нормализовать Telegram handles/t.me URLs и по `--live` получать public metadata;
+- выдавать RU/UA source pack: конфликтные карты, Telegram/RU platforms, geospatial и pastebin источники;
 - получать базовые web metadata по URL;
 - показывать карту upstream-адаптеров и dry-run/execute запускать настроенные внешние CLI;
 - получать безопасный workflow под задачу;
@@ -36,6 +38,8 @@ python -m osint_toolkit scan username example_user --region ru --live --limit 5
 python -m osint_toolkit scan email person@example.com --live
 python -m osint_toolkit scan phone +380441234567
 python -m osint_toolkit scan domain example.com --live
+python -m osint_toolkit scan telegram "@durov"
+python -m osint_toolkit scan ru-ua all --region ua
 python -m osint_toolkit scan url https://example.com --live
 python -m osint_toolkit adapters
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
@@ -95,6 +99,8 @@ python -m osint_toolkit scan username example_user --region ru --live --limit 10
 python -m osint_toolkit scan email person@example.com --live --format json
 python -m osint_toolkit scan phone +380441234567
 python -m osint_toolkit scan domain example.com --live
+python -m osint_toolkit scan telegram "@durov" --live
+python -m osint_toolkit scan ru-ua all --region ru --format markdown
 python -m osint_toolkit scan url https://example.com --live --format json
 ```
 
@@ -103,6 +109,8 @@ python -m osint_toolkit scan url https://example.com --live --format json
 Native email/phone modules являются baseline-слоем для Mosint/h8mail/pwnedOrNot/PhoneInfoga-подобных adapters. Они не делают account-enumeration и не запускают password recovery flows.
 
 Native domain module является baseline-слоем для web-check/theHarvester/SpiderFoot/Amass/Subfinder-подобного web/domain recon. Он не делает brute force, port scanning или subdomain enumeration.
+
+Native Telegram module покрывает нормализацию `@handle`, `t.me/<handle>` и публичных post URLs. RU/UA source-pack module отдаёт curated источники из текущей разметки top-100.
 
 ### `adapters`
 

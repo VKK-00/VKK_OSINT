@@ -21,6 +21,8 @@ CLI работает в двух режимах:
 - email baseline checks: синтаксис и live domain resolution;
 - phone baseline checks: нормализация, E.164-like validation и country-prefix signal;
 - domain baseline recon: DNS resolution, HTTP/HTTPS metadata и presence security headers;
+- Telegram baseline: handle/post URL normalization и optional live public metadata;
+- RU/UA source pack: curated карты, Telegram/RU platforms, geospatial и pastebin источники;
 - базовый web metadata scan по URL, совместимый с начальным web-check слоем;
 - external adapter dry-run/execute runner для настроенных upstream CLI;
 - dry-run режим без сетевых запросов по умолчанию;
@@ -59,6 +61,10 @@ CLI работает в двух режимах:
   - `PhoneScanModule` — нормализация и country-prefix сигнал для телефонных номеров.
 - `osint_toolkit/modules/domain.py`
   - `DomainScanModule` — DNS и HTTP/HTTPS baseline для доменов.
+- `osint_toolkit/modules/telegram.py`
+  - `TelegramScanModule` — нормализация Telegram handles/post URLs и live t.me metadata.
+- `osint_toolkit/modules/ru_ua_sources.py`
+  - `RuUaSourcePackModule` — curated RU/UA source pack.
 - `osint_toolkit/modules/web.py`
   - `WebMetadataModule` — HTTP status/final URL/title.
 - `osint_toolkit/adapters.py`
@@ -152,6 +158,8 @@ python -m osint_toolkit scan username example_user --region ru --live --limit 5
 python -m osint_toolkit scan email person@example.com --live
 python -m osint_toolkit scan phone +380441234567
 python -m osint_toolkit scan domain example.com --live
+python -m osint_toolkit scan telegram "@durov"
+python -m osint_toolkit scan ru-ua all --region ua
 python -m osint_toolkit scan url https://example.com --live
 python -m osint_toolkit adapters
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
@@ -195,6 +203,8 @@ osint-toolkit stats
 - Первый native username module покрывает только URL-template/status-code слой, а не всю логику Sherlock/Maigret: нет полного upstream site dataset, custom error rules, rate-limit logic и enrichment.
 - Native email module пока не делает MX lookup, breach lookup или external API enrichment.
 - Native phone module пока не делает carrier lookup, reputation lookup или external API enrichment.
+- Telegram module пока не использует Telegram API и не получает private/group data.
+- RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.

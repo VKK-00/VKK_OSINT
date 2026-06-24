@@ -149,6 +149,23 @@ Gap:
 - `Jieyab89/OSINT-Cheat-sheet`
 - `BigBodyCobain/Shadowbroker`
 
+Уже реализовано:
+
+- `python -m osint_toolkit scan telegram <handle-or-url>`;
+- normalization for `@handle`, `t.me/<handle>` and public post URLs;
+- optional live t.me metadata by explicit `--live`;
+- `python -m osint_toolkit scan ru-ua all`;
+- region filters `--region ru` and `--region ua`;
+- curated source pack for DeepStateMap, Liveuamap, TGStat RU, VK, OK, Yandex, Mail.ru, Geocam.ru and paste.in.ua.
+
+Gap:
+
+- нет Telegram API integration;
+- нет message export/archive;
+- нет channel graph;
+- нет VK/OK/Yandex API adapters;
+- нет automated refresh from upstream lists.
+
 План:
 
 1. Native: Telegram public URL normalization: `t.me/<name>`, post URLs, channel/group distinction where public.
