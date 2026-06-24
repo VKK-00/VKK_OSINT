@@ -78,11 +78,11 @@ Gap до полного 1:1:
 - `python -m osint_toolkit scan email <email>`;
 - синтаксическая проверка;
 - извлечение домена;
-- live domain resolution по явному `--live`.
+- live domain resolution по явному `--live`;
+- MX/TXT lookup через системный `nslookup` по явному `--live`.
 
 Gap:
 
-- нет MX lookup;
 - нет breach lookup;
 - нет API enrichment;
 - нет локального кэша;
@@ -90,7 +90,7 @@ Gap:
 
 План:
 
-1. Native: нормализация email, домен, MX/NS/TXT через системный resolver или optional DNS dependency.
+1. Native: расширить DNS слой до NS/DMARC/дополнительных TXT classifiers.
 2. Adapter: `mosint`, `h8mail`, `pwnedOrNot`.
 3. Restricted adapter: `holehe`, `email2phonenumber`, любые recovery/account-enumeration flows.
 

@@ -22,7 +22,7 @@ CLI работает в трёх режимах:
 - username public profile checks по 38 URL-шаблонам, совместимые по классу задачи с Sherlock/Maigret/WhatsMyName/Nexfil;
 - platform-specific username rules: несовместимые site checks возвращаются как `skipped`, без построения заведомо неверного URL;
 - content marker rules для live username checks: profile markers повышают confidence, soft-404 markers дают `not_found`;
-- email baseline checks: синтаксис и live domain resolution;
+- email baseline checks: синтаксис, live domain resolution, MX и TXT lookup;
 - phone baseline checks: нормализация, E.164-like validation и country-prefix signal;
 - domain baseline recon: DNS resolution, HTTP/HTTPS metadata и presence security headers;
 - Telegram baseline: handle/post URL normalization и optional live public metadata;
@@ -80,7 +80,10 @@ CLI работает в трёх режимах:
   - `PersonNameScanModule` — safe person-name expansion в username-кандидаты.
   - `generate_username_candidates()` — стабильные варианты `firstlast`, `first.last`, `first_initial_last` и RU/UA transliteration.
 - `osint_toolkit/modules/email.py`
-  - `EmailScanModule` — базовая проверка email: синтаксис и доменное разрешение.
+  - `EmailScanModule` — базовая проверка email: синтаксис, доменное разрешение, MX/TXT lookup.
+- `osint_toolkit/dns_lookup.py`
+  - `lookup_dns_records()` — запуск системного `nslookup` для MX/TXT без дополнительных Python-зависимостей.
+  - `parse_nslookup_records()` — parser Windows/Unix-style `nslookup` output для MX/TXT.
 - `osint_toolkit/modules/phone.py`
   - `PhoneScanModule` — нормализация и country-prefix сигнал для телефонных номеров.
 - `osint_toolkit/modules/domain.py`
@@ -204,6 +207,10 @@ Case-store поток:
 
 `CLI target -> ScanTarget -> Engine -> ScanModule[] -> Finding[] planned/skipped/live -> table/Markdown/CSV/JSON`
 
+Email DNS enrichment:
+
+`email -> domain -> socket.getaddrinfo + nslookup MX/TXT -> Finding[]`
+
 Person expansion:
 
 `person seed -> PersonNameScanModule -> username candidates -> derived username ScanTarget[] -> UsernameScanModule/adapters -> Entity[]/GraphEdge[]`
@@ -232,6 +239,8 @@ Investigation:
 
 Native live-модули используют публичные HTTP(S) URL checks через стандартную библиотеку Python. Для username live checks сохраняется только ограниченный текст ответа в памяти процесса, чтобы применить content marker rules; на диск body не пишется.
 
+Email live-модуль использует `socket.getaddrinfo()` и системный `nslookup` для MX/TXT. Если `nslookup` недоступен, результат DNS-записи возвращается как `missing`, а не как падение команды.
+
 SQLite используется локально через стандартную библиотеку `sqlite3`; внешнего сервера БД нет.
 
 Будущие external adapters должны подключать upstream CLI/API без копирования кода, если лицензия, масштаб или язык проекта делают прямой перенос неразумным.
@@ -247,6 +256,7 @@ SQLite используется локально через стандартну
 - `--out` — путь Markdown-файла для `brief`.
 - `scan --live` — явное разрешение сетевых проверок.
 - `scan --timeout` — HTTP timeout.
+- `scan email --live` — дополнительно делает domain resolution и MX/TXT lookup.
 - `scan --region` — фильтр URL-шаблонов или workflow по региону.
 - `investigate --person` — повторяемое имя человека для username expansion.
 - `investigate --include-adapters` — добавить dry-run команды совместимых upstream adapters.
@@ -351,7 +361,7 @@ osint-toolkit stats
 - Качество и безопасность внешних репозиториев не аудированы.
 - Native person-name expansion пока использует базовые шаблоны имени/фамилии и RU/UA transliteration; нет словарей никнеймов, исторических alias и platform-specific username rules.
 - Первый native username module покрывает URL-template/status-code слой, часть platform syntax rules и часть content marker rules, но не всю логику Sherlock/Maigret: нет полного upstream site dataset, полного набора custom content error rules, rate-limit logic и enrichment.
-- Native email module пока не делает MX lookup, breach lookup или external API enrichment.
+- Native email module делает MX/TXT lookup, но пока не делает breach lookup, DMARC classifier или external API enrichment.
 - Native phone module пока не делает carrier lookup, reputation lookup или external API enrichment.
 - Telegram module пока не использует Telegram API и не получает private/group data.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
@@ -370,6 +380,7 @@ osint-toolkit stats
 - При добавлении native-модуля обновлять `engine.py`, `cli.py`, README и тесты.
 - При изменении username site dataset/rules обновлять `sites.py`, username tests, README и parity-карту.
 - При изменении HTTP body/title parsing обновлять `http_client.py`, username classifier tests и safety notes в README/analysis.
+- При изменении DNS lookup обновлять `dns_lookup.py`, email tests, README и parity-карту.
 - При изменении person-name expansion обновлять `modules/person.py`, graph/entity mapping, investigation tests и parity-карту.
 - При подключении upstream-проекта обновлять `adapters.py`, указать лицензию, режим интеграции и parity gap.
 - При изменении adapter profiles обновлять `adapters.py`, CLI-тесты, README и parity-карту.
@@ -400,3 +411,4 @@ osint-toolkit stats
 - 2026-06-24: добавлены `PersonNameScanModule`, `scan person` и `investigate --person` с derived username scan/adapters и graph-связью `person -> username`.
 - 2026-06-24: расширен native username dataset до 38 URL-шаблонов и добавлены platform-specific username rules со статусом `skipped`.
 - 2026-06-24: добавлены `HttpResult.body_text`, username content marker rules и `classify_username_http_result()` для soft-404/profile confidence в live checks.
+- 2026-06-24: добавлен `dns_lookup.py`; `EmailScanModule` теперь планирует и выполняет MX/TXT lookup через `nslookup` в live-режиме.

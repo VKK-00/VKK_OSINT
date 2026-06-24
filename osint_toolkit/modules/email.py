@@ -4,6 +4,7 @@ import re
 import socket
 from dataclasses import dataclass
 
+from ..dns_lookup import DnsLookupResult, lookup_dns_records
 from ..engine import Finding, RunConfig, ScanTarget
 
 EMAIL_RE = re.compile(
@@ -57,6 +58,8 @@ class EmailScanModule:
                     metadata={"domain": domain},
                 )
             )
+            findings.append(_planned_dns_record_finding(self.name, value, domain, "MX"))
+            findings.append(_planned_dns_record_finding(self.name, value, domain, "TXT"))
             return tuple(findings)
 
         try:
@@ -86,5 +89,44 @@ class EmailScanModule:
                     metadata={"domain": domain, "address_families": ", ".join(families)},
                 )
             )
+
+        for record_type in ("MX", "TXT"):
+            result = lookup_dns_records(domain, record_type, timeout=config.timeout)
+            findings.append(_dns_record_finding(self.name, value, result))
         return tuple(findings)
 
+
+def _planned_dns_record_finding(module: str, email: str, domain: str, record_type: str) -> Finding:
+    return Finding(
+        module=module,
+        source=f"{record_type.lower()}-records",
+        target=email,
+        status="planned",
+        confidence="not_checked",
+        evidence=f"Dry run only. Pass --live to query {record_type} records for the email domain.",
+        metadata={"domain": domain, "record_type": record_type},
+    )
+
+
+def _dns_record_finding(module: str, email: str, result: DnsLookupResult) -> Finding:
+    confidence = {
+        "candidate": "medium",
+        "not_found": "medium",
+        "missing": "low",
+        "timeout": "low",
+        "error": "low",
+    }.get(result.status, "unknown")
+    return Finding(
+        module=module,
+        source=f"{result.record_type.lower()}-records",
+        target=email,
+        status=result.status,
+        confidence=confidence,
+        evidence=result.evidence(),
+        metadata={
+            "domain": result.domain,
+            "record_type": result.record_type,
+            "records": " | ".join(result.records),
+            "raw_excerpt": result.raw_excerpt,
+        },
+    )

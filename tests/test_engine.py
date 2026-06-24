@@ -1,7 +1,10 @@
+import socket
 import unittest
+from unittest.mock import patch
 
 from osint_toolkit.adapters import filter_adapters
 from osint_toolkit.adapter_runner import run_adapter, run_adapter_findings
+from osint_toolkit.dns_lookup import DnsLookupResult
 from osint_toolkit.doctor import inspect_adapters
 from osint_toolkit.engine import Engine, RunConfig, ScanTarget
 from osint_toolkit.http_client import HttpResult
@@ -198,11 +201,45 @@ class EngineTests(unittest.TestCase):
         engine = Engine([EmailScanModule()])
         findings = engine.scan(ScanTarget(kind="email", value="person@example.com"), RunConfig())
 
-        self.assertEqual(len(findings), 2)
+        self.assertEqual(len(findings), 4)
         self.assertEqual(findings[0].source, "syntax")
         self.assertEqual(findings[0].status, "valid")
         self.assertEqual(findings[1].source, "domain-resolution")
         self.assertEqual(findings[1].status, "planned")
+        self.assertEqual(findings[2].source, "mx-records")
+        self.assertEqual(findings[2].status, "planned")
+        self.assertEqual(findings[3].source, "txt-records")
+        self.assertEqual(findings[3].status, "planned")
+
+    def test_email_scan_live_adds_mx_and_txt_records(self):
+        def fake_lookup(domain, record_type, *, timeout=10.0):
+            if record_type == "MX":
+                return DnsLookupResult(
+                    domain=domain,
+                    record_type=record_type,
+                    status="candidate",
+                    records=("10 mail.example.com",),
+                )
+            return DnsLookupResult(
+                domain=domain,
+                record_type=record_type,
+                status="candidate",
+                records=("v=spf1 -all",),
+            )
+
+        with patch("osint_toolkit.modules.email.socket.getaddrinfo", return_value=[(socket.AF_INET, None, None, "", ("93.184.216.34", 0))]), patch(
+            "osint_toolkit.modules.email.lookup_dns_records",
+            side_effect=fake_lookup,
+        ):
+            findings = Engine([EmailScanModule()]).scan(
+                ScanTarget(kind="email", value="person@example.com"),
+                RunConfig(live=True),
+            )
+
+        sources = {finding.source: finding for finding in findings}
+        self.assertEqual(sources["domain-resolution"].status, "candidate")
+        self.assertEqual(sources["mx-records"].metadata["records"], "10 mail.example.com")
+        self.assertEqual(sources["txt-records"].metadata["records"], "v=spf1 -all")
 
     def test_email_scan_rejects_invalid_input(self):
         engine = Engine([EmailScanModule()])
