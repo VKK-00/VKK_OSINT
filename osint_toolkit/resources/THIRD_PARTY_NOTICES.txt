@@ -17,3 +17,14 @@ License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0
 The copied dataset is used as a native username check template source.
 GET-compatible entries are loaded into osint_toolkit/sites.py with attribution.
 POST-specific behavior is documented as remaining parity work.
+
+Maigret sanitized site dataset
+Source: https://github.com/soxoj/maigret
+Source file: maigret/resources/data.json
+Snapshot commit: 2484509
+License: MIT
+
+The packaged maigret_sites.json file is a sanitized projection of the upstream
+site database. It keeps native username check fields such as URLs, markers,
+regex rules, tags and safe headers, and omits activation-dependent runtime
+fields and authorization/cookie-like headers.

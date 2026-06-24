@@ -17,6 +17,7 @@ from osint_toolkit.modules.ru_ua_sources import RuUaSourcePackModule
 from osint_toolkit.modules.telegram import TelegramScanModule, normalize_telegram_target
 from osint_toolkit.modules.username import classify_username_http_result, normalize_username
 from osint_toolkit.sites import (
+    MAIGRET_IMPORTED_SITE_COUNT,
     SHERLOCK_IMPORTED_SITE_COUNT,
     USERNAME_SITES,
     WHATSMYNAME_IMPORTED_SITE_COUNT,
@@ -94,6 +95,37 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(gitlab_api.not_found_status_codes, (200,))
         self.assertEqual(ctf.source_projects, ("whatsmyname",))
         self.assertEqual(ctf.not_found_status_codes, (302,))
+
+    def test_username_site_dataset_imports_maigret_resource(self):
+        instagram_api = next(site for site in USERNAME_SITES if site.name == "Instagram (Maigret)")
+        aback = next(site for site in USERNAME_SITES if site.name == "Aback")
+
+        self.assertGreaterEqual(MAIGRET_IMPORTED_SITE_COUNT, 1400)
+        self.assertGreaterEqual(len(USERNAME_SITES), 1900)
+        self.assertEqual(instagram_api.url_template, "https://www.instagram.com/api/v1/users/web_profile_info/?username={username}")
+        self.assertEqual(instagram_api.profile_url_template, "https://www.instagram.com/{username}/")
+        self.assertEqual(instagram_api.profile_markers, ('"biography"',))
+        self.assertEqual(instagram_api.source_projects, ("maigret",))
+        self.assertIn(("x-ig-app-id", "936619743392459"), instagram_api.request_headers)
+        self.assertEqual(aback.region, "ua")
+
+    def test_username_scan_region_ua_includes_maigret_ua_sources(self):
+        engine = Engine([UsernameScanModule()])
+        findings = engine.scan(ScanTarget(kind="username", value="exampleuser", region="ua"), RunConfig())
+        sources = {finding.source for finding in findings}
+
+        self.assertIn("Aback", sources)
+        self.assertIn("GitHub", sources)
+
+    def test_username_scan_exposes_probe_profile_url_metadata(self):
+        site = next(site for site in USERNAME_SITES if site.name == "Instagram (Maigret)")
+        findings = Engine([UsernameScanModule(sites=(site,))]).scan(
+            ScanTarget(kind="username", value="exampleuser"),
+            RunConfig(),
+        )
+
+        self.assertEqual(findings[0].url, "https://www.instagram.com/api/v1/users/web_profile_info/?username=exampleuser")
+        self.assertEqual(findings[0].metadata["profile_url"], "https://www.instagram.com/exampleuser/")
 
     def test_username_live_classifier_uses_not_found_marker(self):
         site = UsernameSite(

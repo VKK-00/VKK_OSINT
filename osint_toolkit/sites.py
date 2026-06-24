@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from string import Formatter
 from dataclasses import dataclass, replace
 from importlib import resources
 from typing import Any
@@ -13,9 +14,12 @@ SHERLOCK_DATA_RESOURCE = "sherlock_data.json"
 SHERLOCK_SOURCE_PROJECT = "sherlock"
 WHATSMYNAME_DATA_RESOURCE = "whatsmyname_wmn_data.json"
 WHATSMYNAME_SOURCE_PROJECT = "whatsmyname"
+MAIGRET_DATA_RESOURCE = "maigret_sites.json"
+MAIGRET_SOURCE_PROJECT = "maigret"
 SOURCE_NAME_SUFFIXES = {
     SHERLOCK_SOURCE_PROJECT: "Sherlock",
     WHATSMYNAME_SOURCE_PROJECT: "WhatsMyName",
+    MAIGRET_SOURCE_PROJECT: "Maigret",
 }
 
 
@@ -23,6 +27,7 @@ SOURCE_NAME_SUFFIXES = {
 class UsernameSite:
     name: str
     url_template: str
+    profile_url_template: str = ""
     region: str = "global"
     source_projects: tuple[str, ...] = ()
     username_pattern: str = DEFAULT_USERNAME_PATTERN
@@ -35,6 +40,11 @@ class UsernameSite:
 
     def url_for(self, username: str) -> str:
         return self.url_template.format(username=username)
+
+    def profile_url_for(self, username: str) -> str:
+        if not self.profile_url_template:
+            return ""
+        return self.profile_url_template.format(username=username)
 
     def validate_username(self, username: str) -> str:
         if re.fullmatch(self.username_pattern, username):
@@ -230,6 +240,18 @@ def _load_whatsmyname_sites() -> tuple[UsernameSite, ...]:
     )
 
 
+def _load_maigret_sites() -> tuple[UsernameSite, ...]:
+    data = _read_maigret_data()
+    sites = data.get("sites")
+    if not isinstance(sites, list):
+        return ()
+    return tuple(
+        site
+        for entry in sites
+        if (site := _maigret_entry_to_username_site(entry)) is not None
+    )
+
+
 def _render_marker(marker: str, username: str) -> str:
     try:
         return marker.format(username=username)
@@ -243,6 +265,10 @@ def _read_sherlock_data() -> dict[str, Any]:
 
 def _read_whatsmyname_data() -> dict[str, Any]:
     return _read_json_resource(WHATSMYNAME_DATA_RESOURCE)
+
+
+def _read_maigret_data() -> dict[str, Any]:
+    return _read_json_resource(MAIGRET_DATA_RESOURCE)
 
 
 def _read_json_resource(resource_name: str) -> dict[str, Any]:
@@ -307,6 +333,36 @@ def _whatsmyname_entry_to_username_site(entry: Any) -> UsernameSite | None:
     )
 
 
+def _maigret_entry_to_username_site(entry: Any) -> UsernameSite | None:
+    if not isinstance(entry, dict):
+        return None
+
+    name = entry.get("name")
+    url = entry.get("url")
+    if not isinstance(name, str) or not name or not isinstance(url, str) or not _template_uses_only_username(url):
+        return None
+
+    username_pattern = _valid_regex(entry.get("regexCheck")) or DEFAULT_USERNAME_PATTERN
+    rule_note = "Maigret regexCheck" if username_pattern != DEFAULT_USERNAME_PATTERN else DEFAULT_USERNAME_RULE_NOTE
+    profile_url = entry.get("profile_url") if isinstance(entry.get("profile_url"), str) else ""
+    if profile_url and not _template_uses_only_username(profile_url):
+        profile_url = ""
+    return UsernameSite(
+        name=name,
+        url_template=url,
+        profile_url_template=profile_url,
+        region=_region_from_tags(entry.get("tags")),
+        source_projects=(MAIGRET_SOURCE_PROJECT,),
+        username_pattern=username_pattern,
+        rule_note=rule_note,
+        profile_markers=_string_tuple(entry.get("presenceStrs")),
+        not_found_markers=_string_tuple(entry.get("absenceStrs")),
+        candidate_status_codes=(200,) if entry.get("checkType") == "status_code" else (),
+        not_found_status_codes=(404,) if entry.get("checkType") == "status_code" else (),
+        request_headers=_header_tuple(entry.get("headers")),
+    )
+
+
 def _valid_regex(value: Any) -> str:
     if not isinstance(value, str) or not value:
         return ""
@@ -317,12 +373,33 @@ def _valid_regex(value: Any) -> str:
     return value
 
 
+def _template_uses_only_username(value: str) -> bool:
+    try:
+        fields = {field_name for _, field_name, _, _ in Formatter().parse(value) if field_name}
+    except ValueError:
+        return False
+    return bool(fields) and fields <= {"username"}
+
+
 def _string_tuple(value: Any) -> tuple[str, ...]:
     if isinstance(value, str):
         return (value,) if value else ()
     if isinstance(value, list):
         return tuple(item for item in value if isinstance(item, str) and item)
     return ()
+
+
+def _region_from_tags(value: Any) -> str:
+    if not isinstance(value, list):
+        return "global"
+    tags = {tag for tag in value if isinstance(tag, str)}
+    if "ru" in tags and "ua" in tags:
+        return "ru-ua"
+    if "ru" in tags:
+        return "ru"
+    if "ua" in tags:
+        return "ua"
+    return "global"
 
 
 def _int_tuple(value: Any) -> tuple[int, ...]:
@@ -388,4 +465,11 @@ SHERLOCK_USERNAME_SITES = _load_sherlock_sites()
 SHERLOCK_IMPORTED_SITE_COUNT = len(SHERLOCK_USERNAME_SITES)
 WHATSMYNAME_USERNAME_SITES = _load_whatsmyname_sites()
 WHATSMYNAME_IMPORTED_SITE_COUNT = len(WHATSMYNAME_USERNAME_SITES)
-USERNAME_SITES = _merge_username_sites(CURATED_USERNAME_SITES, SHERLOCK_USERNAME_SITES, WHATSMYNAME_USERNAME_SITES)
+MAIGRET_USERNAME_SITES = _load_maigret_sites()
+MAIGRET_IMPORTED_SITE_COUNT = len(MAIGRET_USERNAME_SITES)
+USERNAME_SITES = _merge_username_sites(
+    CURATED_USERNAME_SITES,
+    SHERLOCK_USERNAME_SITES,
+    WHATSMYNAME_USERNAME_SITES,
+    MAIGRET_USERNAME_SITES,
+)

@@ -50,9 +50,22 @@ class UsernameScanModule:
                 findings.append(_skipped_finding(self.name, target.value, username, site, skip_reason))
                 continue
             url = site.url_for(username)
+            profile_url = site.profile_url_for(username)
             headers = dict(site.request_headers)
             result = client.check(url, fetch_title=True, headers=headers or None)
             classification = classify_username_http_result(site, username, result)
+            metadata = {
+                "region": site.region,
+                "normalized_username": username,
+                "rule_status": "matched",
+                "content_rule": classification.content_rule,
+                "content_marker": classification.content_marker,
+                "source_projects": ", ".join(site.source_projects),
+                "requested_url": url,
+                "custom_headers": "yes" if headers else "no",
+            }
+            if profile_url:
+                metadata["profile_url"] = profile_url
             findings.append(
                 Finding(
                     module=self.name,
@@ -64,16 +77,7 @@ class UsernameScanModule:
                     http_status=result.status_code,
                     confidence=classification.confidence,
                     evidence=classification.evidence,
-                    metadata={
-                        "region": site.region,
-                        "normalized_username": username,
-                        "rule_status": "matched",
-                        "content_rule": classification.content_rule,
-                        "content_marker": classification.content_marker,
-                        "source_projects": ", ".join(site.source_projects),
-                        "requested_url": url,
-                        "custom_headers": "yes" if headers else "no",
-                    },
+                    metadata=metadata,
                 )
             )
         return tuple(findings)
@@ -83,10 +87,9 @@ def _filter_sites(sites: tuple[UsernameSite, ...], region: str) -> tuple[Usernam
     if region == "all":
         return sites
     if region == "ru":
-        return tuple(site for site in sites if site.region in {"global", "ru"})
+        return tuple(site for site in sites if site.region in {"global", "ru", "ru-ua"})
     if region == "ua":
-        # There are no Ukraine-specific username templates in the initial native set.
-        return tuple(site for site in sites if site.region == "global")
+        return tuple(site for site in sites if site.region in {"global", "ua", "ru-ua"})
     return sites
 
 
@@ -156,6 +159,15 @@ def _planned_or_skipped_finding(module: str, original: str, username: str, site:
 
 
 def _planned_finding(module: str, original: str, username: str, site: UsernameSite) -> Finding:
+    metadata = {
+        "region": site.region,
+        "normalized_username": username,
+        "rule_status": "matched",
+        "source_projects": ", ".join(site.source_projects),
+    }
+    profile_url = site.profile_url_for(username)
+    if profile_url:
+        metadata["profile_url"] = profile_url
     return Finding(
         module=module,
         source=site.name,
@@ -164,16 +176,20 @@ def _planned_finding(module: str, original: str, username: str, site: UsernameSi
         url=site.url_for(username),
         confidence="not_checked",
         evidence="Dry run only. Pass --live to perform public HTTP checks.",
-        metadata={
-            "region": site.region,
-            "normalized_username": username,
-            "rule_status": "matched",
-            "source_projects": ", ".join(site.source_projects),
-        },
+        metadata=metadata,
     )
 
 
 def _skipped_finding(module: str, original: str, username: str, site: UsernameSite, reason: str) -> Finding:
+    metadata = {
+        "region": site.region,
+        "normalized_username": username,
+        "rule_status": "skipped",
+        "source_projects": ", ".join(site.source_projects),
+    }
+    profile_url = site.profile_url_for(username)
+    if profile_url:
+        metadata["profile_url"] = profile_url
     return Finding(
         module=module,
         source=site.name,
@@ -181,12 +197,7 @@ def _skipped_finding(module: str, original: str, username: str, site: UsernameSi
         status="skipped",
         confidence="high",
         evidence=reason,
-        metadata={
-            "region": site.region,
-            "normalized_username": username,
-            "rule_status": "skipped",
-            "source_projects": ", ".join(site.source_projects),
-        },
+        metadata=metadata,
     )
 
 
