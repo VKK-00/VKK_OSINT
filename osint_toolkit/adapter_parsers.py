@@ -72,6 +72,8 @@ def parse_adapter_output(
         return _user_scanner_findings(repository, target, text)
     if repository == "snooppr/snoop":
         return _snoop_findings(repository, target, text)
+    if repository == "soxoj/maigret":
+        return _maigret_findings(repository, target, text)
 
     findings: list[Finding] = []
     seen: set[tuple[str, str, str]] = set()
@@ -86,6 +88,270 @@ def parse_adapter_output(
         if key_value:
             findings.append(key_value)
     return tuple(findings)
+
+
+def _maigret_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    structured = _maigret_json_findings(repository, target, text)
+    if structured:
+        return structured
+
+    csv_findings = _maigret_csv_findings(repository, target, text)
+    if csv_findings:
+        return csv_findings
+
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact:
+            continue
+        findings.extend(_url_findings(repository, target, compact, seen))
+        findings.extend(_email_findings(repository, target, compact, seen))
+        findings.extend(_phone_findings(repository, target, compact, seen))
+    return tuple(findings)
+
+
+def _maigret_json_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    records: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            continue
+        try:
+            payload = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        records.extend(_maigret_records(payload))
+
+    if not records:
+        payload = _load_json_payload(text)
+        if payload is not None:
+            records.extend(_maigret_records(payload))
+
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+    for record in records:
+        finding = _maigret_record_finding(repository, target, record, seen)
+        if finding:
+            findings.append(finding)
+    return tuple(findings)
+
+
+def _maigret_records(payload: object) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [record for record in payload if isinstance(record, dict)]
+    if not isinstance(payload, dict):
+        return []
+
+    if "status" in payload or "sitename" in payload:
+        return [payload]
+
+    records: list[dict[str, Any]] = []
+    for site_name, record in payload.items():
+        if not isinstance(record, dict):
+            continue
+        copied = dict(record)
+        copied.setdefault("sitename", str(site_name))
+        records.append(copied)
+    return records
+
+
+def _maigret_csv_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    rows = _maigret_csv_rows(text)
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+    for row in rows:
+        site_name = _csv_row_value(row, "name")
+        if not site_name:
+            continue
+        record = {
+            "sitename": site_name,
+            "url_main": _csv_row_value(row, "url_main"),
+            "url_user": _csv_row_value(row, "url_user"),
+            "http_status": _csv_row_value(row, "http_status"),
+            "status": {
+                "username": _csv_row_value(row, "username") or target.value,
+                "site_name": site_name,
+                "url": _csv_row_value(row, "url_user"),
+                "status": _csv_row_value(row, "exists"),
+                "ids": {},
+                "tags": [],
+            },
+        }
+        finding = _maigret_record_finding(repository, target, record, seen)
+        if finding:
+            findings.append(finding)
+    return tuple(findings)
+
+
+def _maigret_csv_rows(text: str) -> tuple[dict[str, str], ...]:
+    lines = [line for line in text.strip("\ufeff \n\t").splitlines() if line.strip()]
+    header_index = -1
+    for index, line in enumerate(lines):
+        normalized = line.strip("\ufeff ").lower()
+        if normalized.startswith(("username,name,url_main,url_user,exists,http_status",)):
+            header_index = index
+            break
+    if header_index == -1:
+        return ()
+
+    reader = csv.DictReader(io.StringIO("\n".join(lines[header_index:])))
+    rows: list[dict[str, str]] = []
+    for row in reader:
+        if row and any(value for value in row.values() if value):
+            rows.append({(key or "").strip("\ufeff "): (value or "").strip() for key, value in row.items()})
+    return tuple(rows)
+
+
+def _maigret_record_finding(
+    repository: str,
+    target: ScanTarget,
+    record: dict[str, Any],
+    seen: set[tuple[str, str, str]],
+) -> Finding | None:
+    status_obj = record.get("status")
+    status_data = status_obj if isinstance(status_obj, dict) else {}
+    raw_status = str(status_data.get("status") or status_obj or record.get("exists") or "").strip()
+    site_name = str(
+        status_data.get("site_name")
+        or record.get("sitename")
+        or record.get("name")
+        or record.get("site_name")
+        or ""
+    ).strip()
+    url = str(status_data.get("url") or record.get("url_user") or record.get("url") or "").strip()
+    site_url = str(record.get("url_main") or "").strip()
+    identity = str(status_data.get("username") or record.get("username") or target.value).strip()
+    http_status = str(record.get("http_status") or "").strip()
+    ids = status_data.get("ids") or record.get("ids_data") or record.get("ids") or {}
+    tags = status_data.get("tags") or record.get("tags") or []
+
+    if not raw_status and not site_name and not url:
+        return None
+
+    status, confidence = _maigret_status(raw_status)
+    finding_url = url if status == "candidate" and url.startswith(("http://", "https://")) else ""
+    key = ("maigret", site_name.lower(), identity.lower(), raw_status.lower(), url.lower())
+    if key in seen:
+        return None
+    seen.add(key)
+
+    metadata = _maigret_metadata(
+        repository=repository,
+        target=target,
+        site_name=site_name,
+        raw_status=raw_status,
+        identity=identity,
+        url=finding_url,
+        checked_url="" if finding_url else url,
+        site_url=site_url,
+        http_status=http_status,
+        ids=ids,
+        tags=tags,
+    )
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status=status,
+        url=finding_url,
+        confidence=confidence,
+        evidence=_short(_maigret_evidence(site_name, raw_status, tags)),
+        metadata=metadata,
+    )
+
+
+def _maigret_status(raw_status: str) -> tuple[str, str]:
+    normalized = " ".join(raw_status.lower().split())
+    if normalized == "claimed":
+        return "candidate", "high"
+    if normalized == "available":
+        return "not_found", "medium"
+    if normalized == "unknown":
+        return "error", "low"
+    if normalized == "illegal":
+        return "skipped", "high"
+    return "observed", "medium"
+
+
+def _maigret_metadata(
+    *,
+    repository: str,
+    target: ScanTarget,
+    site_name: str,
+    raw_status: str,
+    identity: str,
+    url: str,
+    checked_url: str,
+    site_url: str,
+    http_status: str,
+    ids: object,
+    tags: object,
+) -> dict[str, str]:
+    metadata = {
+        "repository": repository,
+        "parser": "maigret",
+        "target_kind": target.kind,
+        "result_status": raw_status,
+    }
+    if site_name:
+        metadata["site_name"] = site_name
+    if identity:
+        metadata["username"] = identity
+    if url:
+        domain = (urlparse(url).hostname or "").lower()
+        if domain:
+            metadata["domain"] = domain
+    if checked_url:
+        metadata["checked_url"] = checked_url
+    if site_url:
+        metadata["site_url"] = site_url
+    if http_status:
+        metadata["http_status"] = http_status
+
+    tag_values = _string_list(tags)
+    if tag_values:
+        metadata["tags"] = ", ".join(tag_values)
+        region = _region_from_tags(tag_values) or (target.region.upper() if target.region in {"ru", "ua"} else "")
+        if region:
+            metadata["region"] = region
+
+    if isinstance(ids, dict):
+        _merge_maigret_ids(metadata, ids)
+    return metadata
+
+
+def _merge_maigret_ids(metadata: dict[str, str], ids: dict[Any, Any]) -> None:
+    mapped_keys = {
+        "fullname": "name",
+        "full_name": "name",
+        "name": "name",
+        "location": "location",
+        "country": "country",
+        "email": "email",
+        "phone": "phone",
+        "username": "username",
+    }
+    for raw_key, raw_value in ids.items():
+        key = _metadata_key(str(raw_key))
+        value = _first_scalar(raw_value)
+        if not value:
+            continue
+        mapped = mapped_keys.get(key)
+        if mapped and mapped not in metadata:
+            metadata[mapped] = value
+        elif mapped:
+            continue
+        else:
+            metadata[f"extra_{key}"] = value
+
+
+def _maigret_evidence(site_name: str, raw_status: str, tags: object) -> str:
+    evidence = f"Maigret {site_name or 'site'}: {raw_status or 'observed'}"
+    tag_values = _string_list(tags)
+    if tag_values:
+        evidence += f" ({', '.join(tag_values[:5])})"
+    return evidence
 
 
 def _snoop_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
@@ -670,6 +936,41 @@ def _user_scanner_metadata(
 def _metadata_key(value: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9]+", "_", value.strip().lower()).strip("_")
     return normalized or "value"
+
+
+def _csv_row_value(row: dict[str, str], name: str) -> str:
+    for key, value in row.items():
+        if key.strip("\ufeff ").lower() == name.lower():
+            return value.strip()
+    return ""
+
+
+def _string_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+def _first_scalar(value: object) -> str:
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            scalar = _first_scalar(item)
+            if scalar:
+                return scalar
+        return ""
+    if isinstance(value, (str, int, float, bool)):
+        return str(value).strip()
+    return ""
+
+
+def _region_from_tags(tags: list[str]) -> str:
+    for tag in tags:
+        normalized = tag.lower()
+        if normalized in {"ru", "ua"}:
+            return normalized.upper()
+    return ""
 
 
 def _user_scanner_evidence(site_name: str, raw_status: str, reason: str) -> str:

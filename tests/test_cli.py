@@ -120,6 +120,24 @@ class CliTests(unittest.TestCase):
         self.assertEqual(username.returncode, 0, username.stderr)
         self.assertEqual(json.loads(username.stdout)[0]["metadata"]["command"], "user-scanner -u example_user -f json")
 
+    def test_run_adapter_maigret_region_command(self):
+        result = self.run_cli(
+            "run-adapter",
+            "soxoj/maigret",
+            "username",
+            "example_user",
+            "--region",
+            "ua",
+            "--format",
+            "json",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            json.loads(result.stdout)[0]["metadata"]["command"],
+            "maigret example_user --json ndjson --tags ua",
+        )
+
     def test_run_adapter_snoop_region_command(self):
         result = self.run_cli(
             "run-adapter",

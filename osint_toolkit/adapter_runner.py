@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tempfile
+from pathlib import Path
 
 from .adapter_parsers import parse_adapter_output
 from .adapters import find_adapter
@@ -89,6 +91,14 @@ def run_adapter_findings(
             ),
         )
 
+    output_dir_context: tempfile.TemporaryDirectory[str] | None = None
+    output_dir = ""
+    if adapter.generated_output_patterns:
+        output_dir_context = tempfile.TemporaryDirectory(prefix="osint-toolkit-adapter-")
+        output_dir = output_dir_context.name
+        command = (*command, *adapter.render_output_dir_args(output_dir))
+        command_text = format_command(command)
+
     try:
         result = subprocess.run(
             [executable, *command[1:]],
@@ -98,6 +108,8 @@ def run_adapter_findings(
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
+        if output_dir_context:
+            output_dir_context.cleanup()
         return (
             Finding(
                 module="external-adapter",
@@ -109,6 +121,10 @@ def run_adapter_findings(
                 metadata={**adapter.to_dict(), "stdout": _truncate(exc.stdout), "stderr": _truncate(exc.stderr)},
             ),
         )
+
+    generated_output, generated_count = _read_generated_outputs(output_dir, adapter.generated_output_patterns)
+    if output_dir_context:
+        output_dir_context.cleanup()
 
     status = "completed" if result.returncode == 0 else "error"
     evidence = _truncate(result.stdout) or _truncate(result.stderr) or f"Exit code {result.returncode}"
@@ -124,9 +140,11 @@ def run_adapter_findings(
             "command": command_text,
             "returncode": str(result.returncode),
             "stderr": _truncate(result.stderr),
+            "generated_output_files": str(generated_count),
         },
     )
-    parsed = parse_adapter_output(adapter.repository, target, result.stdout, result.stderr)
+    parsed_stdout = "\n".join(part for part in (result.stdout, generated_output) if part)
+    parsed = parse_adapter_output(adapter.repository, target, parsed_stdout, result.stderr)
     return (summary, *parsed)
 
 
@@ -149,3 +167,19 @@ def _truncate(value: str | bytes | None, limit: int = 1200) -> str:
     if len(compact) <= limit:
         return compact
     return compact[: limit - 1] + "…"
+
+
+def _read_generated_outputs(output_dir: str, patterns: tuple[str, ...]) -> tuple[str, int]:
+    if not output_dir or not patterns:
+        return "", 0
+
+    root = Path(output_dir)
+    parts: list[str] = []
+    count = 0
+    for pattern in patterns:
+        for path in sorted(root.rglob(pattern)):
+            if not path.is_file():
+                continue
+            count += 1
+            parts.append(path.read_text(encoding="utf-8", errors="replace"))
+    return "\n".join(parts), count

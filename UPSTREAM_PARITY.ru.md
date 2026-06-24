@@ -37,6 +37,8 @@ python -m osint_toolkit scan username <username> --live
 - live HTTP checks по явному `--live`;
 - единый результат `Finding`;
 - RU-фильтр для VK/OK/Habr и глобальных платформ.
+- executable adapter для `soxoj/maigret`: `maigret <username> --json ndjson [--tags ru|ua]`;
+- parser для Maigret NDJSON/simple JSON/CSV reports: `Claimed` -> `candidate`, `Available` -> `not_found`, `Unknown` -> `error`, `Illegal` -> `skipped`;
 - executable target-specific adapter для `kaifcodec/user-scanner`: `user-scanner -u <username> -f json`;
 - executable RU/UA-aware adapter для `snooppr/snoop`: `snoop --no-func --found-print [--include RU|UA] <username>`;
 - parser для Snoop stdout/CSV results: `найден!` -> `candidate`, `Увы!` -> `not_found`, `блок`/ошибки -> `error`;
@@ -62,7 +64,8 @@ Gap до полного 1:1:
 - нет rate-limit/backoff правил;
 - username permutation/alias strategy пока базовая: нет словарей никнеймов, исторических alias и platform-specific username rules;
 - content-based confidence пока частичный: нет полного набора marker rules из upstream datasets;
-- Snoop подключён adapter-first, но локальная установка/обновление Snoop и чтение файлов из `results/nicknames/csv/` пока остаются операторским действием;
+- Maigret подключён adapter-first; web UI, PDF/HTML/XMind reports, recursive policy tuning, proxies/Tor/I2P и AI mode пока не перенесены в native UI;
+- Snoop подключён adapter-first, но локальная установка/обновление Snoop пока остаются операторским действием;
 - нет сохранения истории запусков.
 
 ## Следующие native/adapters группы
@@ -245,6 +248,8 @@ python -m osint_toolkit adapter-setup <repository>
 - restricted adapter guard via `--allow-restricted`;
 - `run_adapter_findings()` returns summary + parsed findings;
 - stdout parser for common URL/email/phone/key-value lines from Sherlock/Maigret/Nexfil/Mosint/PhoneInfoga-like output;
+- generated report ingestion: adapters can run with a temporary output folder and feed generated files back into `parse_adapter_output()`;
+- adapter-specific parser for Maigret NDJSON/simple JSON and CSV report rows;
 - adapter-specific parser for `user-scanner` JSON and verbose line output;
 - adapter-specific parser for Snoop stdout and CSV report rows;
 - install/config/readiness metadata in `AdapterSpec`;
@@ -253,7 +258,7 @@ python -m osint_toolkit adapter-setup <repository>
 Gap:
 
 - нет автоматической установки upstream CLI;
-- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых `user-scanner` JSON/verbose и Snoop stdout/CSV;
+- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Maigret JSON/CSV, `user-scanner` JSON/verbose и Snoop stdout/CSV;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.
 

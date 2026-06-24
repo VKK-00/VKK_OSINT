@@ -28,6 +28,13 @@ class AdapterSetupTests(unittest.TestCase):
 
         self.assertEqual(setup.readiness, "ready")
         self.assertEqual(setup.executable_path, "C:\\tools\\maigret.exe")
+        self.assertEqual(adapter.render_command(ScanTarget(kind="username", value="example_user")), ("maigret", "example_user", "--json", "ndjson"))
+        self.assertEqual(
+            adapter.render_command(ScanTarget(kind="username", value="example_user", region="ua")),
+            ("maigret", "example_user", "--json", "ndjson", "--tags", "ua"),
+        )
+        self.assertEqual(adapter.render_output_dir_args("C:\\tmp\\maigret"), ("--folderoutput", "C:\\tmp\\maigret"))
+        self.assertEqual(adapter.generated_output_patterns, ("*.json",))
 
     def test_h8mail_setup_has_executable_command(self):
         adapter = find_adapter("khast3x/h8mail")

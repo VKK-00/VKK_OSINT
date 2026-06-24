@@ -23,6 +23,8 @@ class AdapterSpec:
     required_env: tuple[str, ...] = ()
     optional_env: tuple[str, ...] = ()
     command_templates: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    generated_output_dir_args: tuple[str, ...] = ()
+    generated_output_patterns: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, str]:
         return {
@@ -42,6 +44,8 @@ class AdapterSpec:
             "docs_url": self.docs_url,
             "required_env": ", ".join(self.required_env),
             "optional_env": ", ".join(self.optional_env),
+            "generated_output_dir_args": " ".join(self.generated_output_dir_args),
+            "generated_output_patterns": ", ".join(self.generated_output_patterns),
         }
 
     def render_command(self, target: ScanTarget) -> tuple[str, ...]:
@@ -56,6 +60,8 @@ class AdapterSpec:
             "region": target.region,
             "region_code": _region_code(target.region),
             "region_include_flag": _region_include_flag(target.region),
+            "region_tag": _region_tag(target.region),
+            "region_tags_flag": _region_tags_flag(target.region),
         }
         rendered: list[str] = []
         for part in command_template:
@@ -83,6 +89,16 @@ class AdapterSpec:
         if not self.command_templates:
             return ""
         return "; ".join(f"{kind}: {' '.join(template)}" for kind, template in self.command_templates)
+
+    def render_output_dir_args(self, output_dir: str) -> tuple[str, ...]:
+        if not self.generated_output_dir_args:
+            return ()
+        rendered: list[str] = []
+        for part in self.generated_output_dir_args:
+            value = part.format(output_dir=output_dir)
+            if value:
+                rendered.append(value)
+        return tuple(rendered)
 
 
 @dataclass(frozen=True)
@@ -127,14 +143,16 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "external_cli",
         "MIT",
         "planned",
-        "maigret <username>",
-        "Large upstream dataset and enrichment logic should be used through adapter or imported with license notice.",
+        "maigret <username> --json ndjson [--tags ru|ua]",
+        "Large upstream dataset, recursive search and enrichment logic are used through adapter-generated reports.",
         ("username",),
-        ("maigret", "{target_value}"),
+        ("maigret", "{target_value}", "--json", "ndjson", "{region_tags_flag}", "{region_tag}"),
         "pip",
         ("python", "-m", "pip", "install", "maigret"),
         "Optional PDF reporting needs the upstream pdf extra and system graphics libraries.",
         "https://maigret.readthedocs.io/en/latest/installation.html",
+        generated_output_dir_args=("--folderoutput", "{output_dir}"),
+        generated_output_patterns=("*.json",),
     ),
     AdapterSpec(
         "WebBreacher/WhatsMyName",
@@ -479,3 +497,11 @@ def _region_code(region: str) -> str:
 
 def _region_include_flag(region: str) -> str:
     return "--include" if _region_code(region) else ""
+
+
+def _region_tag(region: str) -> str:
+    return {"ru": "ru", "ua": "ua"}.get(region.lower(), "")
+
+
+def _region_tags_flag(region: str) -> str:
+    return "--tags" if _region_tag(region) else ""

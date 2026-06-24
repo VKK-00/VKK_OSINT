@@ -1,5 +1,6 @@
 import subprocess
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from osint_toolkit.engine import ScanTarget
@@ -126,6 +127,46 @@ class InvestigationTests(unittest.TestCase):
         }
         self.assertIn(("username", "example_user", "produced_url", "url", "https://example.ua/example_user"), edges)
         self.assertIn(("username", "example_user", "region_hint", "region", "ua"), edges)
+
+    def test_execute_maigret_adapter_reads_report_into_entities_and_edges(self):
+        def fake_run(args, **kwargs):
+            output_dir = Path(args[args.index("--folderoutput") + 1])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "report_bellingcat_ndjson.json").write_text(
+                '{"sitename":"GitHub","url_user":"https://github.com/bellingcat","http_status":200,'
+                '"status":{"username":"bellingcat","site_name":"GitHub","url":"https://github.com/bellingcat",'
+                '"status":"Claimed","ids":{"fullname":"Bellingcat"},"tags":["global"]}}\n',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="JSON report saved\n", stderr="")
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="maigret"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            result = run_investigation(
+                (ScanTarget(kind="username", value="bellingcat"),),
+                include_adapters=True,
+                execute_adapters=True,
+                adapter_repositories=("soxoj/maigret",),
+            )
+
+        parsed = [finding for finding in result.adapter_findings if finding.module == "external-adapter-parser"]
+        self.assertEqual(parsed[0].metadata["parser"], "maigret")
+        self.assertEqual(parsed[0].metadata["site_name"], "GitHub")
+        self.assertEqual(parsed[0].metadata["name"], "Bellingcat")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("url", "https://github.com/bellingcat"), entities)
+        self.assertIn(("domain", "github.com"), entities)
+        self.assertIn(("name", "bellingcat"), entities)
+
+        edges = {
+            (edge.source_kind, edge.source_value.lower(), edge.relation, edge.target_kind, edge.target_value.lower())
+            for edge in result.edges
+        }
+        self.assertIn(("username", "bellingcat", "produced_url", "url", "https://github.com/bellingcat"), edges)
+        self.assertIn(("username", "bellingcat", "name_hint", "name", "bellingcat"), edges)
 
     def test_person_target_expands_to_username_scan_edges(self):
         result = run_investigation((ScanTarget(kind="person", value="Ivan Petrenko"),))

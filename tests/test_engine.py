@@ -315,6 +315,22 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(username.status, "planned")
         self.assertIn("user-scanner -u example_user -f json", username.evidence)
 
+    def test_adapter_runner_renders_region_specific_maigret_command(self):
+        all_regions = run_adapter(
+            "soxoj/maigret",
+            ScanTarget(kind="username", value="example_user"),
+        )
+        ua = run_adapter(
+            "soxoj/maigret",
+            ScanTarget(kind="username", value="example_user", region="ua"),
+        )
+
+        self.assertEqual(all_regions.status, "planned")
+        self.assertIn("maigret example_user --json ndjson", all_regions.evidence)
+        self.assertNotIn("--tags", all_regions.evidence)
+        self.assertEqual(ua.status, "planned")
+        self.assertIn("maigret example_user --json ndjson --tags ua", ua.evidence)
+
     def test_adapter_runner_renders_region_specific_snoop_command(self):
         all_regions = run_adapter(
             "snooppr/snoop",

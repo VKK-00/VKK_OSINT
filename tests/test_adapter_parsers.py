@@ -1,5 +1,6 @@
 import subprocess
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from osint_toolkit.adapter_parsers import parse_adapter_output
@@ -67,6 +68,87 @@ class AdapterParserTests(unittest.TestCase):
         self.assertIn(("normalized-value", "+380441234567"), entities)
         self.assertIn(("country", "ukraine"), entities)
         self.assertIn(("carrier", "example mobile"), entities)
+
+    def test_parse_maigret_ndjson_report(self):
+        findings = parse_adapter_output(
+            "soxoj/maigret",
+            ScanTarget(kind="username", value="bellingcat", region="ua"),
+            """
+            {"sitename":"GitHub","url_user":"https://github.com/bellingcat","http_status":200,"status":{"username":"bellingcat","site_name":"GitHub","url":"https://github.com/bellingcat","status":"Claimed","ids":{"fullname":"Bellingcat","location":"Netherlands"},"tags":["coding","global"]}}
+            {"sitename":"Example","url_user":"https://example.com/bellingcat","http_status":404,"status":{"username":"bellingcat","site_name":"Example","url":"https://example.com/bellingcat","status":"Available","ids":{},"tags":["ua"]}}
+            """,
+        )
+
+        self.assertEqual(len(findings), 2)
+        github = next(finding for finding in findings if finding.metadata["site_name"] == "GitHub")
+        self.assertEqual(github.status, "candidate")
+        self.assertEqual(github.confidence, "high")
+        self.assertEqual(github.url, "https://github.com/bellingcat")
+        self.assertEqual(github.metadata["parser"], "maigret")
+        self.assertEqual(github.metadata["name"], "Bellingcat")
+        self.assertEqual(github.metadata["location"], "Netherlands")
+
+        missing = next(finding for finding in findings if finding.metadata["site_name"] == "Example")
+        self.assertEqual(missing.status, "not_found")
+        self.assertEqual(missing.url, "")
+        self.assertEqual(missing.metadata["checked_url"], "https://example.com/bellingcat")
+        self.assertEqual(missing.metadata["region"], "UA")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("domain", "github.com"), entities)
+        self.assertIn(("name", "bellingcat"), entities)
+        self.assertIn(("location", "netherlands"), entities)
+        self.assertIn(("region", "ua"), entities)
+        self.assertNotIn(("domain", "example.com"), entities)
+
+    def test_parse_maigret_simple_json_report(self):
+        findings = parse_adapter_output(
+            "soxoj/maigret",
+            ScanTarget(kind="username", value="bellingcat"),
+            """
+            {
+              "Telegram": {
+                "url_user": "https://t.me/bellingcat",
+                "http_status": 200,
+                "status": {
+                  "username": "bellingcat",
+                  "site_name": "Telegram",
+                  "url": "https://t.me/bellingcat",
+                  "status": "Claimed",
+                  "ids": {"country": "Ukraine"},
+                  "tags": ["ua", "messaging"]
+                }
+              }
+            }
+            """,
+        )
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].metadata["site_name"], "Telegram")
+        self.assertEqual(findings[0].metadata["country"], "Ukraine")
+        self.assertEqual(findings[0].metadata["region"], "UA")
+
+    def test_parse_maigret_csv_report(self):
+        findings = parse_adapter_output(
+            "soxoj/maigret",
+            ScanTarget(kind="username", value="bellingcat"),
+            """
+            username,name,url_main,url_user,exists,http_status
+            bellingcat,GitHub,https://github.com,https://github.com/bellingcat,Claimed,200
+            bellingcat,Example,https://example.com,https://example.com/bellingcat,Available,404
+            bellingcat,Broken,https://broken.example,https://broken.example/bellingcat,Unknown,0
+            """,
+        )
+
+        statuses = {finding.metadata["site_name"]: finding.status for finding in findings}
+        self.assertEqual(statuses["GitHub"], "candidate")
+        self.assertEqual(statuses["Example"], "not_found")
+        self.assertEqual(statuses["Broken"], "error")
+        github = next(finding for finding in findings if finding.metadata["site_name"] == "GitHub")
+        self.assertEqual(github.url, "https://github.com/bellingcat")
+        example = next(finding for finding in findings if finding.metadata["site_name"] == "Example")
+        self.assertEqual(example.url, "")
+        self.assertEqual(example.metadata["checked_url"], "https://example.com/bellingcat")
 
     def test_parse_user_scanner_json_results(self):
         findings = parse_adapter_output(
@@ -230,6 +312,34 @@ class AdapterParserTests(unittest.TestCase):
         self.assertEqual(findings[0].module, "external-adapter")
         self.assertEqual(findings[0].status, "completed")
         self.assertTrue(any(finding.url == "https://github.com/example_user" for finding in findings[1:]))
+
+    def test_run_maigret_adapter_reads_generated_json_report_after_execution(self):
+        def fake_run(args, **kwargs):
+            output_dir = Path(args[args.index("--folderoutput") + 1])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "report_bellingcat_ndjson.json").write_text(
+                '{"sitename":"GitHub","url_user":"https://github.com/bellingcat","http_status":200,'
+                '"status":{"username":"bellingcat","site_name":"GitHub","url":"https://github.com/bellingcat",'
+                '"status":"Claimed","ids":{"fullname":"Bellingcat"},"tags":["global"]}}\n',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="JSON report saved\n", stderr="")
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="maigret"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            findings = run_adapter_findings(
+                "soxoj/maigret",
+                ScanTarget(kind="username", value="bellingcat"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertEqual(findings[0].metadata["generated_output_files"], "1")
+        self.assertIn("--folderoutput", findings[0].metadata["command"])
+        self.assertTrue(any(finding.metadata.get("parser") == "maigret" for finding in findings[1:]))
+        self.assertTrue(any(finding.url == "https://github.com/bellingcat" for finding in findings[1:]))
 
     def test_run_user_scanner_adapter_adds_parsed_json_results_after_execution(self):
         completed = subprocess.CompletedProcess(
