@@ -52,10 +52,19 @@ def run_investigation(
     allow_restricted_adapters: bool = False,
     adapter_timeout: float = 60.0,
     adapter_limit: int | None = 20,
+    http_retries: int = 1,
+    http_backoff: float = 1.0,
+    request_delay: float = 0.0,
     adapter_repositories: tuple[str, ...] = (),
 ) -> InvestigationResult:
     engine = build_default_engine()
-    config = RunConfig(live=live, timeout=timeout)
+    config = RunConfig(
+        live=live,
+        timeout=timeout,
+        http_retries=http_retries,
+        http_backoff=http_backoff,
+        request_delay=request_delay,
+    )
     findings: list[Finding] = []
     for target in targets:
         findings.extend(engine.scan(target, config))

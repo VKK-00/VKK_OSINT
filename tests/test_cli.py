@@ -34,6 +34,23 @@ class CliTests(unittest.TestCase):
         self.assertIn("GitHub", result.stdout)
         self.assertIn("planned", result.stdout)
 
+    def test_scan_accepts_http_backoff_options(self):
+        result = self.run_cli(
+            "scan",
+            "username",
+            "example_user",
+            "--limit",
+            "1",
+            "--http-retries",
+            "2",
+            "--http-backoff",
+            "0.2",
+            "--request-delay",
+            "0.1",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("GitHub", result.stdout)
+
     def test_scan_username_reports_site_rule_skip(self):
         result = self.run_cli("scan", "username", "example_user", "--limit", "1", "--format", "json")
         self.assertEqual(result.returncode, 0, result.stderr)

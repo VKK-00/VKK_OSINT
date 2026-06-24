@@ -1,5 +1,7 @@
+import io
 import socket
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 from osint_toolkit.adapters import filter_adapters
@@ -7,7 +9,7 @@ from osint_toolkit.adapter_runner import run_adapter, run_adapter_findings
 from osint_toolkit.dns_lookup import DnsLookupResult
 from osint_toolkit.doctor import inspect_adapters
 from osint_toolkit.engine import Engine, RunConfig, ScanTarget
-from osint_toolkit.http_client import HttpResult
+from osint_toolkit.http_client import HttpClient, HttpResult
 from osint_toolkit.investigation import render_investigation_json, render_investigation_markdown, run_investigation
 from osint_toolkit.modules import DomainScanModule, EmailScanModule, PersonNameScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
 from osint_toolkit.modules.domain import normalize_domain
@@ -23,6 +25,36 @@ from osint_toolkit.sites import (
     WHATSMYNAME_IMPORTED_SITE_COUNT,
     UsernameSite,
 )
+
+
+class _FakeHttpResponse:
+    def __init__(
+        self,
+        *,
+        url: str = "https://example.com",
+        status_code: int = 200,
+        body: bytes = b"",
+        content_type: str = "text/html",
+    ):
+        self._url = url
+        self._status_code = status_code
+        self._body = body
+        self.headers = {"content-type": content_type}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def read(self, limit: int) -> bytes:
+        return self._body[:limit]
+
+    def geturl(self) -> str:
+        return self._url
+
+    def getcode(self) -> int:
+        return self._status_code
 
 
 class EngineTests(unittest.TestCase):
@@ -246,6 +278,61 @@ class EngineTests(unittest.TestCase):
             body='{"username":"realuser"}',
         )
         self.assertEqual(findings[0].metadata["custom_headers"], "yes")
+
+    def test_username_live_scan_delays_between_http_requests(self):
+        sites = (
+            UsernameSite("One", "https://one.example/{username}"),
+            UsernameSite("Two", "https://two.example/{username}"),
+        )
+        with patch("osint_toolkit.modules.username.HttpClient.check") as check, patch(
+            "osint_toolkit.modules.username.time.sleep"
+        ) as sleep:
+            check.return_value = HttpResult(
+                url="https://example.com/realuser",
+                final_url="https://example.com/realuser",
+                status_code=200,
+                attempts=2,
+            )
+            findings = Engine([UsernameScanModule(sites=sites)]).scan(
+                ScanTarget(kind="username", value="realuser"),
+                RunConfig(live=True, request_delay=0.25, http_retries=3, http_backoff=0.5),
+            )
+
+        sleep.assert_called_once_with(0.25)
+        self.assertEqual(check.call_count, 2)
+        self.assertEqual(findings[0].metadata["http_attempts"], "2")
+        self.assertEqual(findings[0].metadata["http_retries"], "3")
+        self.assertEqual(findings[0].metadata["http_backoff_seconds"], "0.5")
+        self.assertEqual(findings[0].metadata["request_delay_seconds"], "0.25")
+
+    def test_http_client_retries_rate_limited_post_with_retry_after(self):
+        http_error = urllib.error.HTTPError(
+            "https://example.com/api",
+            429,
+            "Too Many Requests",
+            {"Retry-After": "2"},
+            io.BytesIO(b"rate limited"),
+        )
+        response = _FakeHttpResponse(
+            url="https://example.com/api",
+            status_code=200,
+            body=b'{"ok": true}',
+            content_type="application/json",
+        )
+
+        with patch("osint_toolkit.http_client.urllib.request.urlopen", side_effect=[http_error, response]) as urlopen, patch(
+            "osint_toolkit.http_client.time.sleep"
+        ) as sleep:
+            result = HttpClient(retries=1, backoff_seconds=0.1).check(
+                "https://example.com/api",
+                method="POST",
+                body="{}",
+            )
+
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once_with(2.0)
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.attempts, 2)
 
     def test_username_live_classifier_handles_literal_braces_in_marker(self):
         site = UsernameSite(

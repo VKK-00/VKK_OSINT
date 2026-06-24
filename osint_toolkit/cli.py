@@ -79,6 +79,9 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--region", choices=("all", "ru", "ua"), default="all")
     scan.add_argument("--live", action="store_true", help="Perform network checks. Default is dry-run planning.")
     scan.add_argument("--timeout", type=float, default=10.0)
+    scan.add_argument("--http-retries", type=int, default=1, help="Retry 429/temporary 5xx HTTP responses this many times.")
+    scan.add_argument("--http-backoff", type=float, default=1.0, help="Base backoff seconds for HTTP retries.")
+    scan.add_argument("--request-delay", type=float, default=0.0, help="Delay seconds between live username HTTP checks.")
     scan.add_argument("--limit", type=int)
     scan.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     scan.set_defaults(handler=handle_scan)
@@ -150,6 +153,9 @@ def build_parser() -> argparse.ArgumentParser:
     investigate.add_argument("--adapter-timeout", type=float, default=60.0)
     investigate.add_argument("--adapter-limit", type=int, default=20)
     investigate.add_argument("--timeout", type=float, default=10.0)
+    investigate.add_argument("--http-retries", type=int, default=1, help="Retry 429/temporary 5xx HTTP responses this many times.")
+    investigate.add_argument("--http-backoff", type=float, default=1.0, help="Base backoff seconds for HTTP retries.")
+    investigate.add_argument("--request-delay", type=float, default=0.0, help="Delay seconds between live username HTTP checks.")
     investigate.add_argument("--format", choices=("markdown", "json"), default="markdown")
     investigate.add_argument("--out", help="Write investigation report to this path.")
     investigate.add_argument("--case-db", help="SQLite database path for saving the case.")
@@ -218,7 +224,14 @@ def handle_show(args: argparse.Namespace) -> int:
 def handle_scan(args: argparse.Namespace) -> int:
     engine = build_default_engine()
     target = ScanTarget(kind=args.target_kind, value=args.target_value, region=args.region)
-    config = RunConfig(live=args.live, timeout=args.timeout, limit=args.limit)
+    config = RunConfig(
+        live=args.live,
+        timeout=args.timeout,
+        limit=args.limit,
+        http_retries=args.http_retries,
+        http_backoff=args.http_backoff,
+        request_delay=args.request_delay,
+    )
     findings = engine.scan(target, config)
     print(format_findings(findings, output_format=args.format))
     return 0
@@ -301,6 +314,9 @@ def handle_investigate(args: argparse.Namespace) -> int:
         allow_restricted_adapters=args.allow_restricted_adapters,
         adapter_timeout=args.adapter_timeout,
         adapter_limit=args.adapter_limit,
+        http_retries=args.http_retries,
+        http_backoff=args.http_backoff,
+        request_delay=args.request_delay,
         adapter_repositories=expand_adapter_repositories(
             tuple(args.adapter_profile),
             tuple(args.adapter),

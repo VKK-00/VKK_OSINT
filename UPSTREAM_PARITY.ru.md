@@ -38,6 +38,7 @@ python -m osint_toolkit scan username <username> --live
 - native import sanitized Maigret site rules как package resource с MIT notice; `urlProbe`, public `profile_url`, regex rules, `presenseStrs`, `absenceStrs`, tags и safe headers используются в native checks;
 - dry-run без сетевых запросов;
 - live HTTP checks по явному `--live`;
+- HTTP retry/backoff для 429 и temporary 5xx с поддержкой `Retry-After`, `--http-retries`, `--http-backoff` и `--request-delay` для больших username live runs;
 - единый результат `Finding`;
 - RU-фильтр для VK/OK/Habr и глобальных платформ.
 - executable adapter для `soxoj/maigret`: `maigret <username> --json ndjson [--tags ru|ua]`;
@@ -68,8 +69,7 @@ Gap до полного 1:1:
 
 - Sherlock GET/POST site dataset, WhatsMyName GET/POST dataset и sanitized Maigret site rules импортированы в native username layer;
 - Maigret engine templates, activation flows, recursive policy tuning, report generation, proxies/Tor/I2P and AI mode пока остаются adapter-only;
-- per-site rules покрывают username syntax/length, часть title/body content markers и Sherlock response-url `errorUrl`, но ещё не всю WAF/error-handling логику и site-specific retry/rate-limit поведение;
-- нет rate-limit/backoff правил;
+- per-site rules покрывают username syntax/length, часть title/body content markers и Sherlock response-url `errorUrl`; есть базовый retry/backoff, но ещё не вся WAF/error-handling логика и site-specific rate-limit tuning;
 - username permutation/alias strategy пока базовая: нет словарей никнеймов, исторических alias и platform-specific username rules;
 - content-based confidence пока частичный: нет полного набора marker rules из upstream datasets;
 - Maigret подключён hybrid: sanitized site rules импортированы native, а web UI, PDF/HTML/XMind reports, recursive policy tuning, proxies/Tor/I2P и AI mode пока не перенесены в native UI;

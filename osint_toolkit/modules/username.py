@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 from ..engine import Finding, RunConfig, ScanTarget
@@ -42,13 +43,22 @@ class UsernameScanModule:
         if not config.live:
             return tuple(_planned_or_skipped_finding(self.name, target.value, username, site) for site in sites)
 
-        client = HttpClient(timeout=config.timeout, user_agent=config.user_agent)
+        client = HttpClient(
+            timeout=config.timeout,
+            user_agent=config.user_agent,
+            retries=config.http_retries,
+            backoff_seconds=config.http_backoff,
+        )
         findings: list[Finding] = []
+        request_count = 0
         for site in sites:
             skip_reason = site.validate_username(username)
             if skip_reason:
                 findings.append(_skipped_finding(self.name, target.value, username, site, skip_reason))
                 continue
+            if request_count and config.request_delay > 0:
+                time.sleep(config.request_delay)
+            request_count += 1
             url = site.url_for(username)
             profile_url = site.profile_url_for(username)
             headers = dict(site.request_headers)
@@ -75,7 +85,13 @@ class UsernameScanModule:
                 "requested_url": url,
                 "custom_headers": "yes" if headers else "no",
                 "request_method": site.request_method,
+                "http_attempts": str(result.attempts),
             }
+            if config.request_delay > 0:
+                metadata["request_delay_seconds"] = str(config.request_delay)
+            if config.http_retries:
+                metadata["http_retries"] = str(config.http_retries)
+                metadata["http_backoff_seconds"] = str(config.http_backoff)
             if profile_url:
                 metadata["profile_url"] = profile_url
             findings.append(

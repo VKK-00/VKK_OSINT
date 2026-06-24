@@ -317,7 +317,7 @@ python -m osint_toolkit stats
 python -m osint_toolkit catalog --kind people --direct-only --limit 10
 python -m osint_toolkit scan person "Ivan Petrenko" --limit 10
 python -m osint_toolkit scan username exampleuser --limit 10
-python -m osint_toolkit scan username exampleuser --region ru --live --limit 5
+python -m osint_toolkit scan username exampleuser --region ru --live --limit 5 --http-retries 2 --request-delay 0.2
 python -m osint_toolkit scan email person@example.com --live
 python -m osint_toolkit scan phone +380441234567
 python -m osint_toolkit scan domain example.com --live
@@ -370,6 +370,7 @@ osint-toolkit stats
 - Person-name expansion выдаёт только низкоуверенные username-кандидаты; подтверждение делается отдельными username checks/adapters.
 - Username module проверяет platform-specific syntax до URL check, чтобы не превращать несовместимый username в ложный planned URL.
 - Username live classifier сначала учитывает title/body markers, затем site-specific status rules из WhatsMyName/Maigret: soft-404 marker сильнее HTTP status, profile marker повышает confidence, а `m_code`/`e_code` и status-code rules помогают классифицировать сайты без body marker.
+- HTTP live checks повторяют 429 и temporary 5xx с `Retry-After` или exponential backoff; username scan поддерживает операторский `--request-delay` между live URL checks.
 - Adapter parser не считается источником истины: он нормализует stdout уже запущенного upstream CLI, а не заменяет native logic upstream-проекта.
 - Generated report files читаются из временной директории или временного файла и удаляются после parsing; постоянное хранение остаётся задачей case store/report output.
 - Investigation adapter execution является opt-in: `--include-adapters` остаётся dry-run, а запуск внешнего кода требует отдельного `--execute-adapters`.
@@ -397,7 +398,7 @@ osint-toolkit stats
 - Каталог основан на snapshot от 2026-06-24; GitHub stars и актуальность проектов меняются.
 - Качество и безопасность внешних репозиториев не аудированы.
 - Native person-name expansion пока использует базовые шаблоны имени/фамилии и RU/UA transliteration; нет словарей никнеймов, исторических alias и platform-specific username rules.
-- Первый native username module уже импортирует Sherlock GET/POST site dataset, WhatsMyName GET/POST dataset и sanitized Maigret site rules, покрывает URL-template/status-code слой, Sherlock response-url `errorUrl`, часть platform syntax rules, custom headers, POST bodies и часть content marker rules, но не всю логику Sherlock/Maigret/WhatsMyName: Maigret engine templates/activation/recursive/reporting logic ещё не встроены, нет полного набора WAF/error-handling rules, rate-limit logic и enrichment.
+- Первый native username module уже импортирует Sherlock GET/POST site dataset, WhatsMyName GET/POST dataset и sanitized Maigret site rules, покрывает URL-template/status-code слой, Sherlock response-url `errorUrl`, часть platform syntax rules, custom headers, POST bodies, базовый HTTP retry/backoff и часть content marker rules, но не всю логику Sherlock/Maigret/WhatsMyName: Maigret engine templates/activation/recursive/reporting logic ещё не встроены, нет полного набора WAF/error-handling rules, site-specific rate-limit tuning и enrichment.
 - Native email module делает MX/TXT lookup и SPF/DMARC classifier, но пока не делает native breach lookup, NS/additional TXT classifiers или own API enrichment; Mosint/h8mail покрывают часть enrichment через external adapters.
 - Native phone module пока не делает carrier lookup, reputation lookup или external API enrichment.
 - Telegram module пока не использует Telegram API и не получает private/group data.
@@ -453,6 +454,7 @@ osint-toolkit stats
 - 2026-06-24: импортирована sanitized projection Maigret `data.json` как native package resource; активный username dataset расширен до 1993 check-шаблонов с Maigret regex, markers, tags, safe headers и probe/profile URL metadata.
 - 2026-06-24: добавлен native POST-check support для Sherlock `request_payload` и 22 WhatsMyName POST entries; активный username dataset содержит 2014 check-шаблонов, включая 23 active POST checks после дедупликации.
 - 2026-06-24: добавлен native Sherlock `errorType=response_url` support; импортируются 27 `errorUrl` rules, из них 26 active checks остаются после дедупликации.
+- 2026-06-24: добавлен HTTP retry/backoff для 429/temporary 5xx, `Retry-After`, CLI-параметры `--http-retries`, `--http-backoff` и username `--request-delay`.
 - 2026-06-24: добавлены `HttpResult.body_text`, username content marker rules и `classify_username_http_result()` для soft-404/profile confidence в live checks.
 - 2026-06-24: добавлен `dns_lookup.py`; `EmailScanModule` теперь планирует и выполняет MX/TXT lookup через `nslookup` в live-режиме.
 - 2026-06-24: добавлен `email_auth.py`; `EmailScanModule` теперь классифицирует SPF и DMARC, а adapter manifest расширен executable target для `h8mail`.

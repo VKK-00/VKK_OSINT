@@ -46,7 +46,7 @@ python -m osint_toolkit catalog --kind people --direct-only --limit 10
 python -m osint_toolkit catalog --kind ru-ua --level direct_ru_ua
 python -m osint_toolkit scan person "Ivan Petrenko" --limit 8
 python -m osint_toolkit scan username exampleuser --limit 8
-python -m osint_toolkit scan username exampleuser --region ru --live --limit 5
+python -m osint_toolkit scan username exampleuser --region ru --live --limit 5 --http-retries 2 --request-delay 0.2
 python -m osint_toolkit scan email person@example.com --live
 python -m osint_toolkit scan phone +380441234567
 python -m osint_toolkit scan domain example.com --live
@@ -127,7 +127,7 @@ python -m osint_toolkit show sherlock-project/sherlock
 ```powershell
 python -m osint_toolkit scan person "Ivan Petrenko" --limit 10
 python -m osint_toolkit scan username exampleuser --limit 10
-python -m osint_toolkit scan username exampleuser --region ru --live --limit 10
+python -m osint_toolkit scan username exampleuser --region ru --live --limit 10 --http-retries 2 --request-delay 0.2
 python -m osint_toolkit scan email person@example.com --live --format json
 python -m osint_toolkit scan phone +380441234567
 python -m osint_toolkit scan domain example.com --live
@@ -138,7 +138,7 @@ python -m osint_toolkit scan url https://example.com --live --format json
 
 Native person module делает safe username expansion: нормализует имя, транслитерирует RU/UA/кириллические символы и генерирует кандидаты вроде `ivanpetrenko`, `ivan.petrenko`, `ipetrenko`. Это не подтверждение аккаунтов, а список кандидатов для проверки через username scan и adapters.
 
-Сейчас native username module покрывает Sherlock/Maigret/WhatsMyName-подобный слой публичных profile URL checks: 38 curated URL-шаблонов, 479 валидных записей из Sherlock `data.json` включая 3 POST-checks и 27 response-url rules, 718 entries из WhatsMyName `wmn-data.json` включая 22 POST-checks и 1423 sanitized Maigret site rules; после дедупликации одинаковых URL активно 2014 check-шаблонов, включая 23 active POST checks и 26 active response-url checks. Curated правила идут первыми. Одинаковые URL удаляются, а альтернативные проверки одного сайта сохраняются с суффиксом источника, например `GitLab (WhatsMyName)`, `AniList (WhatsMyName)` или `Instagram (Maigret)`. Если username не подходит конкретной платформе, finding получает `status=skipped`, а не строит заведомо неверный URL. В `--live` режиме title/body markers, Sherlock `errorUrl` response-url rules, Sherlock/WMN POST bodies, WMN `e_string`/`m_string`, WMN `e_code`/`m_code`, Maigret `presenseStrs`/`absenceStrs`, status rules и custom headers используются для более близкой к upstream классификации. Оставшийся gap до полного 1:1: Maigret engine templates/activation/recursive policy/reporting logic, оставшиеся Sherlock WAF/error-handling нюансы, richer per-site rules и rate-limit/backoff logic либо запуск внешних CLI через adapters.
+Сейчас native username module покрывает Sherlock/Maigret/WhatsMyName-подобный слой публичных profile URL checks: 38 curated URL-шаблонов, 479 валидных записей из Sherlock `data.json` включая 3 POST-checks и 27 response-url rules, 718 entries из WhatsMyName `wmn-data.json` включая 22 POST-checks и 1423 sanitized Maigret site rules; после дедупликации одинаковых URL активно 2014 check-шаблонов, включая 23 active POST checks и 26 active response-url checks. Curated правила идут первыми. Одинаковые URL удаляются, а альтернативные проверки одного сайта сохраняются с суффиксом источника, например `GitLab (WhatsMyName)`, `AniList (WhatsMyName)` или `Instagram (Maigret)`. Если username не подходит конкретной платформе, finding получает `status=skipped`, а не строит заведомо неверный URL. В `--live` режиме title/body markers, Sherlock `errorUrl` response-url rules, Sherlock/WMN POST bodies, WMN `e_string`/`m_string`, WMN `e_code`/`m_code`, Maigret `presenseStrs`/`absenceStrs`, status rules, custom headers, retry по 429/temporary 5xx, `Retry-After` и операторский `--request-delay` используются для более близкой к upstream классификации. Оставшийся gap до полного 1:1: Maigret engine templates/activation/recursive policy/reporting logic, оставшиеся Sherlock WAF/error-handling нюансы, richer per-site rules и site-specific rate-limit policy либо запуск внешних CLI через adapters.
 
 Native email/phone modules являются baseline-слоем для Mosint/h8mail/pwnedOrNot/user-scanner/PhoneInfoga-подобных adapters. Email module в `--live` режиме делает domain resolution, MX/TXT lookup через системный `nslookup`, SPF classification по доменному TXT и DMARC classification через `_dmarc.<domain>`. Он не делает breach lookup, account-enumeration и не запускает password recovery flows.
 

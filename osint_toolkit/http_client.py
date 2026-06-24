@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import time
 import html
 import re
 import ssl
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+
+
+RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 @dataclass(frozen=True)
@@ -18,12 +24,22 @@ class HttpResult:
     content_type: str = ""
     error: str = ""
     headers: dict[str, str] = field(default_factory=dict)
+    attempts: int = 1
 
 
 class HttpClient:
-    def __init__(self, *, timeout: float = 10.0, user_agent: str = "osint-toolkit/0.1"):
+    def __init__(
+        self,
+        *,
+        timeout: float = 10.0,
+        user_agent: str = "osint-toolkit/0.1",
+        retries: int = 1,
+        backoff_seconds: float = 1.0,
+    ):
         self.timeout = timeout
         self.user_agent = user_agent
+        self.retries = max(0, retries)
+        self.backoff_seconds = max(0.0, backoff_seconds)
         self.context = ssl.create_default_context()
 
     def check(
@@ -36,6 +52,26 @@ class HttpClient:
         body: str = "",
     ) -> HttpResult:
         method = method.upper()
+        result: HttpResult | None = None
+        for attempt in range(self.retries + 1):
+            result = self._check_once(url, fetch_title=fetch_title, headers=headers, method=method, body=body)
+            result = replace(result, attempts=attempt + 1)
+            if result.status_code not in RETRY_STATUS_CODES or attempt >= self.retries:
+                return result
+            delay = _retry_delay(result, self.backoff_seconds, attempt)
+            if delay > 0:
+                time.sleep(delay)
+        return result
+
+    def _check_once(
+        self,
+        url: str,
+        *,
+        fetch_title: bool,
+        headers: dict[str, str] | None,
+        method: str,
+        body: str,
+    ) -> HttpResult:
         if method == "POST":
             return self._request(url, method="POST", read_body=True, headers=headers, body=body)
 
@@ -96,6 +132,30 @@ class HttpClient:
             return HttpResult(url=url, final_url=url, status_code=None, error=str(exc.reason))
         except TimeoutError as exc:
             return HttpResult(url=url, final_url=url, status_code=None, error=str(exc))
+
+
+def _retry_delay(result: HttpResult, backoff_seconds: float, attempt: int) -> float:
+    retry_after = _parse_retry_after(result.headers.get("retry-after", ""))
+    if retry_after is not None:
+        return retry_after
+    return backoff_seconds * (2**attempt)
+
+
+def _parse_retry_after(value: str) -> float | None:
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return max(0.0, (parsed - datetime.now(timezone.utc)).total_seconds())
 
 
 def _decode_body(body: bytes, content_type: str, *, limit: int = 65536) -> str:
