@@ -87,6 +87,16 @@ class CliTests(unittest.TestCase):
         self.assertIn("megadose/holehe", result.stdout)
         self.assertIn("restricted", result.stdout)
 
+    def test_adapter_setup_command(self):
+        result = self.run_cli("adapter-setup", "sherlock-project/sherlock", "--format", "json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(payload[0]["repository"], "sherlock-project/sherlock")
+        self.assertEqual(payload[0]["install_kind"], "pipx")
+        self.assertEqual(payload[0]["install_command"], "pipx install sherlock-project")
+        self.assertIn("sherlockproject.xyz", payload[0]["docs_url"])
+
     def test_investigate_command_writes_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "case.md"

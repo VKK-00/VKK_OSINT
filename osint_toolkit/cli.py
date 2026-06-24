@@ -4,7 +4,8 @@ import argparse
 import sys
 
 from .adapter_runner import run_adapter_findings
-from .adapters import filter_adapters
+from .adapter_setup import build_adapter_setups
+from .adapters import filter_adapters, find_adapter
 from .case_store import CaseStore, CaseStoreError
 from .catalog import Catalog, CatalogError
 from .doctor import inspect_adapters
@@ -17,6 +18,7 @@ from .investigation import (
 )
 from .output import (
     format_adapters,
+    format_adapter_setups,
     format_case_detail,
     format_cases,
     format_findings,
@@ -85,6 +87,12 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--status", choices=("partial_native", "planned", "restricted"))
     doctor.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     doctor.set_defaults(handler=handle_doctor)
+
+    adapter_setup = subparsers.add_parser("adapter-setup", help="Show install/config plan for upstream adapters.")
+    adapter_setup.add_argument("repository", nargs="?", help="Adapter repository, for example sherlock-project/sherlock.")
+    adapter_setup.add_argument("--status", choices=("partial_native", "planned", "restricted"))
+    adapter_setup.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
+    adapter_setup.set_defaults(handler=handle_adapter_setup)
 
     run = subparsers.add_parser("run-adapter", help="Dry-run or execute one configured upstream adapter.")
     run.add_argument("repository", help="Adapter repository, for example sherlock-project/sherlock.")
@@ -190,6 +198,15 @@ def handle_adapters(args: argparse.Namespace) -> int:
 
 def handle_doctor(args: argparse.Namespace) -> int:
     print(format_findings(inspect_adapters(args.status), output_format=args.format))
+    return 0
+
+
+def handle_adapter_setup(args: argparse.Namespace) -> int:
+    if args.repository:
+        adapters = (find_adapter(args.repository),)
+    else:
+        adapters = filter_adapters(args.status)
+    print(format_adapter_setups(build_adapter_setups(adapters), output_format=args.format))
     return 0
 
 

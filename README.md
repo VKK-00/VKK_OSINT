@@ -42,6 +42,7 @@ python -m osint_toolkit scan telegram "@durov"
 python -m osint_toolkit scan ru-ua all --region ua
 python -m osint_toolkit scan url https://example.com --live
 python -m osint_toolkit adapters
+python -m osint_toolkit adapter-setup sherlock-project/sherlock
 python -m osint_toolkit doctor
 python -m osint_toolkit run-adapter sherlock-project/sherlock username example_user
 python -m osint_toolkit investigate --username example_user --domain example.com --telegram "@durov" --include-adapters
@@ -126,6 +127,18 @@ python -m osint_toolkit adapters
 python -m osint_toolkit adapters --status planned --format markdown
 python -m osint_toolkit adapters --status restricted
 ```
+
+### `adapter-setup`
+
+Показывает readiness, команду установки, ссылку на upstream docs и конфигурационные требования для adapter.
+
+```powershell
+python -m osint_toolkit adapter-setup sherlock-project/sherlock
+python -m osint_toolkit adapter-setup --status partial_native --format markdown
+python -m osint_toolkit adapter-setup --format json
+```
+
+Команда не устанавливает внешние инструменты сама. Она даёт проверяемый setup plan, а фактическая установка upstream CLI остаётся отдельным операторским действием.
 
 ### `run-adapter`
 

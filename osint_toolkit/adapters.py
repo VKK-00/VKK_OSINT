@@ -16,6 +16,12 @@ class AdapterSpec:
     note: str = ""
     target_kinds: tuple[str, ...] = ()
     command_template: tuple[str, ...] = ()
+    install_kind: str = ""
+    install_command: tuple[str, ...] = ()
+    install_note: str = ""
+    docs_url: str = ""
+    required_env: tuple[str, ...] = ()
+    optional_env: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, str]:
         return {
@@ -28,6 +34,12 @@ class AdapterSpec:
             "note": self.note,
             "target_kinds": ", ".join(self.target_kinds),
             "command_template": " ".join(self.command_template),
+            "install_kind": self.install_kind,
+            "install_command": " ".join(self.install_command),
+            "install_note": self.install_note,
+            "docs_url": self.docs_url,
+            "required_env": ", ".join(self.required_env),
+            "optional_env": ", ".join(self.optional_env),
         }
 
     def render_command(self, target: ScanTarget) -> tuple[str, ...]:
@@ -50,6 +62,10 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Native username module covers public profile URL checks; full parity needs Sherlock site dataset/error rules.",
         ("username",),
         ("sherlock", "{target_value}"),
+        "pipx",
+        ("pipx", "install", "sherlock-project"),
+        "Official docs also support pip, uv, Docker and distro packages.",
+        "https://sherlockproject.xyz/installation",
     ),
     AdapterSpec(
         "soxoj/maigret",
@@ -61,6 +77,10 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Large upstream dataset and enrichment logic should be used through adapter or imported with license notice.",
         ("username",),
         ("maigret", "{target_value}"),
+        "pip",
+        ("python", "-m", "pip", "install", "maigret"),
+        "Optional PDF reporting needs the upstream pdf extra and system graphics libraries.",
+        "https://maigret.readthedocs.io/en/latest/installation.html",
     ),
     AdapterSpec(
         "WebBreacher/WhatsMyName",
@@ -70,6 +90,9 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "planned",
         "",
         "Best source for expanding native username templates after license/source review.",
+        install_kind="dataset",
+        install_note="Import or reference the upstream site dataset after license/source review; no executable adapter is configured.",
+        docs_url="https://github.com/WebBreacher/WhatsMyName",
     ),
     AdapterSpec(
         "instaloader/instaloader",
@@ -81,6 +104,10 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Use upstream CLI for full Instagram behavior instead of reimplementing platform edge cases.",
         ("username",),
         ("instaloader", "profile", "{target_value}"),
+        "pip",
+        ("python", "-m", "pip", "install", "instaloader"),
+        "Some private Instagram workflows require upstream login/session configuration.",
+        "https://instaloader.github.io/installation.html",
     ),
     AdapterSpec(
         "Owez/yark",
@@ -92,6 +119,10 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Adapter should normalize archive outputs into unified Finding records.",
         ("url",),
         ("yark", "new", "{target_value}"),
+        "pip",
+        ("python", "-m", "pip", "install", "yark"),
+        "FFmpeg is optional upstream dependency for some archive workflows.",
+        "https://github.com/owez/yark",
     ),
     AdapterSpec(
         "alpkeskin/mosint",
@@ -103,6 +134,10 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Native email module covers syntax/domain-resolution baseline; full parity needs upstream enrichment modules.",
         ("email",),
         ("mosint", "{target_value}"),
+        "go",
+        ("go", "install", "github.com/alpkeskin/mosint/v3/cmd/mosint@latest"),
+        "Many enrichment services need upstream API/service configuration before results are useful.",
+        "https://github.com/alpkeskin/mosint",
     ),
     AdapterSpec(
         "thewhiteh4t/pwnedOrNot",
@@ -114,6 +149,10 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Should be opt-in and avoid printing sensitive breach payloads by default.",
         ("email",),
         ("pwnedornot", "{target_value}"),
+        "manual",
+        (),
+        "Install from upstream README and ensure the pwnedornot executable is on PATH.",
+        "https://github.com/thewhiteh4t/pwnedOrNot",
     ),
     AdapterSpec(
         "thewhiteh4t/nexfil",
@@ -125,6 +164,10 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Candidate for second native-compatible username backend.",
         ("username",),
         ("nexfil", "-u", "{target_value}"),
+        "manual",
+        (),
+        "Install from upstream README and ensure the nexfil executable is on PATH.",
+        "https://github.com/thewhiteh4t/nexfil",
     ),
     AdapterSpec(
         "martinvigo/email2phonenumber",
@@ -134,6 +177,9 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "restricted",
         "",
         "High privacy risk; keep as explicit external adapter with strict operator confirmation.",
+        install_kind="manual",
+        install_note="Restricted adapter: review lawful scope and upstream README before installing.",
+        docs_url="https://github.com/martinvigo/email2phonenumber",
     ),
     AdapterSpec(
         "megadose/holehe",
@@ -143,6 +189,9 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "restricted",
         "",
         "Password-recovery based account enumeration should not be copied into native code.",
+        install_kind="manual",
+        install_note="Restricted adapter: do not install or run without explicit lawful scope review.",
+        docs_url="https://github.com/megadose/holehe",
     ),
     AdapterSpec(
         "megadose/ignorant",
@@ -152,6 +201,9 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "restricted",
         "",
         "Phone account enumeration should remain restricted and explicit.",
+        install_kind="manual",
+        install_note="Restricted adapter: do not install or run without explicit lawful scope review.",
+        docs_url="https://github.com/megadose/ignorant",
     ),
     AdapterSpec(
         "sundowndev/phoneinfoga",
@@ -163,6 +215,10 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Native phone module covers normalization/prefix baseline; full parity should use external adapter.",
         ("phone",),
         ("phoneinfoga", "scan", "-n", "{target_value}"),
+        "binary",
+        (),
+        "Download an OS-specific binary from upstream releases or build from source.",
+        "https://sundowndev.github.io/phoneinfoga/getting-started/install/",
     ),
     AdapterSpec(
         "smicallef/spiderfoot",
@@ -172,6 +228,9 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "planned",
         "spiderfoot -l 127.0.0.1:5001",
         "Best integrated through SpiderFoot API/web server due broad module scope.",
+        install_kind="manual",
+        install_note="Run upstream SpiderFoot server/API and configure a dedicated connector before executing scans.",
+        docs_url="https://github.com/smicallef/spiderfoot",
     ),
     AdapterSpec(
         "snooppr/snoop",
@@ -183,6 +242,10 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Important RU/UA username backend; needs license confirmation before code reuse.",
         ("username",),
         ("snoop", "{target_value}"),
+        "binary",
+        (),
+        "Download the upstream release binary for Windows or GNU/Linux and put it on PATH.",
+        "https://github.com/snooppr/snoop",
     ),
     AdapterSpec(
         "Yvesssn/DetectDee",
@@ -192,6 +255,9 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "planned",
         "",
         "Candidate for native-compatible checks after reviewing service definitions.",
+        install_kind="manual",
+        install_note="Review upstream service definitions and CLI usage before adding an executable command template.",
+        docs_url="https://github.com/Yvesssn/DetectDee",
     ),
 )
 

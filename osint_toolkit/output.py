@@ -5,6 +5,7 @@ import io
 import json
 from typing import Iterable
 
+from .adapter_setup import AdapterSetup
 from .adapters import AdapterSpec
 from .case_store import CaseRecord
 from .engine import Finding
@@ -126,6 +127,12 @@ def format_adapters(adapters: Iterable[AdapterSpec], *, output_format: str = "ta
                 "command_hint",
                 "target_kinds",
                 "command_template",
+                "install_kind",
+                "install_command",
+                "install_note",
+                "docs_url",
+                "required_env",
+                "optional_env",
                 "note",
             ),
             lineterminator="\n",
@@ -144,6 +151,68 @@ def format_adapters(adapters: Iterable[AdapterSpec], *, output_format: str = "ta
                 _short(adapter.capability, 46),
             )
             for adapter in adapter_list
+        ]
+        return _format_table(headers, rows)
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
+def format_adapter_setups(setups: Iterable[AdapterSetup], *, output_format: str = "table") -> str:
+    setup_list = tuple(setups)
+    if output_format == "json":
+        return json.dumps([setup.to_dict() for setup in setup_list], ensure_ascii=False, indent=2)
+    if output_format == "markdown":
+        lines = [
+            "| Repository | Readiness | Install | Required env | Docs |",
+            "|---|---|---|---|---|",
+        ]
+        for setup in setup_list:
+            install = setup.install_command or setup.install_note or setup.install_kind or "-"
+            required_env = ", ".join(setup.required_env) or "-"
+            docs = f"[docs]({setup.docs_url})" if setup.docs_url else "-"
+            lines.append(
+                f"| {setup.repository} | {setup.readiness} | {_escape_md(install)} | "
+                f"{_escape_md(required_env)} | {docs} |"
+            )
+        return "\n".join(lines)
+    if output_format == "csv":
+        buffer = io.StringIO()
+        writer = csv.DictWriter(
+            buffer,
+            fieldnames=(
+                "repository",
+                "adapter_status",
+                "readiness",
+                "executable",
+                "executable_path",
+                "install_kind",
+                "install_command",
+                "install_note",
+                "docs_url",
+                "required_env",
+                "missing_env",
+                "optional_env",
+                "command_hint",
+            ),
+            lineterminator="\n",
+        )
+        writer.writeheader()
+        for setup in setup_list:
+            row = setup.to_dict()
+            row["required_env"] = ", ".join(setup.required_env)
+            row["missing_env"] = ", ".join(setup.missing_env)
+            row["optional_env"] = ", ".join(setup.optional_env)
+            writer.writerow(row)
+        return buffer.getvalue().strip()
+    if output_format == "table":
+        headers = ("Repository", "Readiness", "Install", "Required env")
+        rows = [
+            (
+                setup.repository,
+                setup.readiness,
+                _short(setup.install_command or setup.install_note or setup.install_kind or "-", 54),
+                _short(", ".join(setup.required_env) or "-", 28),
+            )
+            for setup in setup_list
         ]
         return _format_table(headers, rows)
     raise ValueError(f"Unsupported output format: {output_format}")

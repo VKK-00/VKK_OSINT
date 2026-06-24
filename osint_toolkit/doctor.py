@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import shutil
-
+from .adapter_setup import build_adapter_setup
 from .adapters import ADAPTERS, AdapterSpec
 from .engine import Finding
 
@@ -12,25 +11,32 @@ def inspect_adapters(status: str | None = None) -> tuple[Finding, ...]:
 
 
 def _adapter_to_finding(adapter: AdapterSpec) -> Finding:
+    setup = build_adapter_setup(adapter)
     command = adapter.command_template
     if adapter.status == "restricted":
         status = "restricted"
         confidence = "not_checked"
-        evidence = "Restricted adapter; execution requires explicit scope review and --allow-restricted."
+        evidence = setup.install_note or "Restricted adapter; execution requires explicit scope review and --allow-restricted."
     elif not command:
         status = "not_configured"
         confidence = "high"
-        evidence = "No executable command template is configured yet."
+        evidence = setup.install_note or "No executable command template is configured yet."
     else:
-        executable = shutil.which(command[0])
-        if executable:
-            status = "available"
-            confidence = "high"
-            evidence = f"Executable found: {executable}"
+        if setup.executable_path:
+            if setup.missing_env:
+                status = "config_missing"
+                confidence = "medium"
+                evidence = f"Executable found but required environment is missing: {', '.join(setup.missing_env)}"
+            else:
+                status = "available"
+                confidence = "high"
+                evidence = f"Executable found: {setup.executable_path}"
         else:
             status = "missing"
             confidence = "high"
-            evidence = f"Executable is not available on PATH: {command[0]}"
+            setup_hint = setup.install_command or setup.install_note
+            install_hint = f" Setup: {setup_hint}" if setup_hint else ""
+            evidence = f"Executable is not available on PATH: {command[0]}.{install_hint}"
 
     return Finding(
         module="adapter-doctor",
@@ -39,6 +45,5 @@ def _adapter_to_finding(adapter: AdapterSpec) -> Finding:
         status=status,
         confidence=confidence,
         evidence=evidence,
-        metadata=adapter.to_dict(),
+        metadata={**adapter.to_dict(), **{f"setup_{key}": str(value) for key, value in setup.to_dict().items()}},
     )
-

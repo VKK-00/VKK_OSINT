@@ -214,6 +214,7 @@ Gap:
 ```powershell
 python -m osint_toolkit run-adapter <repository> <target_kind> <target_value>
 python -m osint_toolkit run-adapter <repository> <target_kind> <target_value> --execute
+python -m osint_toolkit adapter-setup <repository>
 ```
 
 Уже реализовано:
@@ -225,14 +226,16 @@ python -m osint_toolkit run-adapter <repository> <target_kind> <target_value> --
 - timeout handling;
 - restricted adapter guard via `--allow-restricted`;
 - `run_adapter_findings()` returns summary + parsed findings;
-- stdout parser for common URL/email/phone/key-value lines from Sherlock/Maigret/Nexfil/Snoop/Mosint/PhoneInfoga-like output.
+- stdout parser for common URL/email/phone/key-value lines from Sherlock/Maigret/Nexfil/Snoop/Mosint/PhoneInfoga-like output;
+- install/config/readiness metadata in `AdapterSpec`;
+- `adapter-setup` command for setup plans, docs URLs, PATH/env readiness.
 
 Gap:
 
-- нет установки upstream CLI;
+- нет автоматической установки upstream CLI;
 - нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
-- нет per-adapter config/API key handling.
+- per-adapter config/API key handling пока только описывается metadata, без secure secret store.
 
 ## Case investigation runner
 
