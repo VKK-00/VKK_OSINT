@@ -4,6 +4,7 @@ from osint_toolkit.adapters import filter_adapters
 from osint_toolkit.adapter_runner import run_adapter, run_adapter_findings
 from osint_toolkit.doctor import inspect_adapters
 from osint_toolkit.engine import Engine, RunConfig, ScanTarget
+from osint_toolkit.http_client import HttpResult
 from osint_toolkit.investigation import render_investigation_json, render_investigation_markdown, run_investigation
 from osint_toolkit.modules import DomainScanModule, EmailScanModule, PersonNameScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
 from osint_toolkit.modules.domain import normalize_domain
@@ -11,7 +12,8 @@ from osint_toolkit.modules.person import generate_username_candidates, normalize
 from osint_toolkit.modules.phone import detect_country, is_e164_like, normalize_phone
 from osint_toolkit.modules.ru_ua_sources import RuUaSourcePackModule
 from osint_toolkit.modules.telegram import TelegramScanModule, normalize_telegram_target
-from osint_toolkit.modules.username import normalize_username
+from osint_toolkit.modules.username import classify_username_http_result, normalize_username
+from osint_toolkit.sites import UsernameSite
 
 
 class EngineTests(unittest.TestCase):
@@ -51,6 +53,68 @@ class EngineTests(unittest.TestCase):
         self.assertIn("Docker Hub", sources)
         self.assertIn("Linktree", sources)
         self.assertIn("Threads", sources)
+
+    def test_username_live_classifier_uses_not_found_marker(self):
+        site = UsernameSite(
+            "Example",
+            "https://example.com/{username}",
+            not_found_markers=("No user named {username}",),
+        )
+        classification = classify_username_http_result(
+            site,
+            "missinguser",
+            HttpResult(
+                url="https://example.com/missinguser",
+                final_url="https://example.com/missinguser",
+                status_code=200,
+                title="Profile",
+                body_text="No user named missinguser was found.",
+            ),
+        )
+
+        self.assertEqual(classification.status, "not_found")
+        self.assertEqual(classification.confidence, "high")
+        self.assertEqual(classification.content_rule, "not_found_marker")
+
+    def test_username_live_classifier_uses_profile_marker(self):
+        site = UsernameSite(
+            "Example",
+            "https://example.com/{username}",
+            profile_markers=("profile-owner:{username}",),
+        )
+        classification = classify_username_http_result(
+            site,
+            "realuser",
+            HttpResult(
+                url="https://example.com/realuser",
+                final_url="https://example.com/realuser",
+                status_code=200,
+                title="Real User",
+                body_text="<main>profile-owner:realuser</main>",
+            ),
+        )
+
+        self.assertEqual(classification.status, "candidate")
+        self.assertEqual(classification.confidence, "high")
+        self.assertEqual(classification.content_rule, "profile_marker")
+
+    def test_username_live_classifier_keeps_status_without_content_marker(self):
+        site = UsernameSite("Example", "https://example.com/{username}")
+        classification = classify_username_http_result(
+            site,
+            "maybeuser",
+            HttpResult(
+                url="https://example.com/maybeuser",
+                final_url="https://example.com/maybeuser",
+                status_code=200,
+                title="Maybe",
+                body_text="<main>generic page</main>",
+            ),
+        )
+
+        self.assertEqual(classification.status, "candidate")
+        self.assertEqual(classification.confidence, "medium")
+        self.assertEqual(classification.content_rule, "unmatched")
 
     def test_username_scan_region_ru_includes_ru_sources(self):
         engine = Engine([UsernameScanModule()])

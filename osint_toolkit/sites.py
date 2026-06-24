@@ -12,6 +12,8 @@ class UsernameSite:
     source_projects: tuple[str, ...] = ()
     username_pattern: str = r"(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]{0,62}[A-Za-z0-9])"
     rule_note: str = "letters, numbers, dot, underscore or dash; no leading/trailing separator"
+    profile_markers: tuple[str, ...] = ()
+    not_found_markers: tuple[str, ...] = ()
 
     def url_for(self, username: str) -> str:
         return self.url_template.format(username=username)
@@ -21,6 +23,20 @@ class UsernameSite:
             return ""
         return f"{self.name} username rule: {self.rule_note}."
 
+    def match_content(self, username: str, title: str, body_text: str) -> tuple[str, str]:
+        content = f"{title}\n{body_text}".casefold()
+        if not content.strip():
+            return "", ""
+        for marker in self.not_found_markers:
+            rendered = marker.format(username=username)
+            if rendered.casefold() in content:
+                return "not_found_marker", marker
+        for marker in self.profile_markers:
+            rendered = marker.format(username=username)
+            if rendered.casefold() in content:
+                return "profile_marker", marker
+        return "", ""
+
 
 USERNAME_SITES: tuple[UsernameSite, ...] = (
     UsernameSite(
@@ -29,6 +45,8 @@ USERNAME_SITES: tuple[UsernameSite, ...] = (
         source_projects=("sherlock", "maigret", "whatsmyname"),
         username_pattern=r"(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?",
         rule_note="1-39 letters, numbers or single dashes; no leading/trailing dash",
+        profile_markers=("data-hovercard-type=\"user\"", "contribution activity", "repositories"),
+        not_found_markers=("Not Found", "This is not the web page you are looking for"),
     ),
     UsernameSite("GitLab", "https://gitlab.com/{username}", source_projects=("sherlock", "maigret", "whatsmyname")),
     UsernameSite(
@@ -42,6 +60,7 @@ USERNAME_SITES: tuple[UsernameSite, ...] = (
         source_projects=("sherlock", "maigret"),
         username_pattern=r"[A-Za-z0-9_-]{3,20}",
         rule_note="3-20 letters, numbers, underscores or dashes",
+        not_found_markers=("Sorry, nobody on Reddit goes by that name", "page not found"),
     ),
     UsernameSite(
         "X/Twitter",
@@ -49,6 +68,7 @@ USERNAME_SITES: tuple[UsernameSite, ...] = (
         source_projects=("sherlock", "maigret", "tinfoleak"),
         username_pattern=r"[A-Za-z0-9_]{1,15}",
         rule_note="1-15 letters, numbers or underscores",
+        not_found_markers=("This account doesn’t exist", "This account doesn't exist"),
     ),
     UsernameSite(
         "Instagram",
@@ -56,6 +76,7 @@ USERNAME_SITES: tuple[UsernameSite, ...] = (
         source_projects=("sherlock", "maigret", "osintgram", "instaloader"),
         username_pattern=r"[A-Za-z0-9](?:[A-Za-z0-9._]{0,28}[A-Za-z0-9])?",
         rule_note="1-30 letters, numbers, dots or underscores; no leading/trailing separator",
+        not_found_markers=("Sorry, this page isn't available", "The link you followed may be broken"),
     ),
     UsernameSite(
         "Threads",
@@ -70,6 +91,7 @@ USERNAME_SITES: tuple[UsernameSite, ...] = (
         source_projects=("awesome-telegram-osint", "telegram-osint"),
         username_pattern=r"[A-Za-z][A-Za-z0-9_]{4,31}",
         rule_note="5-32 characters, starts with a letter, letters/numbers/underscores only",
+        profile_markers=("tgme_page_title", "tgme_page_description", "View in Telegram"),
     ),
     UsernameSite(
         "YouTube",
@@ -77,6 +99,7 @@ USERNAME_SITES: tuple[UsernameSite, ...] = (
         source_projects=("yark", "maigret"),
         username_pattern=r"[A-Za-z0-9][A-Za-z0-9._-]{1,28}[A-Za-z0-9]",
         rule_note="3-30 letters, numbers, dots, underscores or dashes; no leading/trailing separator",
+        not_found_markers=("This page isn't available", "404 Not Found"),
     ),
     UsernameSite(
         "TikTok",
@@ -84,6 +107,7 @@ USERNAME_SITES: tuple[UsernameSite, ...] = (
         source_projects=("sherlock", "maigret"),
         username_pattern=r"[A-Za-z0-9](?:[A-Za-z0-9._]{0,22}[A-Za-z0-9])",
         rule_note="2-24 letters, numbers, dots or underscores; no leading/trailing separator",
+        not_found_markers=("Couldn't find this account", "Couldn’t find this account"),
     ),
     UsernameSite(
         "Twitch",
@@ -91,6 +115,7 @@ USERNAME_SITES: tuple[UsernameSite, ...] = (
         source_projects=("sherlock", "maigret"),
         username_pattern=r"[A-Za-z0-9_]{4,25}",
         rule_note="4-25 letters, numbers or underscores",
+        not_found_markers=("Sorry. Unless you’ve got a time machine", "Sorry. Unless you've got a time machine"),
     ),
     UsernameSite(
         "Medium",
@@ -134,6 +159,7 @@ USERNAME_SITES: tuple[UsernameSite, ...] = (
         source_projects=("linkedin2username", "dorks-collections-list"),
         username_pattern=r"[A-Za-z0-9][A-Za-z0-9-]{1,98}[A-Za-z0-9]",
         rule_note="3-100 letters, numbers or dashes; no leading/trailing dash",
+        not_found_markers=("This profile is not available", "Profile Not Found"),
     ),
     UsernameSite("DEV", "https://dev.to/{username}", source_projects=("sherlock", "maigret")),
     UsernameSite("NPM", "https://www.npmjs.com/~{username}", source_projects=("sherlock", "maigret")),
@@ -161,5 +187,6 @@ USERNAME_SITES: tuple[UsernameSite, ...] = (
         source_projects=("snoop", "maigret"),
         username_pattern=r"[A-Za-z0-9_-]{3,30}",
         rule_note="3-30 letters, numbers, underscores or dashes",
+        not_found_markers=("Пользователь не найден", "Такого пользователя нет"),
     ),
 )

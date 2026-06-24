@@ -17,7 +17,7 @@
 - находить проекты, связанные с OSINT по лицам;
 - находить проекты и ресурсы, связанные с РФ, Украиной и русскоязычными платформами;
 - разворачивать имя человека в username-кандидаты с RU/UA transliteration;
-- выполнять native username profile checks по 38 публичным URL-шаблонам с platform-specific username rules;
+- выполнять native username profile checks по 38 публичным URL-шаблонам с platform-specific username rules и content markers;
 - выполнять baseline email checks: синтаксис и live domain resolution;
 - выполнять baseline phone checks: E.164-like нормализация и префикс региона;
 - выполнять baseline domain recon: DNS resolution, HTTP/HTTPS metadata и security header presence;
@@ -127,7 +127,7 @@ python -m osint_toolkit scan url https://example.com --live --format json
 
 Native person module делает safe username expansion: нормализует имя, транслитерирует RU/UA/кириллические символы и генерирует кандидаты вроде `ivanpetrenko`, `ivan.petrenko`, `ipetrenko`. Это не подтверждение аккаунтов, а список кандидатов для проверки через username scan и adapters.
 
-Сейчас native username module покрывает Sherlock/Maigret/WhatsMyName-подобный слой публичных profile URL checks: 38 URL-шаблонов, RU-фильтр и platform-specific username rules. Если username не подходит конкретной платформе, finding получает `status=skipped`, а не строит заведомо неверный URL. Полное 1:1 покрытие требует импорта полного upstream dataset, richer error rules и content-based confidence либо подключения внешних CLI через adapters.
+Сейчас native username module покрывает Sherlock/Maigret/WhatsMyName-подобный слой публичных profile URL checks: 38 URL-шаблонов, RU-фильтр, platform-specific username rules и часть content markers. Если username не подходит конкретной платформе, finding получает `status=skipped`, а не строит заведомо неверный URL. В `--live` режиме title/body markers могут повысить confidence до `high` для profile marker или перевести soft-404 страницу в `not_found`. Полное 1:1 покрытие требует импорта полного upstream dataset, richer per-site error rules и rate-limit/backoff logic либо подключения внешних CLI через adapters.
 
 Native email/phone modules являются baseline-слоем для Mosint/h8mail/pwnedOrNot/PhoneInfoga-подобных adapters. Они не делают account-enumeration и не запускают password recovery flows.
 

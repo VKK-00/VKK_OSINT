@@ -3,8 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..engine import Finding, RunConfig, ScanTarget
-from ..http_client import HttpClient
+from ..http_client import HttpClient, HttpResult
 from ..sites import USERNAME_SITES, UsernameSite
+
+
+@dataclass(frozen=True)
+class UsernameHttpClassification:
+    status: str
+    confidence: str
+    evidence: str
+    content_rule: str = "unmatched"
+    content_marker: str = ""
 
 
 @dataclass(frozen=True)
@@ -42,22 +51,24 @@ class UsernameScanModule:
                 continue
             url = site.url_for(username)
             result = client.check(url, fetch_title=True)
-            status, confidence = _classify_status(result.status_code)
+            classification = classify_username_http_result(site, username, result)
             findings.append(
                 Finding(
                     module=self.name,
                     source=site.name,
                     target=target.value,
-                    status=status,
+                    status=classification.status,
                     url=result.final_url or url,
                     title=result.title,
                     http_status=result.status_code,
-                    confidence=confidence,
-                    evidence=result.error or f"HTTP {result.status_code}",
+                    confidence=classification.confidence,
+                    evidence=classification.evidence,
                     metadata={
                         "region": site.region,
                         "normalized_username": username,
                         "rule_status": "matched",
+                        "content_rule": classification.content_rule,
+                        "content_marker": classification.content_marker,
                         "source_projects": ", ".join(site.source_projects),
                         "requested_url": url,
                     },
@@ -75,6 +86,40 @@ def _filter_sites(sites: tuple[UsernameSite, ...], region: str) -> tuple[Usernam
         # There are no Ukraine-specific username templates in the initial native set.
         return tuple(site for site in sites if site.region == "global")
     return sites
+
+
+def classify_username_http_result(
+    site: UsernameSite,
+    username: str,
+    result: HttpResult,
+) -> UsernameHttpClassification:
+    content_rule, content_marker = site.match_content(username, result.title, result.body_text)
+    if result.status_code and result.status_code < 400:
+        if content_rule == "not_found_marker":
+            return UsernameHttpClassification(
+                status="not_found",
+                confidence="high",
+                evidence=f"HTTP {result.status_code}; matched {site.name} not-found marker.",
+                content_rule=content_rule,
+                content_marker=content_marker,
+            )
+        if content_rule == "profile_marker":
+            return UsernameHttpClassification(
+                status="candidate",
+                confidence="high",
+                evidence=f"HTTP {result.status_code}; matched {site.name} profile marker.",
+                content_rule=content_rule,
+                content_marker=content_marker,
+            )
+
+    status, confidence = _classify_status(result.status_code)
+    return UsernameHttpClassification(
+        status=status,
+        confidence=confidence,
+        evidence=result.error or f"HTTP {result.status_code}",
+        content_rule=content_rule or "unmatched",
+        content_marker=content_marker,
+    )
 
 
 def normalize_username(value: str) -> str:
