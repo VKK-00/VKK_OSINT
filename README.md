@@ -139,6 +139,8 @@ python -m osint_toolkit run-adapter sundowndev/phoneinfoga phone +380441234567
 
 Restricted adapters требуют дополнительный флаг `--allow-restricted`; без него возвращается `restricted`.
 
+При `--execute` поддерживаемые adapters дополнительно проходят через базовый stdout parser. Сейчас он извлекает URL, email, E.164-like phone и key/value сигналы из Sherlock/Maigret/Nexfil/Snoop/Mosint/PhoneInfoga-подобного вывода и возвращает их как обычные `Finding`.
+
 ### `doctor`
 
 Проверяет, какие upstream adapters реально готовы к запуску в текущей системе: есть ли executable в `PATH`, есть ли command template, restricted ли adapter.

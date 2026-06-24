@@ -26,6 +26,7 @@ CLI работает в трёх режимах:
 - RU/UA source pack: curated карты, Telegram/RU platforms, geospatial и pastebin источники;
 - базовый web metadata scan по URL, совместимый с начальным web-check слоем;
 - external adapter dry-run/execute runner для настроенных upstream CLI;
+- adapter stdout parser: извлечение URL, email, phone и key/value сигналов из выполненных upstream CLI;
 - adapter doctor: проверка фактической доступности upstream CLI в `PATH`;
 - investigation runner: один кейс, несколько seed-типов, entity summary, единый Markdown/JSON отчёт;
 - SQLite case store: сохранение и повторный просмотр кейсов, targets, entities и findings;
@@ -73,8 +74,12 @@ CLI работает в трёх режимах:
   - `WebMetadataModule` — HTTP status/final URL/title.
 - `osint_toolkit/adapters.py`
   - `AdapterSpec` — карта upstream-проектов, лицензий, режима интеграции и текущего статуса.
+- `osint_toolkit/adapter_parsers.py`
+  - `parse_adapter_output()` — нормализация stdout/stderr внешних CLI в дополнительные `Finding`.
+  - Поддерживает базовые URL/email/phone/key-value patterns для Sherlock/Maigret/Nexfil/Snoop/Mosint/PhoneInfoga-подобного вывода.
 - `osint_toolkit/adapter_runner.py`
-  - `run_adapter()` — dry-run или явный запуск внешнего CLI adapter без shell.
+  - `run_adapter()` — обратно совместимый single-summary wrapper.
+  - `run_adapter_findings()` — dry-run или явный запуск внешнего CLI adapter без shell, с parser findings после успешного запуска.
 - `osint_toolkit/doctor.py`
   - `inspect_adapters()` — диагностика доступности upstream adapters.
 - `osint_toolkit/entities.py`
@@ -122,7 +127,8 @@ Adapter-поток:
 2. `find_adapter()` находит `AdapterSpec`.
 3. По умолчанию возвращается planned finding с командой.
 4. При `--execute` команда запускается через `subprocess.run()` без shell, только если executable найден в `PATH`.
-5. Restricted adapters требуют отдельный `--allow-restricted`.
+5. `parse_adapter_output()` извлекает дополнительные findings из stdout/stderr для поддерживаемых adapter families.
+6. Restricted adapters требуют отдельный `--allow-restricted`.
 
 Investigation-поток:
 
@@ -156,7 +162,7 @@ Case-store поток:
 
 Адаптеры:
 
-`CLI adapter request -> AdapterSpec -> command_template -> dry-run/external process -> Finding`
+`CLI adapter request -> AdapterSpec -> command_template -> dry-run/external process -> summary Finding -> parsed Finding[]`
 
 Investigation:
 
@@ -194,6 +200,7 @@ SQLite используется локально через стандартну
 - `investigate --format markdown|json` — формат отчёта по кейсу.
 - `investigate --case-db` — SQLite-файл для сохранения кейса.
 - `investigate --case-id` — стабильный ID кейса, если нужен повторяемый ключ.
+- `run-adapter --execute` — явный запуск внешнего CLI; для поддерживаемых stdout formats добавляет parsed findings.
 
 ## Команды запуска, тестирования, проверки и отладки
 
@@ -239,6 +246,7 @@ osint-toolkit stats
 - Используется только стандартная библиотека Python. Это снижает риск установки и упрощает запуск на Windows.
 - CLI читает уже проверенные CSV, а не тянет актуальные данные из GitHub. Это делает результаты воспроизводимыми.
 - Система строится вокруг единого `Finding`, чтобы результаты native-модулей и external adapters можно было объединять.
+- Adapter parser не считается источником истины: он нормализует stdout уже запущенного upstream CLI, а не заменяет native logic upstream-проекта.
 - `Entity` отделён от `Finding`: finding описывает источник и сигнал, entity описывает нормализованный объект для сводки кейса и будущего графа.
 - SQLite case store отделён от engine: сканирование можно использовать без записи на диск, а сохранение включается явно через `--case-db`.
 - Dry-run используется по умолчанию для scan-команд. Live-сетевые проверки требуют явного `--live`.
@@ -262,6 +270,7 @@ osint-toolkit stats
 - Telegram module пока не использует Telegram API и не получает private/group data.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
+- Adapter parser покрывает только общие URL/email/phone/key-value patterns; сложные JSON/CSV/HTML exports каждого upstream ещё не разобраны.
 - Entity summary сохраняется вместе с кейсом, но graph edges/relations между сущностями пока не моделируются.
 - SQLite schema сейчас версии 1; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
@@ -272,6 +281,7 @@ osint-toolkit stats
 - При изменении CSV-схемы обновлять `Catalog.load()` и тесты.
 - При добавлении native-модуля обновлять `engine.py`, `cli.py`, README и тесты.
 - При подключении upstream-проекта обновлять `adapters.py`, указать лицензию, режим интеграции и parity gap.
+- При добавлении parser для upstream stdout обновлять `adapter_parsers.py`, tests и `UPSTREAM_PARITY.ru.md`.
 - При изменении схемы сущностей обновлять `entities.py`, `investigation.py`, README и тесты JSON/Markdown.
 - При изменении SQLite-схемы обновлять `case_store.py`, schema version, тесты сохранения и документацию.
 - При добавлении команд обновлять `README.md` и этот анализ.
@@ -284,3 +294,4 @@ osint-toolkit stats
 - 2026-06-24: цель уточнена до единой OSINT-системы с 1:1 functional parity; добавлены engine, native scan modules и adapter manifest.
 - 2026-06-24: добавлен report-level entity summary для объединения seed values, native findings и adapter dry-runs в расследовании.
 - 2026-06-24: добавлено SQLite-хранилище кейсов и CLI-команды `cases`/`case-show`.
+- 2026-06-24: добавлен базовый adapter stdout parser и `run_adapter_findings()` для executed upstream CLI outputs.

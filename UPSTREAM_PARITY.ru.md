@@ -223,13 +223,15 @@ python -m osint_toolkit run-adapter <repository> <target_kind> <target_value> --
 - executable lookup in `PATH`;
 - no shell execution;
 - timeout handling;
-- restricted adapter guard via `--allow-restricted`.
+- restricted adapter guard via `--allow-restricted`;
+- `run_adapter_findings()` returns summary + parsed findings;
+- stdout parser for common URL/email/phone/key-value lines from Sherlock/Maigret/Nexfil/Snoop/Mosint/PhoneInfoga-like output.
 
 Gap:
 
 - нет установки upstream CLI;
-- нет богатого parser-слоя для stdout каждого инструмента;
-- базовая нормализация `Finding` -> `Entity` уже есть, но нет adapter-specific parsers для complex outputs;
+- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента;
+- базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - нет per-adapter config/API key handling.
 
 ## Case investigation runner
@@ -259,7 +261,7 @@ Gap:
 
 - entity merge пока только внутри одного кейса, без persistent graph edges;
 - нет graph edges/relations между сущностями;
-- нет parser-слоя для executed adapter outputs;
+- parsed executed adapter outputs пока доступны через `run-adapter`; `investigate --include-adapters` пока остаётся dry-run by design;
 - нет UI для просмотра кейса.
 
 ## Adapter doctor

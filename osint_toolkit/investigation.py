@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .adapter_runner import run_adapter
+from .adapter_runner import run_adapter_findings
 from .adapters import ADAPTERS
 from .entities import Entity, entities_from_findings, entities_from_targets, merge_entities
 from .engine import Finding, RunConfig, ScanTarget
@@ -163,10 +163,10 @@ def _adapter_dry_runs(target: ScanTarget, limit: int | None) -> tuple[Finding, .
     ]
     if limit is not None:
         compatible = compatible[:limit]
-    return tuple(
-        run_adapter(adapter.repository, target, execute=False)
-        for adapter in compatible
-    )
+    findings: list[Finding] = []
+    for adapter in compatible:
+        findings.extend(run_adapter_findings(adapter.repository, target, execute=False))
+    return tuple(findings)
 
 
 def _finding_row(finding: Finding) -> str:

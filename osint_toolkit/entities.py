@@ -61,13 +61,17 @@ def entities_from_findings(findings: tuple[Finding, ...]) -> tuple[Entity, ...]:
             entities.append(Entity("phone", phone, source, "low", "from evidence text"))
 
         for key, value in finding.metadata.items():
-            if key in {"domain", "normalized", "country", "category", "region"} and value:
+            entity_kind = _metadata_entity_kind(key)
+            if entity_kind and value:
+                if key == "email" and not EMAIL_RE.fullmatch(value):
+                    continue
+                if key in {"phone", "normalized"} and not PHONE_RE.fullmatch(value):
+                    continue
                 entity_kind = {
                     "normalized": "normalized-value",
-                    "country": "country",
                     "category": "source-category",
-                    "region": "region",
-                }.get(key, key)
+                    "line_type": "line-type",
+                }.get(key, entity_kind)
                 entities.append(Entity(entity_kind, value, source, finding.confidence, f"metadata:{key}"))
     return dedupe_entities(tuple(entities))
 
@@ -114,3 +118,20 @@ def _confidence_rank(confidence: str) -> int:
         "unknown": 0,
     }
     return ranks.get(confidence, 0)
+
+
+def _metadata_entity_kind(key: str) -> str:
+    supported = {
+        "domain",
+        "normalized",
+        "country",
+        "category",
+        "region",
+        "email",
+        "phone",
+        "name",
+        "carrier",
+        "location",
+        "line_type",
+    }
+    return key if key in supported else ""

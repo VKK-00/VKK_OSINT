@@ -1,7 +1,7 @@
 import unittest
 
 from osint_toolkit.adapters import filter_adapters
-from osint_toolkit.adapter_runner import run_adapter
+from osint_toolkit.adapter_runner import run_adapter, run_adapter_findings
 from osint_toolkit.doctor import inspect_adapters
 from osint_toolkit.engine import Engine, RunConfig, ScanTarget
 from osint_toolkit.investigation import render_investigation_json, render_investigation_markdown, run_investigation
@@ -130,6 +130,13 @@ class EngineTests(unittest.TestCase):
 
         self.assertEqual(finding.status, "planned")
         self.assertIn("sherlock example_user", finding.evidence)
+
+        findings = run_adapter_findings(
+            "sherlock-project/sherlock",
+            ScanTarget(kind="username", value="example_user"),
+        )
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].status, "planned")
 
     def test_adapter_runner_blocks_restricted_by_default(self):
         finding = run_adapter(

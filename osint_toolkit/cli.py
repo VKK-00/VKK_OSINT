@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .adapter_runner import run_adapter
+from .adapter_runner import run_adapter_findings
 from .adapters import filter_adapters
 from .case_store import CaseStore, CaseStoreError
 from .catalog import Catalog, CatalogError
@@ -195,14 +195,14 @@ def handle_doctor(args: argparse.Namespace) -> int:
 
 def handle_run_adapter(args: argparse.Namespace) -> int:
     target = ScanTarget(kind=args.target_kind, value=args.target_value, region=args.region)
-    finding = run_adapter(
+    findings = run_adapter_findings(
         args.repository,
         target,
         execute=args.execute,
         allow_restricted=args.allow_restricted,
         timeout=args.timeout,
     )
-    print(format_findings((finding,), output_format=args.format))
+    print(format_findings(findings, output_format=args.format))
     return 0
 
 
