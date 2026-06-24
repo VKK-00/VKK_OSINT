@@ -24,6 +24,7 @@
 - выполнять baseline phone checks: E.164-like нормализация и префикс региона;
 - выполнять baseline domain recon: DNS resolution, HTTP/HTTPS metadata, bounded same-site crawler, robots/sitemap discovery, public email/phone/social link extraction, security header presence, certificate transparency subdomain discovery, RDAP registration lookup и raw WHOIS registration fallback;
 - нормализовать Telegram handles/t.me URLs и по `--live` получать public metadata;
+- нормализовать Instagram username/profile/media URLs и по `--live` получать public profile/media metadata без login/session flows;
 - выдавать RU/UA source pack: конфликтные карты, Telegram/RU platforms, geospatial и pastebin источники;
 - получать базовые web metadata, public email extraction, robots/sitemap discovery и bounded same-site crawl по URL;
 - показывать карту upstream-адаптеров и dry-run/execute запускать настроенные внешние CLI;
@@ -51,6 +52,7 @@ python -m osint_toolkit scan email person@example.com --live
 python -m osint_toolkit scan phone +380441234567
 python -m osint_toolkit scan domain example.com --live --crawl-pages 5 --crawl-depth 1
 python -m osint_toolkit scan telegram "@durov"
+python -m osint_toolkit scan instagram "@exampleuser" --live
 python -m osint_toolkit scan ru-ua all --region ua
 python -m osint_toolkit scan url https://example.com --live --crawl-pages 5 --crawl-depth 1
 python -m osint_toolkit adapters
@@ -63,7 +65,7 @@ python -m osint_toolkit run-adapter khast3x/h8mail email person@example.com
 python -m osint_toolkit run-adapter soxoj/maigret username example_user --region ua
 python -m osint_toolkit run-adapter snooppr/snoop username example_user --region ua
 python -m osint_toolkit investigate --person "Ivan Petrenko" --include-adapters --adapter-profile username-full --adapter-limit 2
-python -m osint_toolkit investigate --username example_user --domain example.com --telegram "@durov" --include-adapters
+python -m osint_toolkit investigate --username example_user --domain example.com --telegram "@durov" --instagram "@exampleuser" --include-adapters
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter soxoj/maigret
 python -m osint_toolkit investigate --username example_user --include-adapters --execute-adapters --adapter-limit 1
@@ -133,6 +135,7 @@ python -m osint_toolkit scan email person@example.com --live --format json
 python -m osint_toolkit scan phone +380441234567
 python -m osint_toolkit scan domain example.com --live --crawl-pages 5 --crawl-depth 1
 python -m osint_toolkit scan telegram "@durov" --live
+python -m osint_toolkit scan instagram "@exampleuser" --live --format json
 python -m osint_toolkit scan ru-ua all --region ru --format markdown
 python -m osint_toolkit scan url https://example.com --live --crawl-pages 5 --crawl-depth 1 --format json
 ```
@@ -147,7 +150,7 @@ Native domain module является baseline-слоем для web-check/Photo
 
 Native URL scan использует тот же bounded crawler: стартовая страница извлекает title/status/content-type, crawler читает `robots.txt`, `Sitemap:` directives и `/sitemap.xml`, затем до заданного лимита обходит same-site HTTP(S)-ссылки и собирает public email, E.164-like phone values, external links и social links. По умолчанию лимиты небольшие: 5 страниц и глубина 1.
 
-Native Telegram module покрывает нормализацию `@handle`, `t.me/<handle>` и публичных post URLs. RU/UA source-pack module отдаёт curated источники из текущей разметки top-100.
+Native Telegram module покрывает нормализацию `@handle`, `t.me/<handle>` и публичных post URLs. Native Instagram module покрывает нормализацию `@username`, `instagram.com/<username>/` и публичных media URLs `/p/`, `/reel/`, `/reels/`, `/tv/`; в `--live` режиме он извлекает только публичные page metadata: display name, account id, canonical/profile/media/external URLs, public counters и privacy/verification flags, если они есть в HTML/JSON страницы. Он не делает login/session handling, private data access, follower scraping, comments/messages export или обход rate limits. RU/UA source-pack module отдаёт curated источники из текущей разметки top-100.
 
 ### `adapters`
 
@@ -180,7 +183,7 @@ python -m osint_toolkit adapter-profiles
 python -m osint_toolkit adapter-profiles --format json
 ```
 
-Текущие профили включают `username-full`, `username-ru-ua`, `email-safe`, `phone-safe` и `url-archive`. `username-full` включает Sherlock через `sherlock <username> --no-color --print-all --csv --txt --folderoutput <tempdir>`, Maigret через `maigret <username> --json ndjson`, Nexfil через изолированный temporary workdir с autosaved TXT reports, а также `user-scanner`; `username-ru-ua` начинается со Snoop и Maigret. При `--region ru|ua` Snoop получает `--include RU|UA`, а Maigret получает `--tags ru|ua`. `email-safe` включает Mosint через `mosint --silent <email> --output <temp.json>`, h8mail через `h8mail -t <email> --hide -j <temp.json>` и `user-scanner` через target-specific JSON-команды `user-scanner -u <username> -f json` и `user-scanner -e <email> -f json`. `phone-safe` включает PhoneInfoga через `phoneinfoga scan -n <number>`; GPL-код PhoneInfoga не копируется внутрь проекта, но stdout/API-like JSON вывод приводится к общим `Finding`/`Entity`/graph signals. Restricted email-to-account/email-to-phone adapters в safe-профили не входят.
+Текущие профили включают `username-full`, `username-ru-ua`, `email-safe`, `phone-safe` и `url-archive`. `username-full` включает Sherlock через `sherlock <username> --no-color --print-all --csv --txt --folderoutput <tempdir>`, Maigret через `maigret <username> --json ndjson`, Nexfil через изолированный temporary workdir с autosaved TXT reports, `instaloader profile <profile>` для Instagram edge cases, а также `user-scanner`; `username-ru-ua` начинается со Snoop и Maigret. При `--region ru|ua` Snoop получает `--include RU|UA`, а Maigret получает `--tags ru|ua`. `email-safe` включает Mosint через `mosint --silent <email> --output <temp.json>`, h8mail через `h8mail -t <email> --hide -j <temp.json>` и `user-scanner` через target-specific JSON-команды `user-scanner -u <username> -f json` и `user-scanner -e <email> -f json`. `phone-safe` включает PhoneInfoga через `phoneinfoga scan -n <number>`; GPL-код PhoneInfoga не копируется внутрь проекта, но stdout/API-like JSON вывод приводится к общим `Finding`/`Entity`/graph signals. Restricted email-to-account/email-to-phone adapters в safe-профили не входят.
 
 ### `run-adapter`
 
@@ -194,6 +197,7 @@ python -m osint_toolkit run-adapter khast3x/h8mail email person@example.com
 python -m osint_toolkit run-adapter soxoj/maigret username example_user --region ua
 python -m osint_toolkit run-adapter snooppr/snoop username example_user --region ua
 python -m osint_toolkit run-adapter thewhiteh4t/nexfil username example_user
+python -m osint_toolkit run-adapter instaloader/instaloader instagram https://www.instagram.com/exampleuser/
 python -m osint_toolkit run-adapter kaifcodec/user-scanner email person@example.com
 python -m osint_toolkit run-adapter kaifcodec/user-scanner username example_user
 python -m osint_toolkit run-adapter sundowndev/phoneinfoga phone +380441234567
@@ -220,7 +224,7 @@ python -m osint_toolkit doctor --status planned --format markdown
 python -m osint_toolkit investigate --person "Ivan Petrenko" --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --person "Volodymyr Zelenskyy" --person-alias ze-team --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --title "example case" --username example_user --email person@example.com --domain example.com
-python -m osint_toolkit investigate --username example_user --telegram "@durov" --ru-ua all --region ua --include-adapters --out reports/example_case.md
+python -m osint_toolkit investigate --username example_user --telegram "@durov" --instagram "@exampleuser" --ru-ua all --region ua --include-adapters --out reports/example_case.md
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter sherlock-project/sherlock --adapter soxoj/maigret
 python -m osint_toolkit investigate --username example_user --include-adapters --execute-adapters --adapter-limit 1 --out reports/example_user.md
@@ -228,7 +232,7 @@ python -m osint_toolkit investigate --domain example.com --live --format json
 python -m osint_toolkit investigate --title "saved case" --email person@example.com --case-db cases.sqlite --case-id case-001
 ```
 
-Отчёт содержит `Entity Summary` и `Graph Edges`: нормализованные сущности и связи между ними, например `email -> domain`, `email -> related_email`, `domain -> email`, `domain -> phone`, `domain -> discovered URL`, `domain -> social URL`, `domain -> sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois server`, `url -> domain`, `telegram -> url`, `phone -> country`.
+Отчёт содержит `Entity Summary` и `Graph Edges`: нормализованные сущности и связи между ними, например `email -> domain`, `email -> related_email`, `domain -> email`, `domain -> phone`, `domain -> discovered URL`, `domain -> social URL`, `domain -> sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois server`, `url -> domain`, `telegram -> url`, `instagram -> url`, `instagram -> display name/account id/platform`, `phone -> country`.
 
 Если указан `--person`, система генерирует username-кандидаты и автоматически прогоняет их через native username scan; при `--include-adapters` эти derived usernames также попадают в совместимые username adapters. В графе это видно как `person -> username -> url`.
 

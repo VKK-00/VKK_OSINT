@@ -54,6 +54,9 @@ def entities_from_findings(findings: tuple[Finding, ...]) -> tuple[Entity, ...]:
             telegram = _telegram_handle_from_url(finding.url)
             if telegram:
                 entities.append(Entity("telegram", telegram, source, finding.confidence, "from t.me URL"))
+            instagram = _instagram_handle_from_url(finding.url)
+            if instagram:
+                entities.append(Entity("instagram", instagram, source, finding.confidence, "from Instagram URL"))
 
         for email in EMAIL_RE.findall(finding.evidence):
             entities.append(Entity("email", email, source, "low", "from evidence text"))
@@ -79,6 +82,10 @@ def entities_from_findings(findings: tuple[Finding, ...]) -> tuple[Entity, ...]:
                 "robots_sitemaps",
                 "sitemap_sources",
                 "sitemap_urls",
+                "canonical_url",
+                "profile_image_url",
+                "media_url",
+                "external_url",
             }:
                 for url in _split_metadata_values(value):
                     entities.append(Entity("url", url, source, finding.confidence, f"metadata:{key}"))
@@ -88,6 +95,14 @@ def entities_from_findings(findings: tuple[Finding, ...]) -> tuple[Entity, ...]:
                     telegram = _telegram_handle_from_url(url)
                     if telegram:
                         entities.append(Entity("telegram", telegram, source, finding.confidence, f"metadata:{key} t.me URL"))
+                    instagram = _instagram_handle_from_url(url)
+                    if instagram:
+                        entities.append(Entity("instagram", instagram, source, finding.confidence, f"metadata:{key} Instagram URL"))
+                continue
+            if key == "instagram_username":
+                for username in _split_metadata_values(value):
+                    if _looks_like_instagram_handle(username):
+                        entities.append(Entity("instagram", username, source, finding.confidence, "metadata:instagram_username"))
                 continue
             if key == "robots_disallow_paths":
                 for path in _split_metadata_values(value):
@@ -119,6 +134,9 @@ def entities_from_findings(findings: tuple[Finding, ...]) -> tuple[Entity, ...]:
                     "number_range": "phone-range",
                     "zip_code": "postal-code",
                     "country_code": "country-code",
+                    "display_name": "name",
+                    "account_id": "account-id",
+                    "media_shortcode": "media-shortcode",
                 }.get(key, entity_kind)
                 entities.append(Entity(entity_kind, value, source, finding.confidence, f"metadata:{key}"))
     return dedupe_entities(tuple(entities))
@@ -153,6 +171,26 @@ def _telegram_handle_from_url(url: str) -> str:
     if not handle or handle.startswith("+"):
         return ""
     return "@" + handle
+
+
+def _instagram_handle_from_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.hostname not in {"instagram.com", "www.instagram.com"}:
+        return ""
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if not parts or parts[0] in {"p", "reel", "reels", "tv"}:
+        return ""
+    handle = parts[0]
+    if not _looks_like_instagram_handle("@" + handle):
+        return ""
+    return "@" + handle
+
+
+def _looks_like_instagram_handle(value: str) -> bool:
+    handle = value.strip()
+    if handle.startswith("@"):
+        handle = handle[1:]
+    return bool(handle) and re.fullmatch(r"[A-Za-z0-9._]{1,30}", handle) is not None
 
 
 def _confidence_rank(confidence: str) -> int:
@@ -191,6 +229,11 @@ def _metadata_entity_kind(key: str) -> str:
         "nameserver",
         "whois_server",
         "whois_referral_server",
+        "instagram_username",
+        "platform",
+        "display_name",
+        "account_id",
+        "media_shortcode",
     }
     return key if key in supported else ""
 

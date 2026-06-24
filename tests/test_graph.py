@@ -170,6 +170,49 @@ class GraphAnalysisTests(unittest.TestCase):
         self.assertIn(("domain", "example.com", "referred_whois_server", "whois-server", "whois.example-registrar.test"), edge_keys)
         self.assertIn(("domain", "example.com", "registered_via", "registrar", "Example Registrar, Inc."), edge_keys)
 
+    def test_instagram_metadata_edges(self):
+        target = ScanTarget(kind="instagram", value="https://www.instagram.com/exampleuser/")
+        findings = (
+            Finding(
+                module="instagram-public-profile",
+                source="instagram-profile-url",
+                target="https://www.instagram.com/exampleuser/",
+                status="candidate",
+                url="https://www.instagram.com/exampleuser/",
+                confidence="medium",
+                evidence="Public Instagram profile metadata found.",
+                metadata={
+                    "platform": "instagram",
+                    "instagram_username": "@exampleuser",
+                    "display_name": "Example User",
+                    "account_id": "123456789",
+                    "canonical_url": "https://www.instagram.com/exampleuser/",
+                    "profile_image_url": "https://cdninstagram.example/profile.jpg",
+                    "external_url": "https://example.com",
+                },
+            ),
+        )
+
+        entities = merge_entities(entities_from_targets((target,)), entities_from_findings(findings))
+        entity_keys = {(entity.kind, entity.value.lower()) for entity in entities}
+        self.assertIn(("instagram", "@exampleuser"), entity_keys)
+        self.assertIn(("platform", "instagram"), entity_keys)
+        self.assertIn(("name", "example user"), entity_keys)
+        self.assertIn(("account-id", "123456789"), entity_keys)
+        self.assertIn(("url", "https://example.com"), entity_keys)
+
+        edges = graph_edges_from_case((target,), findings, entities)
+        edge_keys = {
+            (edge.source_kind, edge.source_value, edge.relation, edge.target_kind, edge.target_value)
+            for edge in edges
+        }
+        self.assertIn(("instagram", "https://www.instagram.com/exampleuser/", "normalized_instagram_account", "instagram", "@exampleuser"), edge_keys)
+        self.assertIn(("instagram", "https://www.instagram.com/exampleuser/", "on_platform", "platform", "instagram"), edge_keys)
+        self.assertIn(("instagram", "https://www.instagram.com/exampleuser/", "display_name_hint", "name", "Example User"), edge_keys)
+        self.assertIn(("instagram", "https://www.instagram.com/exampleuser/", "account_id_hint", "account-id", "123456789"), edge_keys)
+        self.assertIn(("instagram", "https://www.instagram.com/exampleuser/", "linked_external_url", "url", "https://example.com"), edge_keys)
+        self.assertIn(("url", "https://www.instagram.com/exampleuser/", "instagram_url_for", "instagram", "@exampleuser"), edge_keys)
+
     def test_page_email_metadata_edges(self):
         target = ScanTarget(kind="domain", value="example.com")
         findings = (

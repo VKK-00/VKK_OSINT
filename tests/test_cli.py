@@ -167,6 +167,16 @@ class CliTests(unittest.TestCase):
         self.assertIn("telegram-baseline", result.stdout)
         self.assertIn("https://t.me/durov", result.stdout)
 
+    def test_scan_instagram_dry_run_command(self):
+        result = self.run_cli("scan", "instagram", "@exampleuser", "--format", "json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(payload[0]["module"], "instagram-public-profile")
+        self.assertEqual(payload[0]["source"], "instagram-profile-url")
+        self.assertEqual(payload[0]["url"], "https://www.instagram.com/exampleuser/")
+        self.assertEqual(payload[0]["metadata"]["instagram_username"], "@exampleuser")
+
     def test_scan_ru_ua_source_pack_command(self):
         result = self.run_cli("scan", "ru-ua", "all", "--region", "ua", "--format", "markdown")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -290,6 +300,8 @@ class CliTests(unittest.TestCase):
             "person@example.com",
             "--telegram",
             "@durov",
+            "--instagram",
+            "@exampleuser",
             "--format",
             "json",
         )
@@ -301,6 +313,8 @@ class CliTests(unittest.TestCase):
         self.assertIn(("domain", "example.com"), entities)
         self.assertIn(("telegram", "@durov"), entities)
         self.assertIn(("url", "https://t.me/durov"), entities)
+        self.assertIn(("instagram", "@exampleuser"), entities)
+        self.assertIn(("url", "https://www.instagram.com/exampleuser/"), entities)
 
     def test_investigate_person_expands_username_candidates(self):
         result = self.run_cli(

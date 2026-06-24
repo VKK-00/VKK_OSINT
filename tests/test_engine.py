@@ -11,8 +11,9 @@ from osint_toolkit.doctor import inspect_adapters
 from osint_toolkit.engine import Engine, RunConfig, ScanTarget
 from osint_toolkit.http_client import HttpClient, HttpResult
 from osint_toolkit.investigation import render_investigation_json, render_investigation_markdown, run_investigation
-from osint_toolkit.modules import DomainScanModule, EmailScanModule, PersonNameScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
+from osint_toolkit.modules import DomainScanModule, EmailScanModule, InstagramPublicProfileModule, PersonNameScanModule, PhoneScanModule, UsernameScanModule, WebMetadataModule
 from osint_toolkit.modules.domain import normalize_domain, parse_crtsh_subdomains, parse_rdap_domain_record
+from osint_toolkit.modules.instagram import extract_instagram_public_metadata, normalize_instagram_target
 from osint_toolkit.modules.person import generate_username_candidates, normalize_person_name
 from osint_toolkit.modules.phone import detect_country, is_e164_like, normalize_phone
 from osint_toolkit.modules.ru_ua_sources import RuUaSourcePackModule
@@ -927,6 +928,83 @@ class EngineTests(unittest.TestCase):
     def test_telegram_normalizer_rejects_non_telegram_url(self):
         self.assertIsNone(normalize_telegram_target("https://example.com/durov"))
 
+    def test_instagram_scan_normalizes_profile_and_media_urls(self):
+        engine = Engine([InstagramPublicProfileModule()])
+        handle = engine.scan(ScanTarget(kind="instagram", value="@example.user"), RunConfig())
+        media = engine.scan(ScanTarget(kind="instagram", value="https://www.instagram.com/p/ABC_def123/"), RunConfig())
+
+        self.assertEqual(handle[0].url, "https://www.instagram.com/example.user/")
+        self.assertEqual(handle[0].metadata["target_type"], "profile")
+        self.assertEqual(handle[0].metadata["instagram_username"], "@example.user")
+        self.assertEqual(media[0].url, "https://www.instagram.com/p/ABC_def123/")
+        self.assertEqual(media[0].metadata["target_type"], "media")
+        self.assertEqual(media[0].metadata["media_shortcode"], "ABC_def123")
+
+    def test_instagram_normalizer_rejects_non_instagram_url(self):
+        self.assertIsNone(normalize_instagram_target("https://example.com/durov"))
+        self.assertIsNone(normalize_instagram_target(".badname"))
+
+    def test_extract_instagram_public_metadata_from_html(self):
+        body = """
+        <html><head>
+        <link rel="canonical" href="https://www.instagram.com/example.user/" />
+        <meta property="og:title" content="Example User (@example.user) • Instagram photos and videos" />
+        <meta property="og:description" content="1,234 Followers, 56 Following, 78 Posts - See Instagram photos and videos from Example User (@example.user)" />
+        <meta property="og:image" content="https://cdninstagram.example/profile.jpg" />
+        </head><body>
+        {"id":"123456789","username":"example.user","full_name":"Example User","external_url":"https:\\/\\/example.com","is_private":false,"is_verified":true}
+        </body></html>
+        """
+
+        metadata = extract_instagram_public_metadata(body)
+
+        self.assertEqual(metadata.username, "example.user")
+        self.assertEqual(metadata.display_name, "Example User")
+        self.assertEqual(metadata.account_id, "123456789")
+        self.assertEqual(metadata.canonical_url, "https://www.instagram.com/example.user/")
+        self.assertEqual(metadata.profile_image_url, "https://cdninstagram.example/profile.jpg")
+        self.assertEqual(metadata.external_url, "https://example.com")
+        self.assertEqual(metadata.follower_count, "1234")
+        self.assertEqual(metadata.following_count, "56")
+        self.assertEqual(metadata.post_count, "78")
+        self.assertEqual(metadata.is_private, "false")
+        self.assertEqual(metadata.is_verified, "true")
+
+    def test_instagram_live_scan_extracts_public_metadata(self):
+        body = """
+        <html><head>
+        <link rel="canonical" href="https://www.instagram.com/exampleuser/" />
+        <meta property="og:title" content="Example User (@exampleuser) • Instagram photos and videos" />
+        <meta property="og:description" content="10 Followers, 2 Following, 3 Posts - See Instagram photos and videos from Example User (@exampleuser)" />
+        <meta property="og:image" content="https://cdninstagram.example/profile.jpg" />
+        </head></html>
+        """
+        with patch("osint_toolkit.modules.instagram.HttpClient.check") as check:
+            check.return_value = HttpResult(
+                url="https://www.instagram.com/exampleuser/",
+                final_url="https://www.instagram.com/exampleuser/",
+                status_code=200,
+                title="Example User (@exampleuser) • Instagram photos and videos",
+                body_text=body,
+                content_type="text/html",
+                attempts=2,
+            )
+            findings = Engine([InstagramPublicProfileModule()]).scan(
+                ScanTarget(kind="instagram", value="exampleuser"),
+                RunConfig(live=True, http_retries=2, http_backoff=0.5),
+            )
+
+        check.assert_called_once_with(
+            "https://www.instagram.com/exampleuser/",
+            fetch_title=True,
+            headers={"Accept-Language": "en-US,en;q=0.9"},
+        )
+        self.assertEqual(findings[0].status, "candidate")
+        self.assertEqual(findings[0].metadata["display_name"], "Example User")
+        self.assertEqual(findings[0].metadata["follower_count"], "10")
+        self.assertEqual(findings[0].metadata["profile_image_url"], "https://cdninstagram.example/profile.jpg")
+        self.assertEqual(findings[0].metadata["http_attempts"], "2")
+
     def test_ru_ua_source_pack_filters_by_region(self):
         engine = Engine([RuUaSourcePackModule()])
         findings = engine.scan(ScanTarget(kind="ru-ua", value="all", region="ua"), RunConfig())
@@ -1108,6 +1186,16 @@ class EngineTests(unittest.TestCase):
         self.assertIn("user-scanner -e person@example.com -f json", email.evidence)
         self.assertEqual(username.status, "planned")
         self.assertIn("user-scanner -u example_user -f json", username.evidence)
+
+    def test_adapter_runner_renders_instaloader_for_instagram_target(self):
+        finding = run_adapter(
+            "instaloader/instaloader",
+            ScanTarget(kind="instagram", value="https://www.instagram.com/exampleuser/"),
+        )
+
+        self.assertEqual(finding.status, "planned")
+        self.assertIn("instaloader profile exampleuser", finding.evidence)
+        self.assertEqual(finding.metadata["command"], "instaloader profile exampleuser")
 
     def test_adapter_runner_renders_region_specific_maigret_command(self):
         all_regions = run_adapter(

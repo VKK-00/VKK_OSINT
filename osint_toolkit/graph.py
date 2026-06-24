@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+import re
 from typing import Iterable, Mapping
 from urllib.parse import urlparse
 
@@ -218,6 +219,9 @@ def _edges_from_entities(entities: tuple[Entity, ...], entity_keys: set[tuple[st
             telegram = _telegram_from_url(entity.value)
             if _has_entity(entity_keys, "telegram", telegram):
                 edges.append(_edge(entity, "telegram_url_for", "telegram", telegram, "parsed from t.me URL"))
+            instagram = _instagram_from_url(entity.value)
+            if _has_entity(entity_keys, "instagram", instagram):
+                edges.append(_edge(entity, "instagram_url_for", "instagram", instagram, "parsed from Instagram URL"))
     return tuple(edges)
 
 
@@ -329,6 +333,15 @@ def _metadata_edge(key: str) -> tuple[str, str] | None:
         "nameservers": ("uses_nameserver", "nameserver"),
         "whois_server": ("queried_whois_server", "whois-server"),
         "whois_referral_server": ("referred_whois_server", "whois-server"),
+        "instagram_username": ("normalized_instagram_account", "instagram"),
+        "platform": ("on_platform", "platform"),
+        "display_name": ("display_name_hint", "name"),
+        "account_id": ("account_id_hint", "account-id"),
+        "media_shortcode": ("media_shortcode_hint", "media-shortcode"),
+        "canonical_url": ("canonical_url", "url"),
+        "profile_image_url": ("profile_image_url", "url"),
+        "media_url": ("media_url", "url"),
+        "external_url": ("linked_external_url", "url"),
     }
     return mapping.get(key)
 
@@ -351,6 +364,10 @@ def _metadata_values(key: str, value: str) -> tuple[str, ...]:
         "nameservers",
         "whois_server",
         "whois_referral_server",
+        "canonical_url",
+        "profile_image_url",
+        "media_url",
+        "external_url",
     }:
         parts = [part.strip() for part in value.replace("|", ",").split(",")]
         return tuple(part for part in parts if part)
@@ -378,6 +395,19 @@ def _telegram_from_url(value: str) -> str:
         return ""
     handle = parsed.path.strip("/").split("/")[0]
     if not handle or handle.startswith("+"):
+        return ""
+    return f"@{handle}"
+
+
+def _instagram_from_url(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.hostname not in {"instagram.com", "www.instagram.com"}:
+        return ""
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if not parts or parts[0] in {"p", "reel", "reels", "tv"}:
+        return ""
+    handle = parts[0]
+    if not re.fullmatch(r"[A-Za-z0-9._]{1,30}", handle):
         return ""
     return f"@{handle}"
 

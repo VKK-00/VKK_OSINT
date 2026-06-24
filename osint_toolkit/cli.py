@@ -75,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     show.set_defaults(handler=handle_show)
 
     scan = subparsers.add_parser("scan", help="Run native unified OSINT scan modules.")
-    scan.add_argument("target_kind", choices=("person", "username", "email", "phone", "domain", "url", "telegram", "ru-ua"))
+    scan.add_argument("target_kind", choices=("person", "username", "email", "phone", "domain", "url", "telegram", "instagram", "ru-ua"))
     scan.add_argument("target_value")
     scan.add_argument("--region", choices=("all", "ru", "ua"), default="all")
     scan.add_argument("--live", action="store_true", help="Perform network checks. Default is dry-run planning.")
@@ -113,7 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = subparsers.add_parser("run-adapter", help="Dry-run or execute one configured upstream adapter.")
     run.add_argument("repository", help="Adapter repository, for example sherlock-project/sherlock.")
-    run.add_argument("target_kind", choices=("username", "email", "phone", "domain", "url", "telegram", "ru-ua"))
+    run.add_argument("target_kind", choices=("username", "email", "phone", "domain", "url", "telegram", "instagram", "ru-ua"))
     run.add_argument("target_value")
     run.add_argument("--region", choices=("all", "ru", "ua"), default="all")
     run.add_argument("--execute", action="store_true", help="Actually run the external command. Default is dry-run.")
@@ -147,6 +147,7 @@ def build_parser() -> argparse.ArgumentParser:
     investigate.add_argument("--domain", action="append", default=[])
     investigate.add_argument("--url", action="append", default=[])
     investigate.add_argument("--telegram", action="append", default=[])
+    investigate.add_argument("--instagram", action="append", default=[])
     investigate.add_argument("--ru-ua", action="append", default=[])
     investigate.add_argument("--region", choices=("all", "ru", "ua"), default="all")
     investigate.add_argument("--live", action="store_true", help="Perform live checks for native modules.")
@@ -438,7 +439,7 @@ def _read_person_alias_file(path: str) -> tuple[str, ...]:
 
 def _targets_from_args(args: argparse.Namespace) -> tuple[ScanTarget, ...]:
     targets: list[ScanTarget] = []
-    for kind in ("person", "username", "email", "phone", "domain", "url", "telegram"):
+    for kind in ("person", "username", "email", "phone", "domain", "url", "telegram", "instagram"):
         for value in getattr(args, kind):
             targets.append(ScanTarget(kind=kind, value=value, region=args.region))
     for value in getattr(args, "ru_ua"):

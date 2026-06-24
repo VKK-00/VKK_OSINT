@@ -167,11 +167,28 @@ Gap:
 - `vaguileradiaz/tinfoleak`
 - `Owez/yark`
 
+Уже реализовано:
+
+- `python -m osint_toolkit scan instagram <username-or-url>`;
+- normalization for `@username`, `instagram.com/<username>/` profile URLs and public `/p/`, `/reel/`, `/reels/`, `/tv/` media URLs;
+- dry-run без сетевых запросов;
+- optional live public page metadata by explicit `--live`;
+- native `Finding` metadata fields for platform, normalized Instagram username, display name, account id, profile/media/canonical/external URLs, public counters, privacy/verification flags and HTTP attempt metadata;
+- `instagram` entities, profile/media URL entities and graph edges for normalized Instagram account, platform, display name, account id and public URLs;
+- executable adapter target для `instaloader/instaloader`: `instaloader profile <profile>`; для `instagram` target profile name нормализуется из `@handle` или profile URL.
+
+Gap:
+
+- no login/session handling, private data access, follower/following scraping, comments/messages export or password-recovery/account-enumeration flows;
+- no full Osintgram/Toutatis/tinfoleak feature parity; those remain adapter/restricted candidates after scope and platform-terms review;
+- public HTML/metadata extraction is best-effort because Instagram changes markup and may rate-limit or return login walls;
+- no media archive ingestion yet beyond normalizing public media URL targets.
+
 План:
 
-1. Adapter-first: использовать upstream CLI для platform-specific edge cases.
-2. Native: только публичные profile URL checks, metadata wrappers и output normalization.
-3. Добавить `Finding` поля для platform, account id, display name, public counters, media URL, timestamp.
+1. Native: расширять только safe public metadata wrappers and output normalization.
+2. Adapter-first: использовать upstream CLI для platform-specific edge cases, если CLI установлен и оператор явно запускает adapter.
+3. Restricted: private/session/account-enumeration функции не переносить в native-код без отдельного safety design.
 
 ### Telegram / RU-UA
 

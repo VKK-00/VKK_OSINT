@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from .engine import ScanTarget
 
@@ -66,6 +68,7 @@ class AdapterSpec:
             "region_include_flag": _region_include_flag(target.region),
             "region_tag": _region_tag(target.region),
             "region_tags_flag": _region_tags_flag(target.region),
+            "instagram_profile": _instagram_profile_value(target.value),
         }
         rendered: list[str] = []
         for part in command_template:
@@ -189,13 +192,17 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "MIT",
         "planned",
         "instaloader profile <profile>",
-        "Use upstream CLI for full Instagram behavior instead of reimplementing platform edge cases.",
-        ("username",),
-        ("instaloader", "profile", "{target_value}"),
+        "Native instagram target covers public web metadata; use upstream CLI for full Instagram behavior and media edge cases.",
+        ("username", "instagram"),
+        (),
         "pip",
         ("python", "-m", "pip", "install", "instaloader"),
         "Some private Instagram workflows require upstream login/session configuration.",
         "https://instaloader.github.io/installation.html",
+        command_templates=(
+            ("username", ("instaloader", "profile", "{target_value}")),
+            ("instagram", ("instaloader", "profile", "{instagram_profile}")),
+        ),
     ),
     AdapterSpec(
         "Owez/yark",
@@ -527,3 +534,15 @@ def _region_tag(region: str) -> str:
 
 def _region_tags_flag(region: str) -> str:
     return "--tags" if _region_tag(region) else ""
+
+
+def _instagram_profile_value(value: str) -> str:
+    normalized = value.strip().lstrip("@")
+    parsed = urlparse(normalized if "://" in normalized else f"https://{normalized}")
+    if (parsed.hostname or "").lower() in {"instagram.com", "www.instagram.com"}:
+        first = parsed.path.strip("/").split("/")[0]
+        if first and first not in {"p", "reel", "reels", "tv"}:
+            normalized = first
+    if re.fullmatch(r"[A-Za-z0-9._]{1,30}", normalized):
+        return normalized
+    return value.strip().lstrip("@")
