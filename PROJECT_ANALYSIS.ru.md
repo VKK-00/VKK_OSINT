@@ -31,6 +31,7 @@ CLI работает в трёх режимах:
 - adapter doctor: проверка фактической доступности upstream CLI в `PATH`;
 - investigation runner: один кейс, несколько seed-типов, entity summary, graph edges, единый Markdown/JSON отчёт;
 - SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges и findings;
+- saved case graph analysis: счётчики связей/типов сущностей, top connected nodes и focus-запрос соседей сущности;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
 
@@ -94,6 +95,7 @@ CLI работает в трёх режимах:
 - `osint_toolkit/graph.py`
   - `GraphEdge` — отношение между двумя сущностями.
   - `graph_edges_from_case()` — построение связей `email -> domain`, `url -> domain`, `target -> finding URL`, `phone -> country/normalized`.
+  - `analyze_case_graph()` — аналитика сохранённого кейса: node/edge counts, relation counts, kind counts, top connected nodes и соседи выбранной сущности.
 - `osint_toolkit/case_store.py`
   - `CaseStore` — SQLite-хранилище расследований.
   - `save()` — сохраняет `InvestigationResult` в таблицы `cases`, `targets`, `entities`, `edges`, `findings`.
@@ -108,7 +110,7 @@ CLI работает в трёх режимах:
 - `osint_toolkit/output.py`
   - форматирование таблиц, Markdown, CSV и JSON.
 - `osint_toolkit/cli.py`
-  - argparse CLI: `stats`, `catalog`, `show`, `recommend`, `brief`.
+  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `run-adapter`, `investigate`, `cases`, `case-show`, `case-graph`, `recommend`, `brief`.
 
 ## Как система работает end-to-end
 
@@ -160,6 +162,8 @@ Case-store поток:
 2. `CaseStore.list_cases()` читает summary сохранённых кейсов.
 3. Пользователь запускает `python -m osint_toolkit case-show --case-db <path> <case_id>`.
 4. `CaseStore.load_case()` возвращает targets, entities, edges и findings в table/Markdown/JSON формате.
+5. Пользователь запускает `python -m osint_toolkit case-graph --case-db <path> <case_id>`.
+6. `analyze_case_graph()` строит summary сохранённого графа и, при указанном фокусе, возвращает соседей конкретной сущности.
 
 ## Поток данных
 
@@ -189,7 +193,7 @@ Investigation:
 
 Сохранённые кейсы:
 
-`InvestigationResult -> CaseStore(SQLite) -> cases/case-show -> table/Markdown/CSV/JSON`
+`InvestigationResult -> CaseStore(SQLite) -> cases/case-show/case-graph -> table/Markdown/CSV/JSON`
 
 ## Внешние интеграции
 
@@ -219,6 +223,8 @@ SQLite используется локально через стандартну
 - `investigate --format markdown|json` — формат отчёта по кейсу.
 - `investigate --case-db` — SQLite-файл для сохранения кейса.
 - `investigate --case-id` — стабильный ID кейса, если нужен повторяемый ключ.
+- `case-graph --entity-kind` и `case-graph --entity-value` — focus-сущность для поиска соседей в сохранённом графе.
+- `case-graph --limit` — ограничение top nodes и списка соседей.
 - `run-adapter --execute` — явный запуск внешнего CLI; для поддерживаемых stdout formats добавляет parsed findings.
 - `adapter-setup` — показать install/config/readiness plan для adapters.
 
@@ -245,6 +251,8 @@ python -m osint_toolkit investigate --username example_user --domain example.com
 python -m osint_toolkit investigate --email person@example.com --case-db cases.sqlite --case-id case-001
 python -m osint_toolkit cases --case-db cases.sqlite
 python -m osint_toolkit case-show --case-db cases.sqlite case-001 --format json
+python -m osint_toolkit case-graph --case-db cases.sqlite case-001
+python -m osint_toolkit case-graph --case-db cases.sqlite case-001 --entity-kind email --entity-value person@example.com --format json
 python -m osint_toolkit recommend username --region ru
 python -m osint_toolkit brief --task username --target-value example --out reports/example.md
 ```
@@ -271,6 +279,7 @@ osint-toolkit stats
 - Adapter setup layer не устанавливает внешние инструменты автоматически: он показывает install plan/readiness, чтобы не запускать непроверенный код без решения оператора.
 - `Entity` отделён от `Finding`: finding описывает источник и сигнал, entity описывает нормализованный объект, а `GraphEdge` описывает связь между объектами.
 - SQLite case store отделён от engine: сканирование можно использовать без записи на диск, а сохранение включается явно через `--case-db`.
+- Graph analysis отделён от case store: SQLite хранит факты кейса, а `analyze_case_graph()` вычисляет summary и neighbors без изменения схемы БД.
 - Dry-run используется по умолчанию для scan-команд. Live-сетевые проверки требуют явного `--live`.
 - Лицензионно сложные или большие проекты подключаются adapters вместо прямого копирования кода.
 - Password recovery flows, email-to-account и phone-to-account механики не переносятся в native-код без restricted-режима.
@@ -294,7 +303,7 @@ osint-toolkit stats
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
 - Adapter parser покрывает только общие URL/email/phone/key-value patterns; сложные JSON/CSV/HTML exports каждого upstream ещё не разобраны.
-- Graph edges пока покрывают базовые отношения; нет взвешенного path finding, graph analytics и визуального UI.
+- Graph edges пока покрывают базовые отношения; есть summary/focus-neighbor analytics, но нет weighted path finding, cross-case graph и визуального UI.
 - SQLite schema сейчас версии 2; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
@@ -322,3 +331,4 @@ osint-toolkit stats
 - 2026-06-24: добавлен базовый adapter stdout parser и `run_adapter_findings()` для executed upstream CLI outputs.
 - 2026-06-24: добавлен adapter setup/readiness layer и CLI-команда `adapter-setup`.
 - 2026-06-24: добавлены `GraphEdge`, report-level graph edges и сохранение edges в SQLite case store.
+- 2026-06-24: добавлены `analyze_case_graph()` и CLI-команда `case-graph` для summary сохранённого графа и запроса соседей сущности.

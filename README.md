@@ -26,6 +26,7 @@
 - показывать карту upstream-адаптеров и dry-run/execute запускать настроенные внешние CLI;
 - получать безопасный workflow под задачу;
 - генерировать Markdown-brief для кейса.
+- сохранять расследования в SQLite и анализировать graph edges сохранённого кейса.
 
 ## Быстрый старт
 
@@ -49,6 +50,8 @@ python -m osint_toolkit investigate --username example_user --domain example.com
 python -m osint_toolkit investigate --title "case one" --email person@example.com --case-db cases.sqlite --case-id case-one
 python -m osint_toolkit cases --case-db cases.sqlite
 python -m osint_toolkit case-show --case-db cases.sqlite case-one --format markdown
+python -m osint_toolkit case-graph --case-db cases.sqlite case-one
+python -m osint_toolkit case-graph --case-db cases.sqlite case-one --entity-kind email --entity-value person@example.com
 python -m osint_toolkit recommend username --region ru --limit 8
 python -m osint_toolkit brief --task telegram --region ua --target-value "public channel" --out reports/telegram_ua.md
 ```
@@ -176,9 +179,9 @@ python -m osint_toolkit investigate --title "saved case" --email person@example.
 
 Отчёт содержит `Entity Summary` и `Graph Edges`: нормализованные сущности и связи между ними, например `email -> domain`, `url -> domain`, `telegram -> url`, `phone -> country`.
 
-Если указан `--case-db`, кейс сохраняется в SQLite: targets, findings, entities и graph edges можно открыть позже через `cases` и `case-show`.
+Если указан `--case-db`, кейс сохраняется в SQLite: targets, findings, entities и graph edges можно открыть позже через `cases`, `case-show` и `case-graph`.
 
-### `cases` и `case-show`
+### `cases`, `case-show` и `case-graph`
 
 Работа с сохранёнными расследованиями.
 
@@ -187,7 +190,11 @@ python -m osint_toolkit cases --case-db cases.sqlite
 python -m osint_toolkit cases --case-db cases.sqlite --format json
 python -m osint_toolkit case-show --case-db cases.sqlite case-001
 python -m osint_toolkit case-show --case-db cases.sqlite case-001 --format markdown
+python -m osint_toolkit case-graph --case-db cases.sqlite case-001
+python -m osint_toolkit case-graph --case-db cases.sqlite case-001 --entity-kind telegram --entity-value "@durov" --format json
 ```
+
+`case-graph` строит summary по сохранённым `entities` и `edges`: число узлов и связей, счётчики типов отношений, счётчики типов сущностей и самые связанные узлы. Если указать `--entity-kind` и `--entity-value`, команда покажет соседей выбранной сущности.
 
 Статусы:
 

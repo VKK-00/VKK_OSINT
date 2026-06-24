@@ -247,6 +247,8 @@ python -m osint_toolkit investigate --username <name> --include-adapters --out r
 python -m osint_toolkit investigate --username <name> --case-db cases.sqlite --case-id case-001
 python -m osint_toolkit cases --case-db cases.sqlite
 python -m osint_toolkit case-show --case-db cases.sqlite case-001
+python -m osint_toolkit case-graph --case-db cases.sqlite case-001
+python -m osint_toolkit case-graph --case-db cases.sqlite case-001 --entity-kind email --entity-value person@example.com
 ```
 
 Уже реализовано:
@@ -259,13 +261,15 @@ python -m osint_toolkit case-show --case-db cases.sqlite case-001
 - Graph Edges for base entity relations;
 - SQLite persistence for cases, targets, entities, edges and findings;
 - list/show saved cases through CLI;
+- saved graph summary: node/edge counts, relation counts, entity kind counts and top connected nodes;
+- focus-neighbor query for one saved entity;
 - review checklist in every Markdown report.
 
 Gap:
 
-- graph edges пока базовые, без weighted graph analytics/path finding;
+- graph edges пока базовые, без weighted path finding и cross-case graph;
 - parsed executed adapter outputs пока доступны через `run-adapter`; `investigate --include-adapters` пока остаётся dry-run by design;
-- нет UI для просмотра кейса.
+- нет UI для просмотра кейса и интерактивного графа.
 
 ## Adapter doctor
 

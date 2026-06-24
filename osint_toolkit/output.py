@@ -9,6 +9,7 @@ from .adapter_setup import AdapterSetup
 from .adapters import AdapterSpec
 from .case_store import CaseRecord
 from .engine import Finding
+from .graph import GraphAnalysis
 from .models import OsintProject
 
 
@@ -367,6 +368,81 @@ def format_case_detail(payload: dict[str, object], *, output_format: str = "json
     raise ValueError(f"Unsupported output format: {output_format}")
 
 
+def format_case_graph_analysis(analysis: GraphAnalysis, *, output_format: str = "table") -> str:
+    if output_format == "json":
+        return json.dumps(analysis.to_dict(), ensure_ascii=False, indent=2)
+
+    if output_format == "markdown":
+        lines = [
+            f"# Case Graph: {_escape_md(analysis.case_id)}",
+            "",
+            f"- Nodes: {analysis.node_count}",
+            f"- Edges: {analysis.edge_count}",
+            "",
+            "## Relation Counts",
+            "",
+        ]
+        lines.extend(_markdown_count_table("Relation", analysis.relation_counts))
+        lines.extend(["", "## Entity Kind Counts", ""])
+        lines.extend(_markdown_count_table("Kind", analysis.kind_counts))
+        lines.extend(["", "## Top Connected Nodes", ""])
+        lines.extend(_markdown_top_nodes(analysis))
+        if analysis.focus:
+            lines.extend(["", f"## Neighbors for `{_escape_md(analysis.focus.label())}`", ""])
+            lines.extend(_markdown_neighbors(analysis))
+        return "\n".join(lines)
+
+    if output_format == "table":
+        sections = [
+            f"Case ID: {analysis.case_id}",
+            f"Nodes:   {analysis.node_count}",
+            f"Edges:   {analysis.edge_count}",
+            "",
+            "Relation counts:",
+            _format_table(("Relation", "Count"), [(key, str(count)) for key, count in analysis.relation_counts])
+            if analysis.relation_counts
+            else "(none)",
+            "",
+            "Entity kind counts:",
+            _format_table(("Kind", "Count"), [(key, str(count)) for key, count in analysis.kind_counts])
+            if analysis.kind_counts
+            else "(none)",
+            "",
+            "Top connected nodes:",
+            _format_table(
+                ("Entity", "Degree"),
+                [(f"{node.kind}:{node.value}", str(node.degree)) for node in analysis.top_nodes],
+            )
+            if analysis.top_nodes
+            else "(none)",
+        ]
+        if analysis.focus:
+            sections.extend(
+                [
+                    "",
+                    f"Neighbors for {analysis.focus.label()}:",
+                    _format_table(
+                        ("Direction", "Relation", "Neighbor", "Confidence", "Source"),
+                        [
+                            (
+                                neighbor.direction,
+                                neighbor.relation,
+                                f"{neighbor.kind}:{neighbor.value}",
+                                neighbor.confidence,
+                                neighbor.source,
+                            )
+                            for neighbor in analysis.neighbors
+                        ],
+                    )
+                    if analysis.neighbors
+                    else "(none)",
+                ]
+            )
+        return "\n".join(sections)
+
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
 def format_stats(stats: dict[str, object]) -> str:
     lines = [
         "OSINT Toolkit catalog stats",
@@ -470,6 +546,40 @@ def _findings_csv(findings: tuple[Finding, ...]) -> str:
             }
         )
     return buffer.getvalue().strip()
+
+
+def _markdown_count_table(label: str, counts: tuple[tuple[str, int], ...]) -> list[str]:
+    lines = [f"| {label} | Count |", "|---|---:|"]
+    if not counts:
+        lines.append("| - | 0 |")
+        return lines
+    for key, count in counts:
+        lines.append(f"| {_escape_md(key)} | {count} |")
+    return lines
+
+
+def _markdown_top_nodes(analysis: GraphAnalysis) -> list[str]:
+    lines = ["| Entity | Degree |", "|---|---:|"]
+    if not analysis.top_nodes:
+        lines.append("| - | 0 |")
+        return lines
+    for node in analysis.top_nodes:
+        lines.append(f"| {_escape_md(f'{node.kind}:{node.value}')} | {node.degree} |")
+    return lines
+
+
+def _markdown_neighbors(analysis: GraphAnalysis) -> list[str]:
+    lines = ["| Direction | Relation | Neighbor | Confidence | Source |", "|---|---|---|---|---|"]
+    if not analysis.neighbors:
+        lines.append("| - | - | - | - | - |")
+        return lines
+    for neighbor in analysis.neighbors:
+        lines.append(
+            f"| {neighbor.direction} | {neighbor.relation} | "
+            f"{_escape_md(f'{neighbor.kind}:{neighbor.value}')} | "
+            f"{neighbor.confidence} | {_escape_md(neighbor.source)} |"
+        )
+    return lines
 
 
 def _format_table(headers: tuple[str, ...], rows: list[tuple[str, ...]]) -> str:

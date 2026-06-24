@@ -10,6 +10,7 @@ from .case_store import CaseStore, CaseStoreError
 from .catalog import Catalog, CatalogError
 from .doctor import inspect_adapters
 from .engine import RunConfig, ScanTarget
+from .graph import analyze_case_graph
 from .investigation import (
     render_investigation_json,
     render_investigation_markdown,
@@ -19,6 +20,7 @@ from .investigation import (
 from .output import (
     format_adapters,
     format_adapter_setups,
+    format_case_graph_analysis,
     format_case_detail,
     format_cases,
     format_findings,
@@ -153,6 +155,15 @@ def build_parser() -> argparse.ArgumentParser:
     case_show.add_argument("--format", choices=("table", "markdown", "json"), default="json")
     case_show.set_defaults(handler=handle_case_show)
 
+    case_graph = subparsers.add_parser("case-graph", help="Analyze graph edges for one saved investigation case.")
+    case_graph.add_argument("--case-db", required=True, help="SQLite database path.")
+    case_graph.add_argument("case_id")
+    case_graph.add_argument("--entity-kind", default="", help="Optional focus entity kind, for example email.")
+    case_graph.add_argument("--entity-value", default="", help="Optional focus entity value, for example person@example.com.")
+    case_graph.add_argument("--limit", type=int, default=10)
+    case_graph.add_argument("--format", choices=("table", "markdown", "json"), default="table")
+    case_graph.set_defaults(handler=handle_case_graph)
+
     return parser
 
 
@@ -284,6 +295,18 @@ def handle_cases(args: argparse.Namespace) -> int:
 def handle_case_show(args: argparse.Namespace) -> int:
     payload = CaseStore(args.case_db).load_case(args.case_id)
     print(format_case_detail(payload, output_format=args.format))
+    return 0
+
+
+def handle_case_graph(args: argparse.Namespace) -> int:
+    payload = CaseStore(args.case_db).load_case(args.case_id)
+    analysis = analyze_case_graph(
+        payload,
+        focus_kind=args.entity_kind,
+        focus_value=args.entity_value,
+        limit=args.limit,
+    )
+    print(format_case_graph_analysis(analysis, output_format=args.format))
     return 0
 
 

@@ -1,10 +1,90 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
+from typing import Iterable, Mapping
 from urllib.parse import urlparse
 
 from .entities import Entity
 from .engine import Finding, ScanTarget
+
+
+@dataclass(frozen=True)
+class GraphNode:
+    kind: str
+    value: str
+
+    def key(self) -> tuple[str, str]:
+        return self.kind, self.value.lower()
+
+    def label(self) -> str:
+        return f"{self.kind}:{self.value}"
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "kind": self.kind,
+            "value": self.value,
+        }
+
+
+@dataclass(frozen=True)
+class GraphNodeDegree:
+    kind: str
+    value: str
+    degree: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "kind": self.kind,
+            "value": self.value,
+            "degree": self.degree,
+        }
+
+
+@dataclass(frozen=True)
+class GraphNeighbor:
+    kind: str
+    value: str
+    relation: str
+    direction: str
+    confidence: str
+    source: str
+    note: str = ""
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "kind": self.kind,
+            "value": self.value,
+            "relation": self.relation,
+            "direction": self.direction,
+            "confidence": self.confidence,
+            "source": self.source,
+            "note": self.note,
+        }
+
+
+@dataclass(frozen=True)
+class GraphAnalysis:
+    case_id: str
+    node_count: int
+    edge_count: int
+    relation_counts: tuple[tuple[str, int], ...]
+    kind_counts: tuple[tuple[str, int], ...]
+    top_nodes: tuple[GraphNodeDegree, ...]
+    focus: GraphNode | None = None
+    neighbors: tuple[GraphNeighbor, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "case_id": self.case_id,
+            "node_count": self.node_count,
+            "edge_count": self.edge_count,
+            "relation_counts": dict(self.relation_counts),
+            "kind_counts": dict(self.kind_counts),
+            "top_nodes": [node.to_dict() for node in self.top_nodes],
+            "focus": self.focus.to_dict() if self.focus else None,
+            "neighbors": [neighbor.to_dict() for neighbor in self.neighbors],
+        }
 
 
 @dataclass(frozen=True)
@@ -38,6 +118,56 @@ class GraphEdge:
             "confidence": self.confidence,
             "note": self.note,
         }
+
+
+def analyze_case_graph(
+    payload: Mapping[str, object],
+    *,
+    focus_kind: str = "",
+    focus_value: str = "",
+    limit: int = 10,
+) -> GraphAnalysis:
+    if limit < 1:
+        raise ValueError("limit must be greater than zero.")
+
+    normalized_focus_kind = focus_kind.strip()
+    normalized_focus_value = focus_value.strip()
+    if bool(normalized_focus_kind) != bool(normalized_focus_value):
+        raise ValueError("focus_kind and focus_value must be provided together.")
+
+    edges = tuple(_edge_from_mapping(row) for row in _payload_rows(payload, "edges"))
+    nodes = _nodes_from_payload(payload, edges)
+    nodes_by_key = {node.key(): node for node in nodes}
+
+    relation_counts = _count_items(edge.relation for edge in edges)
+    kind_counts = _count_items(node.kind for node in nodes)
+    degrees = _degree_counts(edges)
+    top_nodes = tuple(
+        GraphNodeDegree(kind=node.kind, value=node.value, degree=degrees[node.key()])
+        for node in sorted(
+            nodes,
+            key=lambda item: (-degrees[item.key()], item.kind, item.value.lower()),
+        )
+        if degrees[node.key()] > 0
+    )[:limit]
+
+    focus = None
+    neighbors: tuple[GraphNeighbor, ...] = ()
+    if normalized_focus_kind and normalized_focus_value:
+        focus_key = (normalized_focus_kind, normalized_focus_value.lower())
+        focus = nodes_by_key.get(focus_key, GraphNode(normalized_focus_kind, normalized_focus_value))
+        neighbors = _neighbors_for_focus(edges, focus_key, limit=limit)
+
+    return GraphAnalysis(
+        case_id=_case_id(payload),
+        node_count=len(nodes),
+        edge_count=len(edges),
+        relation_counts=relation_counts,
+        kind_counts=kind_counts,
+        top_nodes=top_nodes,
+        focus=focus,
+        neighbors=neighbors,
+    )
 
 
 def graph_edges_from_case(
@@ -213,3 +343,124 @@ def _confidence_rank(confidence: str) -> int:
         "unknown": 0,
     }
     return ranks.get(confidence, 0)
+
+
+def _case_id(payload: Mapping[str, object]) -> str:
+    case = payload.get("case")
+    if not isinstance(case, Mapping):
+        raise ValueError("Invalid case payload: missing case.")
+    return _field(case, "case_id")
+
+
+def _payload_rows(payload: Mapping[str, object], name: str) -> tuple[Mapping[str, object], ...]:
+    rows = payload.get(name)
+    if not isinstance(rows, list):
+        raise ValueError(f"Invalid case payload: {name} must be a list.")
+    validated_rows: list[Mapping[str, object]] = []
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise ValueError(f"Invalid case payload: {name} rows must be objects.")
+        validated_rows.append(row)
+    return tuple(validated_rows)
+
+
+def _nodes_from_payload(payload: Mapping[str, object], edges: tuple[GraphEdge, ...]) -> tuple[GraphNode, ...]:
+    nodes: dict[tuple[str, str], GraphNode] = {}
+    for row in _payload_rows(payload, "entities"):
+        node = _node_from_mapping(row)
+        if node:
+            nodes.setdefault(node.key(), node)
+    for edge in edges:
+        source = GraphNode(edge.source_kind, edge.source_value)
+        target = GraphNode(edge.target_kind, edge.target_value)
+        nodes.setdefault(source.key(), source)
+        nodes.setdefault(target.key(), target)
+    return tuple(sorted(nodes.values(), key=lambda node: (node.kind, node.value.lower())))
+
+
+def _node_from_mapping(row: Mapping[str, object]) -> GraphNode | None:
+    kind = _field(row, "kind")
+    value = _field(row, "value")
+    if not kind or not value:
+        return None
+    return GraphNode(kind, value)
+
+
+def _edge_from_mapping(row: Mapping[str, object]) -> GraphEdge:
+    return GraphEdge(
+        source_kind=_field(row, "source_kind"),
+        source_value=_field(row, "source_value"),
+        relation=_field(row, "relation"),
+        target_kind=_field(row, "target_kind"),
+        target_value=_field(row, "target_value"),
+        source=_field(row, "source") or "unknown",
+        confidence=_field(row, "confidence") or "unknown",
+        note=_field(row, "note"),
+    )
+
+
+def _degree_counts(edges: tuple[GraphEdge, ...]) -> Counter[tuple[str, str]]:
+    degrees: Counter[tuple[str, str]] = Counter()
+    for edge in edges:
+        degrees[(edge.source_kind, edge.source_value.lower())] += 1
+        degrees[(edge.target_kind, edge.target_value.lower())] += 1
+    return degrees
+
+
+def _neighbors_for_focus(
+    edges: tuple[GraphEdge, ...],
+    focus_key: tuple[str, str],
+    *,
+    limit: int,
+) -> tuple[GraphNeighbor, ...]:
+    neighbors: list[GraphNeighbor] = []
+    for edge in edges:
+        source_key = (edge.source_kind, edge.source_value.lower())
+        target_key = (edge.target_kind, edge.target_value.lower())
+        if source_key == focus_key:
+            neighbors.append(
+                GraphNeighbor(
+                    kind=edge.target_kind,
+                    value=edge.target_value,
+                    relation=edge.relation,
+                    direction="out",
+                    confidence=edge.confidence,
+                    source=edge.source,
+                    note=edge.note,
+                )
+            )
+        elif target_key == focus_key:
+            neighbors.append(
+                GraphNeighbor(
+                    kind=edge.source_kind,
+                    value=edge.source_value,
+                    relation=edge.relation,
+                    direction="in",
+                    confidence=edge.confidence,
+                    source=edge.source,
+                    note=edge.note,
+                )
+            )
+    return tuple(
+        sorted(
+            neighbors,
+            key=lambda neighbor: (
+                neighbor.direction,
+                neighbor.relation,
+                neighbor.kind,
+                neighbor.value.lower(),
+            ),
+        )[:limit]
+    )
+
+
+def _count_items(values: Iterable[object]) -> tuple[tuple[str, int], ...]:
+    counts = Counter(str(value) for value in values)
+    return tuple(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _field(row: Mapping[str, object], name: str) -> str:
+    value = row.get(name, "")
+    if value is None:
+        return ""
+    return str(value).strip()

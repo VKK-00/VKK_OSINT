@@ -180,6 +180,34 @@ class CliTests(unittest.TestCase):
             }
             self.assertIn(("email", "email_domain", "domain", "example.com"), edges)
 
+            graph_result = self.run_cli("case-graph", "--case-db", str(db_path), "case-1", "--format", "json")
+            self.assertEqual(graph_result.returncode, 0, graph_result.stderr)
+            graph_payload = json.loads(graph_result.stdout)
+            self.assertEqual(graph_payload["case_id"], "case-1")
+            self.assertGreaterEqual(graph_payload["node_count"], 4)
+            self.assertEqual(graph_payload["relation_counts"]["email_domain"], 1)
+
+            focus_result = self.run_cli(
+                "case-graph",
+                "--case-db",
+                str(db_path),
+                "case-1",
+                "--entity-kind",
+                "email",
+                "--entity-value",
+                "person@example.com",
+                "--format",
+                "json",
+            )
+            self.assertEqual(focus_result.returncode, 0, focus_result.stderr)
+            focus_payload = json.loads(focus_result.stdout)
+            self.assertEqual(focus_payload["focus"]["kind"], "email")
+            neighbors = {
+                (neighbor["kind"], neighbor["value"].lower(), neighbor["relation"])
+                for neighbor in focus_payload["neighbors"]
+            }
+            self.assertIn(("domain", "example.com", "email_domain"), neighbors)
+
     def test_brief_command_writes_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "brief.md"
