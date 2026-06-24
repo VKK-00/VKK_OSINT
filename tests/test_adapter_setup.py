@@ -89,6 +89,22 @@ class AdapterSetupTests(unittest.TestCase):
             ("user-scanner", "-u", "example_user", "-f", "json"),
         )
 
+    def test_nexfil_setup_uses_isolated_workdir_reports(self):
+        adapter = find_adapter("thewhiteh4t/nexfil")
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "missing")
+        self.assertEqual(setup.install_kind, "pip")
+        self.assertEqual(setup.install_command, "python -m pip install nexfil")
+        self.assertEqual(
+            adapter.render_command(ScanTarget(kind="username", value="example_user")),
+            ("nexfil", "-u", "example_user"),
+        )
+        self.assertEqual(adapter.generated_output_patterns, ("*.txt",))
+        self.assertTrue(adapter.generated_output_workdir)
+
     def test_snoop_setup_uses_region_aware_command_template(self):
         adapter = find_adapter("snooppr/snoop")
 

@@ -138,6 +138,7 @@ def format_adapters(adapters: Iterable[AdapterSpec], *, output_format: str = "ta
                 "generated_output_dir_args",
                 "generated_output_file_args",
                 "generated_output_patterns",
+                "generated_output_workdir",
                 "note",
             ),
             lineterminator="\n",

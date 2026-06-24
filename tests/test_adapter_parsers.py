@@ -58,6 +58,42 @@ class AdapterParserTests(unittest.TestCase):
         self.assertEqual(instagram.url, "")
         self.assertEqual(instagram.metadata["checked_url"], "https://www.instagram.com/example_user")
 
+    def test_parse_nexfil_saved_txt_report(self):
+        findings = parse_adapter_output(
+            "thewhiteh4t/nexfil",
+            ScanTarget(kind="username", value="example_user"),
+            """
+            nexfil v1.0.6
+            ----------------------------------------
+            Username : example_user
+            Start Time : Wed Jun 24 21:00:00 2026
+            End Time : Wed Jun 24 21:00:05 2026
+            Total Hits : 2
+            Total Timeouts : 1
+            Total Errors : 3
+
+            URLs :
+
+            https://github.com/example_user
+            https://www.reddit.com/user/example_user
+
+            ----------------------------------------
+            """,
+        )
+
+        summary = next(finding for finding in findings if finding.status == "observed")
+        self.assertEqual(summary.metadata["parser"], "nexfil")
+        self.assertEqual(summary.metadata["total_hits"], "2")
+        self.assertEqual(summary.metadata["total_timeouts"], "1")
+        self.assertEqual(summary.metadata["total_errors"], "3")
+
+        urls = {finding.url for finding in findings if finding.url}
+        self.assertEqual(urls, {"https://github.com/example_user", "https://www.reddit.com/user/example_user"})
+        github = next(finding for finding in findings if finding.url == "https://github.com/example_user")
+        self.assertEqual(github.status, "candidate")
+        self.assertEqual(github.confidence, "high")
+        self.assertEqual(github.metadata["domain"], "github.com")
+
     def test_parse_mosint_style_key_values(self):
         findings = parse_adapter_output(
             "alpkeskin/mosint",
@@ -621,6 +657,55 @@ class AdapterParserTests(unittest.TestCase):
             sum(1 for finding in findings[1:] if finding.url == "https://github.com/example_user"),
             1,
         )
+
+    def test_run_nexfil_adapter_reads_autosaved_txt_report_after_execution(self):
+        def fake_run(args, **kwargs):
+            self.assertEqual(args[:3], ["nexfil", "-u", "example_user"])
+            output_dir = Path(kwargs["cwd"])
+            self.assertEqual(kwargs["env"]["HOME"], str(output_dir))
+            dump_dir = output_dir / ".local" / "share" / "nexfil" / "dumps"
+            dump_dir.mkdir(parents=True, exist_ok=True)
+            (dump_dir / "example_user_123.txt").write_text(
+                "nexfil v1.0.6\n"
+                "----------------------------------------\n"
+                "Username : example_user\n"
+                "Total Hits : 1\n"
+                "Total Timeouts : 0\n"
+                "Total Errors : 0\n\n"
+                "URLs : \n\n"
+                "https://github.com/example_user\n"
+                "----------------------------------------\n",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout=(
+                    "|---> Twitter : https://twitter.com/thewhiteh4t\n"
+                    "https://github.com/example_user\n"
+                    "[+] Saved : report\n"
+                ),
+                stderr="",
+            )
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="nexfil"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            findings = run_adapter_findings(
+                "thewhiteh4t/nexfil",
+                ScanTarget(kind="username", value="example_user"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertEqual(findings[0].metadata["generated_output_files"], "1")
+        self.assertEqual(
+            sum(1 for finding in findings[1:] if finding.url == "https://github.com/example_user"),
+            1,
+        )
+        self.assertFalse(any(finding.url == "https://twitter.com/thewhiteh4t" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("parser") == "nexfil" for finding in findings[1:]))
 
     def test_run_maigret_adapter_reads_generated_json_report_after_execution(self):
         def fake_run(args, **kwargs):

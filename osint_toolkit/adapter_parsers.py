@@ -75,6 +75,8 @@ def parse_adapter_output(
 
     if repository == "sherlock-project/sherlock":
         return _sherlock_findings(repository, target, text)
+    if repository == "thewhiteh4t/nexfil":
+        return _nexfil_findings(repository, target, text)
     if repository == "kaifcodec/user-scanner":
         return _user_scanner_findings(repository, target, text)
     if repository == "snooppr/snoop":
@@ -1741,6 +1743,143 @@ def _sherlock_evidence(site_name: str, raw_status: str, url: str) -> str:
     if url:
         evidence += f" {url}"
     return evidence
+
+
+def _nexfil_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    report_metadata = _nexfil_report_metadata(text, target.value)
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    summary = _nexfil_summary_finding(repository, target, report_metadata, seen)
+    if summary:
+        findings.append(summary)
+
+    in_report_urls = False
+    for line in text.splitlines():
+        compact = " ".join(line.split()).strip()
+        if not compact:
+            continue
+        if compact.lower().startswith("urls"):
+            in_report_urls = True
+            continue
+        if in_report_urls and set(compact) <= {"-"}:
+            in_report_urls = False
+            continue
+
+        if not compact.startswith(("http://", "https://")):
+            continue
+        for raw_url in URL_RE.findall(compact):
+            finding = _nexfil_url_finding(
+                repository=repository,
+                target=target,
+                url=raw_url.rstrip(".,;"),
+                username=report_metadata.get("username", target.value),
+                report_metadata=report_metadata,
+                seen=seen,
+            )
+            if finding:
+                findings.append(finding)
+    return tuple(findings)
+
+
+def _nexfil_report_metadata(text: str, target_value: str) -> dict[str, str]:
+    metadata: dict[str, str] = {"username": target_value}
+    key_map = {
+        "username": "username",
+        "total hits": "total_hits",
+        "total profiles found": "total_hits",
+        "total timeouts": "total_timeouts",
+        "total errors": "total_errors",
+        "total exceptions": "total_errors",
+    }
+    for line in text.splitlines():
+        match = KEY_VALUE_RE.match(_strip_prefix(line))
+        if not match:
+            continue
+        key = " ".join(match.group("key").lower().split())
+        mapped = key_map.get(key)
+        if not mapped:
+            continue
+        value = match.group("value").strip()
+        if mapped == "username" and "," in value:
+            metadata["usernames"] = value
+        elif value:
+            metadata[mapped] = value
+    return metadata
+
+
+def _nexfil_summary_finding(
+    repository: str,
+    target: ScanTarget,
+    report_metadata: dict[str, str],
+    seen: set[tuple[str, str, str]],
+) -> Finding | None:
+    metric_keys = ("total_hits", "total_timeouts", "total_errors")
+    if not any(report_metadata.get(key) for key in metric_keys):
+        return None
+    seen_key = ("nexfil-summary", target.value.lower(), "")
+    if seen_key in seen:
+        return None
+    seen.add(seen_key)
+    metadata = {
+        "repository": repository,
+        "parser": "nexfil",
+        **{key: value for key, value in report_metadata.items() if value},
+    }
+    evidence = "Nexfil report: " + ", ".join(
+        f"{key.replace('_', ' ')}={report_metadata[key]}" for key in metric_keys if report_metadata.get(key)
+    )
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="observed",
+        confidence="medium",
+        evidence=_short(evidence),
+        metadata=metadata,
+    )
+
+
+def _nexfil_url_finding(
+    *,
+    repository: str,
+    target: ScanTarget,
+    url: str,
+    username: str,
+    report_metadata: dict[str, str],
+    seen: set[tuple[str, str, str]],
+) -> Finding | None:
+    if not url.startswith(("http://", "https://")):
+        return None
+    seen_key = ("nexfil-url", username.lower(), url.lower())
+    if seen_key in seen:
+        return None
+    seen.add(seen_key)
+
+    parsed = urlparse(url)
+    domain = (parsed.hostname or "").lower()
+    metadata = {
+        "repository": repository,
+        "parser": "nexfil",
+        "username": username,
+        "domain": domain,
+        "site_name": domain,
+        "url": url,
+    }
+    for key in ("total_hits", "total_timeouts", "total_errors"):
+        if report_metadata.get(key):
+            metadata[key] = report_metadata[key]
+
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="candidate",
+        url=url,
+        confidence="high",
+        evidence=_short(f"Nexfil found profile: {url}"),
+        metadata=metadata,
+    )
 
 
 def _maigret_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -93,9 +94,16 @@ def run_adapter_findings(
 
     output_dir_context: tempfile.TemporaryDirectory[str] | None = None
     output_dir = ""
+    process_cwd = None
+    process_env = None
     if adapter.generated_output_patterns:
         output_dir_context = tempfile.TemporaryDirectory(prefix="osint-toolkit-adapter-")
         output_dir = output_dir_context.name
+        if adapter.generated_output_workdir:
+            process_cwd = output_dir
+            process_env = os.environ.copy()
+            process_env["HOME"] = output_dir
+            process_env["USERPROFILE"] = output_dir
         output_file = str(Path(output_dir) / "adapter-output.json")
         command = (
             *command,
@@ -111,6 +119,8 @@ def run_adapter_findings(
             capture_output=True,
             timeout=timeout,
             check=False,
+            cwd=process_cwd,
+            env=process_env,
         )
     except subprocess.TimeoutExpired as exc:
         if output_dir_context:

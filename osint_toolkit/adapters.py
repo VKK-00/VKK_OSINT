@@ -26,6 +26,7 @@ class AdapterSpec:
     generated_output_dir_args: tuple[str, ...] = ()
     generated_output_file_args: tuple[str, ...] = ()
     generated_output_patterns: tuple[str, ...] = ()
+    generated_output_workdir: bool = False
 
     def to_dict(self) -> dict[str, str]:
         return {
@@ -48,6 +49,7 @@ class AdapterSpec:
             "generated_output_dir_args": " ".join(self.generated_output_dir_args),
             "generated_output_file_args": " ".join(self.generated_output_file_args),
             "generated_output_patterns": ", ".join(self.generated_output_patterns),
+            "generated_output_workdir": str(self.generated_output_workdir).lower(),
         }
 
     def render_command(self, target: ScanTarget) -> tuple[str, ...]:
@@ -285,13 +287,15 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "MIT",
         "planned",
         "nexfil -u <username>",
-        "Candidate for second native-compatible username backend.",
+        "Execute mode runs in a temporary working directory and ingests Nexfil autosaved TXT reports.",
         ("username",),
         ("nexfil", "-u", "{target_value}"),
-        "manual",
-        (),
-        "Install from upstream README and ensure the nexfil executable is on PATH.",
+        "pip",
+        ("python", "-m", "pip", "install", "nexfil"),
+        "Nexfil autosaves reports below its working directory/HOME; runner isolates this in execute mode.",
         "https://github.com/thewhiteh4t/nexfil",
+        generated_output_patterns=("*.txt",),
+        generated_output_workdir=True,
     ),
     AdapterSpec(
         "martinvigo/email2phonenumber",
