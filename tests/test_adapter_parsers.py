@@ -1,5 +1,6 @@
 import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -921,6 +922,71 @@ class AdapterParserTests(unittest.TestCase):
         self.assertIn(("username", "example_user"), entities)
         self.assertIn(("country", "us"), entities)
 
+    def test_parse_blackbird_json_export_profiles(self):
+        findings = parse_adapter_output(
+            "p1ngul1n0/blackbird",
+            ScanTarget(kind="username", value="example_user"),
+            """
+            [
+              {
+                "name": "GitHub",
+                "url": "https://github.com/example_user",
+                "category": "coding",
+                "status": "FOUND",
+                "metadata": [
+                  {"name": "Name", "value": "Example User"},
+                  {"name": "Location", "value": "Kyiv"},
+                  {"name": "Profile Image", "value": "https://avatars.githubusercontent.com/u/123"}
+                ]
+              },
+              {
+                "name": "Missing Example",
+                "url": "https://missing.example/example_user",
+                "category": "social",
+                "status": "NOT-FOUND"
+              }
+            ]
+            """,
+        )
+
+        statuses = {finding.metadata.get("site_name"): finding.status for finding in findings}
+        self.assertEqual(statuses["GitHub"], "candidate")
+        self.assertEqual(statuses["Missing Example"], "not_found")
+
+        github = next(finding for finding in findings if finding.metadata.get("site_name") == "GitHub")
+        self.assertEqual(github.url, "https://github.com/example_user")
+        self.assertEqual(github.metadata["parser"], "blackbird")
+        self.assertEqual(github.metadata["category"], "coding")
+        self.assertEqual(github.metadata["platform_domain"], "github.com")
+        self.assertEqual(github.metadata["social_username"], "example_user")
+        self.assertEqual(github.metadata["name"], "Example User")
+        self.assertEqual(github.metadata["location"], "Kyiv")
+        self.assertEqual(github.metadata["profile_image_url"], "https://avatars.githubusercontent.com/u/123")
+
+        missing = next(finding for finding in findings if finding.metadata.get("site_name") == "Missing Example")
+        self.assertEqual(missing.url, "")
+        self.assertEqual(missing.metadata["checked_url"], "https://missing.example/example_user")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("url", "https://github.com/example_user"), entities)
+        self.assertIn(("domain", "github.com"), entities)
+        self.assertIn(("username", "example_user"), entities)
+        self.assertIn(("name", "example user"), entities)
+        self.assertIn(("location", "kyiv"), entities)
+
+    def test_parse_blackbird_stdout_found_profile(self):
+        findings = parse_adapter_output(
+            "p1ngul1n0/blackbird",
+            ScanTarget(kind="email", value="person@example.com"),
+            "✔️ [GitHub] https://github.com/example_user\n",
+        )
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].status, "candidate")
+        self.assertEqual(findings[0].url, "https://github.com/example_user")
+        self.assertEqual(findings[0].metadata["parser"], "blackbird")
+        self.assertEqual(findings[0].metadata["email"], "person@example.com")
+
     def test_run_adapter_findings_adds_parsed_results_after_execution(self):
         completed = subprocess.CompletedProcess(
             args=["sherlock", "example_user"],
@@ -1253,6 +1319,47 @@ class AdapterParserTests(unittest.TestCase):
         self.assertEqual(findings[0].status, "completed")
         self.assertTrue(any(finding.metadata.get("parser") == "social-analyzer" for finding in findings[1:]))
         self.assertTrue(any(finding.url == "https://github.com/example_user" for finding in findings[1:]))
+
+    def test_run_blackbird_adapter_reads_fresh_generated_json_after_execution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            blackbird_dir = Path(directory)
+            results_dir = blackbird_dir / "results"
+            stale_dir = results_dir / "old_01_01_2026_blackbird"
+            stale_dir.mkdir(parents=True)
+            (stale_dir / "old_01_01_2026_blackbird.json").write_text(
+                '[{"name":"Old","url":"https://old.example/example_user","status":"FOUND"}]',
+                encoding="utf-8",
+            )
+
+            def fake_run(args, **kwargs):
+                self.assertEqual(args[:4], ["C:\\Python\\python.exe", "blackbird.py", "--username", "example_user"])
+                self.assertIn("--json", args)
+                self.assertIn("--no-update", args)
+                self.assertEqual(Path(kwargs["cwd"]), blackbird_dir)
+                fresh_dir = results_dir / "example_user_06_25_2026_blackbird"
+                fresh_dir.mkdir(parents=True)
+                (fresh_dir / "example_user_06_25_2026_blackbird.json").write_text(
+                    '[{"name":"GitHub","url":"https://github.com/example_user","category":"coding","status":"FOUND"}]',
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="Saved results\n", stderr="")
+
+            with patch.dict(os.environ, {"BLACKBIRD_DIR": str(blackbird_dir)}), patch(
+                "osint_toolkit.adapter_runner.shutil.which",
+                return_value="C:\\Python\\python.exe",
+            ), patch("osint_toolkit.adapter_runner.subprocess.run", side_effect=fake_run):
+                findings = run_adapter_findings(
+                    "p1ngul1n0/blackbird",
+                    ScanTarget(kind="username", value="example_user"),
+                    execute=True,
+                )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertEqual(findings[0].metadata["generated_output_files"], "1")
+        self.assertTrue(any(finding.metadata.get("parser") == "blackbird" for finding in findings[1:]))
+        urls = {finding.url for finding in findings[1:]}
+        self.assertIn("https://github.com/example_user", urls)
+        self.assertNotIn("https://old.example/example_user", urls)
 
     def test_run_bbot_adapter_reads_generated_json_events_after_execution(self):
         def fake_run(args, **kwargs):

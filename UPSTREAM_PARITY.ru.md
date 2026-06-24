@@ -50,6 +50,8 @@ python -m osint_toolkit scan username <username> --live
 - parser для Snoop stdout/CSV results: `найден!` -> `candidate`, `Увы!` -> `not_found`, `блок`/ошибки -> `error`;
 - executable adapter для `qeeqbox/social-analyzer`: `node <SOCIAL_ANALYZER_APP_JS> --username <username> --output json --mode fast --method all --filter good,maybe --profiles detected [--countries ru|ua]`;
 - parser для Social Analyzer JSON `detected`/`unknown`/`failed`: `detected` -> `candidate`, `unknown` -> `not_found`, `failed` -> `error`, с сохранением rate/status, site, profile URL, checked URL и public metadata;
+- executable adapter для `p1ngul1n0/blackbird`: `python blackbird.py --username <username> --json --no-update --timeout 30` из `BLACKBIRD_DIR`;
+- parser для Blackbird JSON exports/stdout found-lines: `FOUND` -> `candidate`, `NOT-FOUND` -> `not_found`, `ERROR` -> `error`, с сохранением site/category/profile URL/platform domain и extracted metadata;
 - executable adapter для `sherlock-project/sherlock`: при `--execute` добавляются `--no-color --print-all --csv --txt --folderoutput <tempdir>`;
 - parser для Sherlock stdout и CSV/TXT reports: `Claimed` -> `candidate`, `Available` -> `not_found`, `Unknown`/`WAF` -> `error`, `Illegal` -> `skipped`;
 - executable adapter для `thewhiteh4t/nexfil`: `nexfil -u <username>` запускается в isolated temporary workdir/HOME;
@@ -80,6 +82,7 @@ Gap до полного 1:1:
 - Maigret подключён hybrid: sanitized site rules импортированы native, а web UI, PDF/HTML/XMind reports, recursive policy tuning, proxies/Tor/I2P и AI mode пока не перенесены в native UI;
 - Snoop подключён adapter-first, но локальная установка/обновление Snoop пока остаются операторским действием;
 - Social Analyzer подключён adapter-first через фактический upstream Node app.js и JSON output; локальная установка, Node >= 20.18.1, web/API UI, screenshots/OCR, slow/special modes и полный metadata/screenshot pipeline остаются операторским/upstream слоем;
+- Blackbird подключён adapter-first через фактический upstream checkout `BLACKBIRD_DIR`; JSON exports и stdout hits нормализуются, но upstream AI profiling, PDF/CSV/DUMP exports, proxy/permutation options и enhanced Instagram session metadata пока не вынесены в отдельные native UI-параметры;
 - нет сохранения истории запусков.
 
 ## Следующие native/adapters группы
@@ -92,6 +95,7 @@ Gap до полного 1:1:
 - `khast3x/h8mail`
 - `thewhiteh4t/pwnedOrNot`
 - `kaifcodec/user-scanner`
+- `p1ngul1n0/blackbird`
 - `megadose/holehe`
 - `martinvigo/email2phonenumber`
 - `laramies/theHarvester`
@@ -113,6 +117,8 @@ Gap до полного 1:1:
 - parser для h8mail upstream JSON `{targets: [{target, pwn_num, data}]}`: breach count, related emails, usernames, source labels и paste URLs нормализуются в `Finding`/entities, password/hash/token-like values редактируются и не попадают в evidence;
 - executable target-specific adapter для `kaifcodec/user-scanner`: `user-scanner -e <email> -f json`;
 - parser для `user-scanner` JSON/verbose results: `Registered`/`Found` -> `candidate`, `Available`/`Not Found`/`Not Registered` -> `not_found`, `Error` -> `error`.
+- executable target-specific adapter для `p1ngul1n0/blackbird`: `python blackbird.py --email <email> --json --no-update --timeout 30`;
+- parser для Blackbird email JSON exports/stdout found-lines: found account URLs, site/category, platform domains и extracted metadata нормализуются в `Finding`/entities.
 
 Gap:
 
@@ -321,6 +327,7 @@ python -m osint_toolkit adapter-setup <repository>
 - stdout parser for common URL/email/phone/key-value lines from generic adapter output;
 - scripted stdin support for interactive CLI adapters;
 - generated report ingestion: adapters can run with a temporary output folder, temporary output file or isolated temporary working directory and feed generated files back into `parse_adapter_output()`;
+- upstream checkout output ingestion: adapters can run from a configured working directory and ingest only fresh or changed generated files under that checkout, used by Blackbird `BLACKBIRD_DIR/results`;
 - adapter-specific parser for Sherlock stdout and generated CSV/TXT report rows;
 - adapter-specific parser for Nexfil stdout and autosaved TXT report rows;
 - adapter-specific parser for Mosint JSON report rows with credential-value redaction;
@@ -329,6 +336,7 @@ python -m osint_toolkit adapter-setup <repository>
 - adapter-specific parser for `user-scanner` JSON and verbose line output;
 - adapter-specific parser for Snoop stdout and CSV report rows;
 - adapter-specific parser for Social Analyzer JSON detected/unknown/failed profile rows;
+- adapter-specific parser for Blackbird JSON exports and stdout found profile rows;
 - adapter-specific parser for PhoneInfoga CLI sections and REST/API-like JSON scanner outputs;
 - adapter-specific parser for Subfinder JSONL/plain subdomain output;
 - adapter-specific parser for httpx JSONL/plain HTTP probe output;
@@ -345,7 +353,7 @@ python -m osint_toolkit adapter-setup <repository>
 Gap:
 
 - нет автоматической установки upstream CLI;
-- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, Social Analyzer JSON, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output;
+- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, Social Analyzer JSON, Blackbird JSON/stdout, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.
 
@@ -375,7 +383,7 @@ python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value p
 - person seed expansion into username candidates;
 - единый native scan через `Engine`;
 - optional adapter dry-runs;
-- reusable adapter profiles such as `username-full`, `email-safe`, `phone-safe` and `username-ru-ua`; username profiles now include Social Analyzer alongside Sherlock, Maigret, Snoop and related username tools;
+- reusable adapter profiles such as `username-full`, `email-safe`, `phone-safe` and `username-ru-ua`; username/email profiles now include Blackbird where lawful scope allows execution;
 - repeated `--adapter <repository>` allowlist for one case;
 - explicit executed adapter ingestion via `--execute-adapters`;
 - Markdown/JSON report;

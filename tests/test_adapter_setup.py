@@ -124,6 +124,29 @@ class AdapterSetupTests(unittest.TestCase):
                 ),
             )
 
+    def test_blackbird_setup_uses_checkout_workdir_and_target_specific_commands(self):
+        adapter = find_adapter("p1ngul1n0/blackbird")
+
+        with patch.dict(os.environ, {}, clear=True), patch("osint_toolkit.adapter_setup.shutil.which", return_value="C:\\Python\\python.exe"):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "config_missing")
+        self.assertEqual(setup.missing_env, ("BLACKBIRD_DIR",))
+        self.assertEqual(setup.install_kind, "manual")
+        self.assertIn("blackbird", setup.docs_url)
+        self.assertEqual(adapter.working_dir_env, "BLACKBIRD_DIR")
+        self.assertEqual(adapter.generated_output_base_env, "BLACKBIRD_DIR")
+        self.assertEqual(adapter.generated_output_subdir, "results")
+        self.assertEqual(adapter.generated_output_patterns, ("*.json",))
+        self.assertEqual(
+            adapter.render_command(ScanTarget(kind="username", value="example_user")),
+            ("python", "blackbird.py", "--username", "example_user", "--json", "--no-update", "--timeout", "30"),
+        )
+        self.assertEqual(
+            adapter.render_command(ScanTarget(kind="email", value="person@example.com")),
+            ("python", "blackbird.py", "--email", "person@example.com", "--json", "--no-update", "--timeout", "30"),
+        )
+
     def test_nexfil_setup_uses_isolated_workdir_reports(self):
         adapter = find_adapter("thewhiteh4t/nexfil")
 

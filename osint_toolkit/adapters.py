@@ -31,6 +31,9 @@ class AdapterSpec:
     generated_output_file_args: tuple[str, ...] = ()
     generated_output_patterns: tuple[str, ...] = ()
     generated_output_workdir: bool = False
+    working_dir_env: str = ""
+    generated_output_base_env: str = ""
+    generated_output_subdir: str = ""
 
     def to_dict(self) -> dict[str, str]:
         return {
@@ -55,6 +58,9 @@ class AdapterSpec:
             "generated_output_file_args": " ".join(self.generated_output_file_args),
             "generated_output_patterns": ", ".join(self.generated_output_patterns),
             "generated_output_workdir": str(self.generated_output_workdir).lower(),
+            "working_dir_env": self.working_dir_env,
+            "generated_output_base_env": self.generated_output_base_env,
+            "generated_output_subdir": self.generated_output_subdir,
         }
 
     def render_command(self, target: ScanTarget) -> tuple[str, ...]:
@@ -234,6 +240,34 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         install_note="Clone upstream social-analyzer, run npm install, and set SOCIAL_ANALYZER_APP_JS to its local app.js path.",
         docs_url="https://github.com/qeeqbox/social-analyzer",
         required_env=("SOCIAL_ANALYZER_APP_JS",),
+    ),
+    AdapterSpec(
+        "p1ngul1n0/blackbird",
+        "username/email account discovery with metadata exports",
+        "external_cli",
+        "NOASSERTION",
+        "planned",
+        "python blackbird.py --username <username> --json --no-update",
+        "Runs the real upstream checkout from BLACKBIRD_DIR and ingests fresh JSON exports plus stdout profile hits; no code is copied because license metadata is missing.",
+        ("username", "email"),
+        install_kind="manual",
+        install_note="Clone upstream Blackbird, run pip install -r requirements.txt in that checkout, and set BLACKBIRD_DIR to the checkout root containing blackbird.py.",
+        docs_url="https://github.com/p1ngul1n0/blackbird",
+        required_env=("BLACKBIRD_DIR",),
+        command_templates=(
+            (
+                "username",
+                ("python", "blackbird.py", "--username", "{target_value}", "--json", "--no-update", "--timeout", "30"),
+            ),
+            (
+                "email",
+                ("python", "blackbird.py", "--email", "{target_value}", "--json", "--no-update", "--timeout", "30"),
+            ),
+        ),
+        generated_output_patterns=("*.json",),
+        working_dir_env="BLACKBIRD_DIR",
+        generated_output_base_env="BLACKBIRD_DIR",
+        generated_output_subdir="results",
     ),
     AdapterSpec(
         "instaloader/instaloader",
@@ -611,6 +645,7 @@ ADAPTER_PROFILES: tuple[AdapterProfile, ...] = (
             "sherlock-project/sherlock",
             "soxoj/maigret",
             "qeeqbox/social-analyzer",
+            "p1ngul1n0/blackbird",
             "thewhiteh4t/nexfil",
             "snooppr/snoop",
             "instaloader/instaloader",
@@ -641,6 +676,7 @@ ADAPTER_PROFILES: tuple[AdapterProfile, ...] = (
             "khast3x/h8mail",
             "thewhiteh4t/pwnedOrNot",
             "kaifcodec/user-scanner",
+            "p1ngul1n0/blackbird",
         ),
         note="Restricted email-to-account and email-to-phone adapters are intentionally excluded.",
     ),

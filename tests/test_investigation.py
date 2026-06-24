@@ -1,5 +1,6 @@
 import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -153,6 +154,62 @@ class InvestigationTests(unittest.TestCase):
         }
         self.assertIn(("username", "example_user", "produced_url", "url", "https://github.com/example_user"), edges)
         self.assertIn(("username", "example_user", "country_hint", "country", "us"), edges)
+
+    def test_execute_blackbird_adapter_adds_entities_and_edges(self):
+        with tempfile.TemporaryDirectory() as directory:
+            blackbird_dir = Path(directory)
+            results_dir = blackbird_dir / "results"
+
+            def fake_run(args, **kwargs):
+                self.assertEqual(Path(kwargs["cwd"]), blackbird_dir)
+                fresh_dir = results_dir / "example_user_06_25_2026_blackbird"
+                fresh_dir.mkdir(parents=True)
+                (fresh_dir / "example_user_06_25_2026_blackbird.json").write_text(
+                    """
+                    [
+                      {
+                        "name": "GitHub",
+                        "url": "https://github.com/example_user",
+                        "category": "coding",
+                        "status": "FOUND",
+                        "metadata": [
+                          {"name": "Name", "value": "Example User"},
+                          {"name": "Location", "value": "Kyiv"}
+                        ]
+                      }
+                    ]
+                    """,
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="Saved results\n", stderr="")
+
+            with patch.dict(os.environ, {"BLACKBIRD_DIR": str(blackbird_dir)}), patch(
+                "osint_toolkit.adapter_runner.shutil.which",
+                return_value="python",
+            ), patch("osint_toolkit.adapter_runner.subprocess.run", side_effect=fake_run):
+                result = run_investigation(
+                    (ScanTarget(kind="username", value="example_user"),),
+                    include_adapters=True,
+                    execute_adapters=True,
+                    adapter_repositories=("p1ngul1n0/blackbird",),
+                )
+
+        parsed = [finding for finding in result.adapter_findings if finding.module == "external-adapter-parser"]
+        self.assertEqual(parsed[0].metadata["parser"], "blackbird")
+        self.assertEqual(parsed[0].metadata["site_name"], "GitHub")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("url", "https://github.com/example_user"), entities)
+        self.assertIn(("domain", "github.com"), entities)
+        self.assertIn(("username", "example_user"), entities)
+        self.assertIn(("name", "example user"), entities)
+        self.assertIn(("location", "kyiv"), entities)
+
+        edges = {
+            (edge.source_kind, edge.source_value.lower(), edge.relation, edge.target_kind, edge.target_value.lower())
+            for edge in result.edges
+        }
+        self.assertIn(("username", "example_user", "produced_url", "url", "https://github.com/example_user"), edges)
 
     def test_execute_snoop_adapter_adds_parsed_entities_and_edges(self):
         completed = subprocess.CompletedProcess(

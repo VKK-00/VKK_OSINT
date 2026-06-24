@@ -40,6 +40,7 @@ PARSER_REPOSITORIES = {
     "soxoj/maigret",
     "thewhiteh4t/nexfil",
     "qeeqbox/social-analyzer",
+    "p1ngul1n0/blackbird",
     "snooppr/snoop",
     "alpkeskin/mosint",
     "khast3x/h8mail",
@@ -89,6 +90,8 @@ def parse_adapter_output(
         return _nexfil_findings(repository, target, text)
     if repository == "qeeqbox/social-analyzer":
         return _social_analyzer_findings(repository, target, text)
+    if repository == "p1ngul1n0/blackbird":
+        return _blackbird_findings(repository, target, text)
     if repository == "kaifcodec/user-scanner":
         return _user_scanner_findings(repository, target, text)
     if repository == "snooppr/snoop":
@@ -4063,6 +4066,226 @@ def _social_analyzer_evidence(site_name: str, group: str, raw_status: str, rate:
     return f"Social Analyzer {group}: {label}{suffix}"
 
 
+def _blackbird_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+    for record in _blackbird_json_records(text):
+        finding = _blackbird_record_finding(repository, target, record, seen)
+        if finding:
+            findings.append(finding)
+
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact:
+            continue
+        finding = _blackbird_stdout_finding(repository, target, compact, seen)
+        if finding:
+            findings.append(finding)
+
+    if findings:
+        return tuple(findings)
+
+    fallback: list[Finding] = []
+    fallback_seen: set[tuple[str, str, str]] = set()
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if compact:
+            fallback.extend(_url_findings(repository, target, compact, fallback_seen))
+    return tuple(fallback)
+
+
+def _blackbird_json_records(text: str) -> tuple[dict[str, Any], ...]:
+    records: list[dict[str, Any]] = []
+    starts = [0]
+    starts.extend(match.start() for match in re.finditer(r"(?m)^\s*[\[{]", text))
+    for start in _dedupe_numbers(starts):
+        payload = _load_json_payload(text[start:])
+        records.extend(_blackbird_records(payload))
+
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        key = json.dumps(record, sort_keys=True, ensure_ascii=False, default=str)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(record)
+    return tuple(deduped)
+
+
+def _blackbird_records(payload: object | None) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        if any(key in payload for key in ("url", "name", "status", "metadata")):
+            return [payload]
+        records: list[dict[str, Any]] = []
+        for key in ("results", "data", "accounts"):
+            nested = payload.get(key)
+            if isinstance(nested, (list, tuple)):
+                records.extend(_blackbird_records(list(nested)))
+        return records
+    if isinstance(payload, list):
+        records = []
+        for item in payload:
+            if isinstance(item, dict):
+                records.extend(_blackbird_records(item))
+        return records
+    return []
+
+
+def _blackbird_record_finding(
+    repository: str,
+    target: ScanTarget,
+    record: dict[str, Any],
+    seen: set[tuple[str, str, str]],
+) -> Finding | None:
+    site_name = _first_scalar(record.get("name") or record.get("site") or record.get("site_name"))
+    url = _first_scalar(record.get("url") or record.get("profile_url") or record.get("uri"))
+    raw_status = _first_scalar(record.get("status")) or ("FOUND" if url else "")
+    status, confidence = _blackbird_status(raw_status)
+    if not site_name and not url and not raw_status:
+        return None
+
+    is_profile_url = url.startswith(("http://", "https://"))
+    finding_url = url if is_profile_url and status == "candidate" else ""
+    checked_url = url if is_profile_url and status != "candidate" else ""
+    key = ("blackbird", site_name.lower(), (finding_url or checked_url).lower())
+    if key in seen:
+        return None
+    seen.add(key)
+
+    metadata = _blackbird_metadata(
+        repository=repository,
+        target=target,
+        record=record,
+        site_name=site_name,
+        raw_status=raw_status,
+        profile_url=finding_url,
+        checked_url=checked_url,
+    )
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status=status,
+        url=finding_url,
+        confidence=confidence,
+        evidence=_short(_blackbird_evidence(site_name, raw_status, finding_url or checked_url)),
+        metadata=metadata,
+    )
+
+
+def _blackbird_stdout_finding(
+    repository: str,
+    target: ScanTarget,
+    line: str,
+    seen: set[tuple[str, str, str]],
+) -> Finding | None:
+    match = re.search(
+        r"(?:✔|✓|FOUND:?|\[\+\]).*?\[(?P<site>[^\]]{2,100})\]\s+(?P<url>https?://\S+)",
+        line,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    record = {
+        "name": match.group("site").strip(),
+        "url": match.group("url").rstrip(".,;"),
+        "status": "FOUND",
+    }
+    return _blackbird_record_finding(repository, target, record, seen)
+
+
+def _blackbird_metadata(
+    *,
+    repository: str,
+    target: ScanTarget,
+    record: dict[str, Any],
+    site_name: str,
+    raw_status: str,
+    profile_url: str,
+    checked_url: str,
+) -> dict[str, str]:
+    metadata = {
+        "repository": repository,
+        "parser": "blackbird",
+        "target_kind": target.kind,
+    }
+    if site_name:
+        metadata["site_name"] = site_name
+    if raw_status:
+        metadata["result_status"] = raw_status
+    category = _first_scalar(record.get("category") or record.get("cat"))
+    if category:
+        metadata["category"] = category
+    url = profile_url or checked_url
+    domain = (urlparse(url).hostname or "").lower()
+    if domain:
+        metadata["platform_domain"] = domain
+    if checked_url:
+        metadata["checked_url"] = checked_url
+    if target.kind == "username":
+        metadata["social_username"] = target.value.strip().lstrip("@")
+    elif target.kind == "email":
+        metadata["email"] = target.value.strip()
+    _merge_blackbird_metadata_items(metadata, record.get("metadata"))
+    return metadata
+
+
+def _merge_blackbird_metadata_items(metadata: dict[str, str], items: object) -> None:
+    metadata_text = _metadata_list_text(items)
+    if metadata_text:
+        metadata["blackbird_metadata"] = metadata_text
+    for item in _blackbird_metadata_items(items):
+        label = _first_scalar(item.get("name") or item.get("key") or item.get("label"))
+        value = _metadata_list_text(item.get("value"))
+        if not label or not value:
+            continue
+        normalized = _metadata_key(label)
+        mapped_key = {
+            "name": "name",
+            "full_name": "name",
+            "display_name": "name",
+            "username": "username",
+            "location": "location",
+            "country": "country",
+            "email": "email",
+            "phone": "phone",
+            "profile_image": "profile_image_url",
+            "profile_image_url": "profile_image_url",
+            "avatar": "profile_image_url",
+            "image": "profile_image_url",
+        }.get(normalized)
+        if mapped_key and mapped_key not in metadata:
+            metadata[mapped_key] = value
+
+
+def _blackbird_metadata_items(items: object) -> tuple[dict[Any, Any], ...]:
+    if isinstance(items, dict):
+        return (items,)
+    if isinstance(items, (list, tuple)):
+        return tuple(item for item in items if isinstance(item, dict))
+    return ()
+
+
+def _blackbird_status(raw_status: str) -> tuple[str, str]:
+    normalized = " ".join(raw_status.lower().replace("_", "-").split())
+    if normalized in {"found", "exists", "claimed", "candidate"}:
+        return "candidate", "high"
+    if normalized in {"not-found", "not found", "available", "missing"}:
+        return "not_found", "medium"
+    if normalized in {"error", "failed", "timeout"}:
+        return "error", "low"
+    if normalized in {"none", ""}:
+        return "observed", "low"
+    return "observed", "medium"
+
+
+def _blackbird_evidence(site_name: str, raw_status: str, url: str) -> str:
+    label = site_name or "site"
+    suffix = f" {url}" if url else ""
+    return f"Blackbird {label}: {raw_status or 'observed'}{suffix}"
+
+
 def _user_scanner_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
     structured = _user_scanner_json_findings(repository, target, text)
     if structured:
@@ -4499,6 +4722,17 @@ def _dedupe_text(values: list[str]) -> tuple[str, ...]:
         if compact and key not in seen:
             seen.add(key)
             deduped.append(compact)
+    return tuple(deduped)
+
+
+def _dedupe_numbers(values: list[int]) -> tuple[int, ...]:
+    seen: set[int] = set()
+    deduped: list[int] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
     return tuple(deduped)
 
 

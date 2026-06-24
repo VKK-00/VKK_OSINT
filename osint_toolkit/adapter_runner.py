@@ -122,21 +122,31 @@ def run_adapter_findings(
     output_dir = ""
     process_cwd = None
     process_env = None
+    generated_snapshot: dict[Path, tuple[int, int]] | None = None
+    if adapter.working_dir_env:
+        process_cwd = os.environ.get(adapter.working_dir_env) or None
     if adapter.generated_output_patterns:
-        output_dir_context = tempfile.TemporaryDirectory(prefix="osint-toolkit-adapter-")
-        output_dir = output_dir_context.name
-        if adapter.generated_output_workdir:
-            process_cwd = output_dir
-            process_env = os.environ.copy()
-            process_env["HOME"] = output_dir
-            process_env["USERPROFILE"] = output_dir
-        output_file = str(Path(output_dir) / "adapter-output.json")
-        command = (
-            *command,
-            *adapter.render_output_dir_args(output_dir),
-            *adapter.render_output_file_args(output_file),
-        )
-        command_text = format_command(command)
+        if adapter.generated_output_base_env:
+            output_root = Path(os.environ[adapter.generated_output_base_env])
+            if adapter.generated_output_subdir:
+                output_root = output_root / adapter.generated_output_subdir
+            output_dir = str(output_root)
+            generated_snapshot = _snapshot_generated_outputs(output_dir, adapter.generated_output_patterns)
+        else:
+            output_dir_context = tempfile.TemporaryDirectory(prefix="osint-toolkit-adapter-")
+            output_dir = output_dir_context.name
+            if adapter.generated_output_workdir:
+                process_cwd = output_dir
+                process_env = os.environ.copy()
+                process_env["HOME"] = output_dir
+                process_env["USERPROFILE"] = output_dir
+            output_file = str(Path(output_dir) / "adapter-output.json")
+            command = (
+                *command,
+                *adapter.render_output_dir_args(output_dir),
+                *adapter.render_output_file_args(output_file),
+            )
+            command_text = format_command(command)
 
     try:
         result = subprocess.run(
@@ -168,8 +178,30 @@ def run_adapter_findings(
                 },
             ),
         )
+    except OSError as exc:
+        if output_dir_context:
+            output_dir_context.cleanup()
+        return (
+            Finding(
+                module="external-adapter",
+                source=adapter.repository,
+                target=target.value,
+                status="error",
+                confidence="low",
+                evidence=f"Adapter execution failed: {exc}",
+                metadata={
+                    **adapter.to_dict(),
+                    "command": command_text,
+                    "stdin_lines": str(command_input_lines),
+                },
+            ),
+        )
 
-    generated_output, generated_count = _read_generated_outputs(output_dir, adapter.generated_output_patterns)
+    generated_output, generated_count = _read_generated_outputs(
+        output_dir,
+        adapter.generated_output_patterns,
+        generated_snapshot,
+    )
     if output_dir_context:
         output_dir_context.cleanup()
 
@@ -217,17 +249,46 @@ def _truncate(value: str | bytes | None, limit: int = 1200) -> str:
     return compact[: limit - 1] + "…"
 
 
-def _read_generated_outputs(output_dir: str, patterns: tuple[str, ...]) -> tuple[str, int]:
+def _snapshot_generated_outputs(output_dir: str, patterns: tuple[str, ...]) -> dict[Path, tuple[int, int]]:
+    if not output_dir or not patterns:
+        return {}
+
+    root = Path(output_dir)
+    if not root.exists():
+        return {}
+
+    snapshot: dict[Path, tuple[int, int]] = {}
+    for pattern in patterns:
+        for path in root.rglob(pattern):
+            if not path.is_file():
+                continue
+            stat = path.stat()
+            snapshot[path] = (stat.st_mtime_ns, stat.st_size)
+    return snapshot
+
+
+def _read_generated_outputs(
+    output_dir: str,
+    patterns: tuple[str, ...],
+    previous: dict[Path, tuple[int, int]] | None = None,
+) -> tuple[str, int]:
     if not output_dir or not patterns:
         return "", 0
 
     root = Path(output_dir)
+    if not root.exists():
+        return "", 0
+
     parts: list[str] = []
     count = 0
     for pattern in patterns:
         for path in sorted(root.rglob(pattern)):
             if not path.is_file():
                 continue
+            if previous is not None:
+                stat = path.stat()
+                if previous.get(path) == (stat.st_mtime_ns, stat.st_size):
+                    continue
             count += 1
             parts.append(path.read_text(encoding="utf-8", errors="replace"))
     return "\n".join(parts), count
