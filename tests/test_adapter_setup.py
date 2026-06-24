@@ -126,6 +126,7 @@ class AdapterSetupTests(unittest.TestCase):
         subfinder = find_adapter("projectdiscovery/subfinder")
         httpx = find_adapter("projectdiscovery/httpx")
         amass = find_adapter("owasp-amass/amass")
+        theharvester = find_adapter("laramies/theHarvester")
 
         self.assertEqual(
             subfinder.render_command(ScanTarget(kind="domain", value="example.com")),
@@ -140,12 +141,25 @@ class AdapterSetupTests(unittest.TestCase):
             amass.render_command(ScanTarget(kind="domain", value="example.com")),
             ("amass", "enum", "-passive", "-nocolor", "-d", "example.com"),
         )
+        self.assertEqual(
+            theharvester.render_command(ScanTarget(kind="domain", value="example.com")),
+            ("theHarvester", "-d", "example.com", "-b", "all"),
+        )
+        self.assertEqual(theharvester.render_output_file_args("C:\\tmp\\harvester.json"), ("-f", "C:\\tmp\\harvester.json"))
+        self.assertEqual(theharvester.generated_output_patterns, ("*.json",))
 
         with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
             setup = build_adapter_setup(subfinder)
 
         self.assertEqual(setup.install_kind, "go")
         self.assertIn("projectdiscovery/subfinder", setup.install_command)
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
+            harvester_setup = build_adapter_setup(theharvester)
+
+        self.assertEqual(harvester_setup.readiness, "missing")
+        self.assertEqual(harvester_setup.install_kind, "manual")
+        self.assertIn("Python 3.12+", harvester_setup.install_note)
 
     def test_setup_reports_not_configured_for_dataset_adapter(self):
         setup = build_adapter_setup(find_adapter("WebBreacher/WhatsMyName"))

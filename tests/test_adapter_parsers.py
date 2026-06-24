@@ -663,6 +663,65 @@ class AdapterParserTests(unittest.TestCase):
         self.assertEqual(subdomains, {"api.example.com", "www.example.com"})
         self.assertTrue(all(finding.metadata["parser"] == "amass" for finding in findings))
 
+    def test_parse_theharvester_json_report(self):
+        findings = parse_adapter_output(
+            "laramies/theHarvester",
+            ScanTarget(kind="domain", value="example.com"),
+            """
+            {
+              "emails": ["Admin@Example.com", "person@external.test"],
+              "hosts": ["api.example.com:93.184.216.34", "www.example.com", "example.com", "unrelated.test"],
+              "ips": ["93.184.216.34"],
+              "interesting_urls": ["https://www.example.com/login"],
+              "asns": ["AS15133"],
+              "people": [{"first_name": "Example", "last_name": "Person"}],
+              "linkedin_people": ["Example Employee"]
+            }
+            """,
+        )
+
+        metadata = [finding.metadata for finding in findings]
+        self.assertTrue(any(item.get("email") == "admin@example.com" for item in metadata))
+        self.assertTrue(any(item.get("email") == "person@external.test" for item in metadata))
+        self.assertTrue(any(item.get("subdomain") == "api.example.com" and item.get("ip") == "93.184.216.34" for item in metadata))
+        self.assertTrue(any(item.get("subdomain") == "www.example.com" for item in metadata))
+        self.assertFalse(any(item.get("subdomain") == "example.com" for item in metadata))
+        self.assertFalse(any(item.get("subdomain") == "unrelated.test" for item in metadata))
+        self.assertTrue(any(item.get("category") == "asn" and item.get("asn") == "AS15133" for item in metadata))
+        self.assertTrue(any(item.get("category") == "person" and item.get("name") == "Example Person" for item in metadata))
+
+        urls = {finding.url for finding in findings}
+        self.assertIn("https://www.example.com/login", urls)
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("email", "admin@example.com"), entities)
+        self.assertIn(("subdomain", "api.example.com"), entities)
+        self.assertIn(("url", "https://www.example.com/login"), entities)
+        self.assertIn(("name", "example person"), entities)
+
+    def test_parse_theharvester_console_output(self):
+        findings = parse_adapter_output(
+            "laramies/theHarvester",
+            ScanTarget(kind="domain", value="example.com"),
+            """
+            [*] Emails found: 1
+            ----------------------
+            contact@example.com
+
+            [*] Hosts found: 1
+            ---------------------
+            api.example.com
+
+            [*] Interesting Urls found: 1
+            --------------------
+            https://www.example.com/admin
+            """,
+        )
+
+        self.assertTrue(any(finding.metadata.get("email") == "contact@example.com" for finding in findings))
+        self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings))
+        self.assertTrue(any(finding.url == "https://www.example.com/admin" for finding in findings))
+
     def test_run_adapter_findings_adds_parsed_results_after_execution(self):
         completed = subprocess.CompletedProcess(
             args=["sherlock", "example_user"],
@@ -860,6 +919,35 @@ class AdapterParserTests(unittest.TestCase):
         self.assertTrue(any(finding.metadata.get("parser") == "h8mail" for finding in findings[1:]))
         self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
         self.assertFalse(any("secret-value" in finding.evidence for finding in findings))
+
+    def test_run_theharvester_adapter_reads_generated_json_report_after_execution(self):
+        def fake_run(args, **kwargs):
+            self.assertEqual(args[:5], ["theHarvester", "-d", "example.com", "-b", "all"])
+            output_file = Path(args[args.index("-f") + 1])
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.write_text(
+                '{"emails":["admin@example.com"],"hosts":["api.example.com"],"interesting_urls":["https://www.example.com/login"]}',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="JSON File saved\n", stderr="")
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="theHarvester"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            findings = run_adapter_findings(
+                "laramies/theHarvester",
+                ScanTarget(kind="domain", value="example.com"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertEqual(findings[0].metadata["generated_output_files"], "1")
+        self.assertIn("-f", findings[0].metadata["command"])
+        self.assertTrue(any(finding.metadata.get("parser") == "theharvester" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings[1:]))
+        self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings[1:]))
 
     def test_run_user_scanner_adapter_adds_parsed_json_results_after_execution(self):
         completed = subprocess.CompletedProcess(

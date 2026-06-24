@@ -46,6 +46,7 @@ PARSER_REPOSITORIES = {
     "projectdiscovery/subfinder",
     "projectdiscovery/httpx",
     "owasp-amass/amass",
+    "laramies/theHarvester",
 }
 
 PHONE_KEYS = {
@@ -99,6 +100,8 @@ def parse_adapter_output(
         return _httpx_findings(repository, target, text)
     if repository == "owasp-amass/amass":
         return _amass_findings(repository, target, text)
+    if repository == "laramies/theHarvester":
+        return _theharvester_findings(repository, target, text)
 
     findings: list[Finding] = []
     seen: set[tuple[str, str, str]] = set()
@@ -246,7 +249,11 @@ def _subdomain_finding(
     if ip:
         metadata["ip"] = ip
 
-    label = "Subfinder" if parser == "subfinder" else "Amass"
+    label = {
+        "subfinder": "Subfinder",
+        "amass": "Amass",
+        "theharvester": "theHarvester",
+    }.get(parser, parser)
     evidence = f"{label} reported subdomain: {normalized}"
     if source_label:
         evidence += f" (source: {source_label})"
@@ -400,6 +407,252 @@ def _httpx_line_findings(
             )
         )
     return tuple(findings)
+
+
+def _theharvester_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    payload = _load_json_payload(text)
+    structured = _theharvester_json_findings(repository, target, payload)
+    if structured:
+        return structured
+
+    root_domain = _target_domain(target)
+    findings: list[Finding] = []
+    seen_subdomains: set[tuple[str, str]] = set()
+    seen_emails: set[str] = set()
+    seen_urls: set[str] = set()
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact:
+            continue
+        for email in EMAIL_RE.findall(compact):
+            finding = _theharvester_email_finding(repository, target, email, "console", seen_emails)
+            if finding:
+                findings.append(finding)
+        for raw_url in URL_RE.findall(compact):
+            finding = _theharvester_url_finding(repository, target, raw_url.rstrip(".,;"), "console", seen_urls)
+            if finding:
+                findings.append(finding)
+        for hostname in _hostnames_from_text(compact):
+            finding = _subdomain_finding(
+                repository=repository,
+                parser="theharvester",
+                target=target,
+                root_domain=root_domain,
+                subdomain=hostname,
+                source_label="console",
+                ip="",
+                raw_line=compact,
+                seen=seen_subdomains,
+            )
+            if finding:
+                findings.append(finding)
+    return tuple(findings)
+
+
+def _theharvester_json_findings(
+    repository: str,
+    target: ScanTarget,
+    payload: object | None,
+) -> tuple[Finding, ...]:
+    if not isinstance(payload, dict):
+        return ()
+
+    root_domain = _target_domain(target)
+    findings: list[Finding] = []
+    seen_subdomains: set[tuple[str, str]] = set()
+    seen_emails: set[str] = set()
+    seen_urls: set[str] = set()
+    seen_observed: set[tuple[str, str]] = set()
+
+    for email in _string_list(payload.get("emails")):
+        finding = _theharvester_email_finding(repository, target, email, "email", seen_emails)
+        if finding:
+            findings.append(finding)
+
+    for raw_host in _string_list(payload.get("hosts")) + _string_list(payload.get("vhosts")):
+        hostname, ip = _theharvester_host_ip(raw_host)
+        finding = _subdomain_finding(
+            repository=repository,
+            parser="theharvester",
+            target=target,
+            root_domain=root_domain,
+            subdomain=hostname,
+            source_label="host",
+            ip=ip,
+            raw_line="",
+            seen=seen_subdomains,
+        )
+        if finding:
+            findings.append(finding)
+
+    for key, category in (
+        ("interesting_urls", "interesting-url"),
+        ("trello_urls", "trello-url"),
+        ("linkedin_links", "linkedin-link"),
+    ):
+        for url in _string_list(payload.get(key)):
+            finding = _theharvester_url_finding(repository, target, url, category, seen_urls)
+            if finding:
+                findings.append(finding)
+
+    for ip in _string_list(payload.get("ips")):
+        finding = _theharvester_observed_finding(repository, target, "ip", ip, "ip", seen_observed)
+        if finding:
+            findings.append(finding)
+
+    for asn in _string_list(payload.get("asns")):
+        finding = _theharvester_observed_finding(repository, target, "asn", asn, "asn", seen_observed)
+        if finding:
+            findings.append(finding)
+
+    for person in _theharvester_people(payload.get("people")):
+        finding = _theharvester_observed_finding(repository, target, "name", person, "person", seen_observed)
+        if finding:
+            findings.append(finding)
+
+    for person in _string_list(payload.get("twitter_people")):
+        finding = _theharvester_observed_finding(repository, target, "username", person, "twitter-person", seen_observed)
+        if finding:
+            findings.append(finding)
+    for person in _string_list(payload.get("linkedin_people")):
+        finding = _theharvester_observed_finding(repository, target, "name", person, "linkedin-person", seen_observed)
+        if finding:
+            findings.append(finding)
+
+    return tuple(findings)
+
+
+def _theharvester_email_finding(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    category: str,
+    seen: set[str],
+) -> Finding | None:
+    normalized = email.strip().lower()
+    if not EMAIL_RE.fullmatch(normalized):
+        return None
+    if normalized in seen:
+        return None
+    seen.add(normalized)
+    domain = normalized.rsplit("@", 1)[1]
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="candidate",
+        confidence="medium",
+        evidence=f"theHarvester reported email: {normalized}",
+        metadata={
+            "repository": repository,
+            "parser": "theharvester",
+            "category": category,
+            "email": normalized,
+            "domain": domain,
+        },
+    )
+
+
+def _theharvester_url_finding(
+    repository: str,
+    target: ScanTarget,
+    url: str,
+    category: str,
+    seen: set[str],
+) -> Finding | None:
+    value = url.strip()
+    if not value.startswith(("http://", "https://")):
+        return None
+    key = value.lower()
+    if key in seen:
+        return None
+    seen.add(key)
+    domain = (urlparse(value).hostname or "").lower()
+    metadata = {
+        "repository": repository,
+        "parser": "theharvester",
+        "category": category,
+    }
+    if domain:
+        metadata["domain"] = domain
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="candidate",
+        url=value,
+        confidence="medium",
+        evidence=f"theHarvester reported URL: {value}",
+        metadata=metadata,
+    )
+
+
+def _theharvester_observed_finding(
+    repository: str,
+    target: ScanTarget,
+    metadata_key: str,
+    value: str,
+    category: str,
+    seen: set[tuple[str, str]],
+) -> Finding | None:
+    normalized = " ".join(value.strip().split())
+    if not normalized:
+        return None
+    seen_key = (metadata_key, normalized.lower())
+    if seen_key in seen:
+        return None
+    seen.add(seen_key)
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="observed",
+        confidence="medium",
+        evidence=f"theHarvester reported {category}: {normalized}",
+        metadata={
+            "repository": repository,
+            "parser": "theharvester",
+            "category": category,
+            metadata_key: normalized,
+        },
+    )
+
+
+def _theharvester_host_ip(value: str) -> tuple[str, str]:
+    raw = value.strip()
+    if raw.count(":") == 1 and "://" not in raw:
+        host, ip = raw.rsplit(":", 1)
+        return _normalize_hostname(host), ip.strip()
+    return _normalize_hostname(raw), ""
+
+
+def _theharvester_people(value: object) -> tuple[str, ...]:
+    people: list[str] = []
+    if isinstance(value, dict):
+        value = [value]
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            if isinstance(item, dict):
+                full_name = _first_scalar(
+                    item.get("name")
+                    or item.get("full_name")
+                    or item.get("fullname")
+                    or " ".join(
+                        part
+                        for part in (
+                            _first_scalar(item.get("first_name")),
+                            _first_scalar(item.get("last_name")),
+                        )
+                        if part
+                    )
+                )
+                if full_name:
+                    people.append(full_name)
+            else:
+                scalar = _first_scalar(item)
+                if scalar:
+                    people.append(scalar)
+    return _dedupe_text(people)
 
 
 def _mosint_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:

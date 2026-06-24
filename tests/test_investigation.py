@@ -3,8 +3,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from osint_toolkit.engine import ScanTarget
-from osint_toolkit.investigation import render_investigation_markdown, run_investigation
+from osint_toolkit.engine import Finding, ScanTarget
+from osint_toolkit.investigation import InvestigationResult, render_investigation_markdown, run_investigation
 
 
 class InvestigationTests(unittest.TestCase):
@@ -21,10 +21,23 @@ class InvestigationTests(unittest.TestCase):
         self.assertTrue(all(finding.status == "planned" for finding in result.adapter_findings))
 
     def test_unsupported_dry_run_adapter_stays_in_dry_run_section(self):
-        result = run_investigation(
-            (ScanTarget(kind="domain", value="example.com"),),
-            include_adapters=True,
-            adapter_repositories=("laramies/theHarvester",),
+        result = InvestigationResult(
+            title="unsupported adapter",
+            targets=(ScanTarget(kind="domain", value="example.com"),),
+            findings=(),
+            adapter_findings=(
+                Finding(
+                    module="external-adapter",
+                    source="example/adapter",
+                    target="example.com",
+                    status="unsupported",
+                    confidence="not_checked",
+                    evidence="No executable command template is configured.",
+                ),
+            ),
+            entities=(),
+            edges=(),
+            generated_at="2026-06-24T00:00:00+00:00",
         )
 
         self.assertEqual(result.adapter_findings[0].status, "unsupported")
@@ -285,6 +298,43 @@ class InvestigationTests(unittest.TestCase):
             for edge in result.edges
         }
         self.assertIn(("domain", "example.com", "discovered_subdomain", "subdomain", "api.example.com"), edges)
+
+    def test_execute_theharvester_adapter_adds_entities_and_edges(self):
+        def fake_run(args, **kwargs):
+            output_file = Path(args[args.index("-f") + 1])
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.write_text(
+                '{"emails":["admin@example.com"],"hosts":["api.example.com"],"interesting_urls":["https://www.example.com/login"]}',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="JSON File saved\n", stderr="")
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="theHarvester"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            result = run_investigation(
+                (ScanTarget(kind="domain", value="example.com"),),
+                include_adapters=True,
+                execute_adapters=True,
+                adapter_repositories=("laramies/theHarvester",),
+            )
+
+        parsed = [finding for finding in result.adapter_findings if finding.module == "external-adapter-parser"]
+        self.assertTrue(any(finding.metadata.get("parser") == "theharvester" for finding in parsed))
+
+        entities = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("email", "admin@example.com"), entities)
+        self.assertIn(("subdomain", "api.example.com"), entities)
+        self.assertIn(("url", "https://www.example.com/login"), entities)
+
+        edges = {
+            (edge.source_kind, edge.source_value.lower(), edge.relation, edge.target_kind, edge.target_value.lower())
+            for edge in result.edges
+        }
+        self.assertIn(("domain", "example.com", "related_email", "email", "admin@example.com"), edges)
+        self.assertIn(("domain", "example.com", "discovered_subdomain", "subdomain", "api.example.com"), edges)
+        self.assertIn(("domain", "example.com", "produced_url", "url", "https://www.example.com/login"), edges)
 
     def test_person_target_expands_to_username_scan_edges(self):
         result = run_investigation((ScanTarget(kind="person", value="Ivan Petrenko"),))
