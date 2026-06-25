@@ -956,6 +956,27 @@ class CliTests(unittest.TestCase):
         self.assertIn(("domain", "example.com"), targets)
         self.assertEqual(payload["derived_targets"], [{"kind": "domain", "value": "example.com", "region": "all"}])
 
+    def test_search_execute_adapters_derives_domain_from_url(self):
+        result = self.run_cli(
+            "search",
+            "url",
+            "https://example.com/path",
+            "--profile",
+            "web-full",
+            "--execute-adapters",
+            "--adapter-limit",
+            "0",
+            "--format",
+            "json",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+
+        targets = {(target["kind"], target["value"]) for target in payload["investigation"]["targets"]}
+        self.assertIn(("url", "https://example.com/path"), targets)
+        self.assertIn(("domain", "example.com"), targets)
+        self.assertEqual(payload["derived_targets"], [{"kind": "domain", "value": "example.com", "region": "all"}])
+
     def test_search_execute_adapters_respects_custom_profile_native_kinds(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             profile_path = Path(tmpdir) / "profiles.json"

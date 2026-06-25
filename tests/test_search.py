@@ -227,6 +227,21 @@ class SearchPlanTests(unittest.TestCase):
         self.assertIn("projectdiscovery/subfinder", sources)
         self.assertIn("domain", native_kinds_for_plan(plan))
 
+    def test_web_full_plan_derives_domain_fanout_from_url(self):
+        plan = build_search_plan("url", "https://sub.example.com/path", profile_name="web-full")
+        sources = {step.source: step for step in plan.steps}
+
+        self.assertEqual(
+            [(target.kind, target.value) for target in derived_search_targets(plan)],
+            [("domain", "sub.example.com")],
+        )
+        self.assertIn("derive domain", sources)
+        self.assertEqual(sources["derive domain"].target_value, "sub.example.com")
+        self.assertEqual(sources["scan domain"].target_value, "sub.example.com")
+        self.assertIn("projectdiscovery/subfinder", sources)
+        self.assertIn("url", native_kinds_for_plan(plan))
+        self.assertIn("domain", native_kinds_for_plan(plan))
+
     def test_ready_adapter_repositories_only_returns_ready_non_restricted_steps(self):
         plan = SearchPlan(
             target=ScanTarget(kind="username", value="example_user"),

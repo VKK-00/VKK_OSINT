@@ -5,6 +5,7 @@ import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from .adapter_runner import format_command
 from .adapter_setup import AdapterSetup, build_adapter_setup
@@ -273,6 +274,7 @@ SEARCH_PROFILES: tuple[SearchProfile, ...] = (
         target_kinds=("domain", "url"),
         native_kinds=("domain", "url"),
         adapter_profiles=("domain-recon", "url-archive"),
+        derived_target_kinds=("domain",),
     ),
     SearchProfile(
         name="web-full",
@@ -281,6 +283,7 @@ SEARCH_PROFILES: tuple[SearchProfile, ...] = (
         target_kinds=("domain", "url"),
         native_kinds=("domain", "url"),
         adapter_profiles=("domain-recon", "broad-recon", "url-archive"),
+        derived_target_kinds=("domain",),
     ),
     SearchProfile(
         name="image-full",
@@ -707,6 +710,10 @@ def _derived_targets_for_seed(target: ScanTarget, profile: SearchProfile) -> tup
         domain = _domain_from_email(target.value)
         if domain:
             targets.append(ScanTarget(kind="domain", value=domain, region=target.region))
+    if target.kind == "url" and "domain" in profile.derived_target_kinds:
+        domain = _domain_from_url(target.value)
+        if domain:
+            targets.append(ScanTarget(kind="domain", value=domain, region=target.region))
     return tuple(targets)
 
 
@@ -747,6 +754,14 @@ def _domain_from_email(value: str) -> str:
     if not re.fullmatch(r"[a-z0-9.-]+\.[a-z]{2,}", domain):
         return ""
     return domain
+
+
+def _domain_from_url(value: str) -> str:
+    parsed = urlparse(value.strip())
+    host = (parsed.hostname or "").strip(".").lower()
+    if not re.fullmatch(r"[a-z0-9.-]+\.[a-z]{2,}", host):
+        return ""
+    return host
 
 
 def _adapter_step(target: ScanTarget, setup: AdapterSetup, command: str) -> PlannedStep:
