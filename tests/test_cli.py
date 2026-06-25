@@ -952,6 +952,9 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["search_plan"]["target"]["kind"], "email")
         self.assertEqual(payload["executed_adapters"], [])
         self.assertEqual(payload["investigation"]["targets"][0]["value"], "person@example.com")
+        targets = {(target["kind"], target["value"]) for target in payload["investigation"]["targets"]}
+        self.assertIn(("domain", "example.com"), targets)
+        self.assertEqual(payload["derived_targets"], [{"kind": "domain", "value": "example.com", "region": "all"}])
 
     def test_search_execute_adapters_respects_custom_profile_native_kinds(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -990,6 +993,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["search_plan"]["profile"]["native_kinds"], [])
         self.assertEqual(payload["investigation"]["findings"], [])
         self.assertEqual(payload["executed_adapters"], [])
+        self.assertEqual(payload["derived_targets"], [])
 
     def test_search_execute_adapters_can_save_report_and_case(self):
         with tempfile.TemporaryDirectory() as tmpdir:

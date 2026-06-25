@@ -37,6 +37,7 @@ class SearchProfile:
     adapter_profiles: tuple[str, ...] = ()
     adapter_repositories: tuple[str, ...] = ()
     local_tools: tuple[str, ...] = ()
+    derived_target_kinds: tuple[str, ...] = ()
     excluded_repositories: tuple[str, ...] = ()
     include_restricted: bool = False
     note: str = ""
@@ -51,6 +52,7 @@ class SearchProfile:
             "adapter_profiles": list(self.adapter_profiles),
             "adapter_repositories": list(self.adapter_repositories),
             "local_tools": list(self.local_tools),
+            "derived_target_kinds": list(self.derived_target_kinds),
             "excluded_repositories": list(self.excluded_repositories),
             "include_restricted": self.include_restricted,
             "note": self.note,
@@ -203,6 +205,7 @@ SEARCH_PROFILES: tuple[SearchProfile, ...] = (
         native_kinds=("person", "username", "email", "phone", "domain", "url", "telegram", "instagram", "social", "ru-ua"),
         adapter_profiles=("username-full", "email-safe", "phone-safe", "domain-recon", "url-archive"),
         local_tools=("powershell-file-baseline", "exiftool", "imagemagick-identify", "tesseract-ocr", "zbarimg"),
+        derived_target_kinds=("domain",),
         note="Restricted adapters are excluded.",
     ),
     SearchProfile(
@@ -213,6 +216,7 @@ SEARCH_PROFILES: tuple[SearchProfile, ...] = (
         native_kinds=("person", "username", "email", "phone", "domain", "url", "telegram", "instagram", "social", "ru-ua"),
         adapter_profiles=("username-full", "username-ru-ua", "email-safe", "phone-safe", "url-archive", "domain-recon", "broad-recon"),
         local_tools=("powershell-file-baseline", "exiftool", "imagemagick-identify", "tesseract-ocr", "zbarimg"),
+        derived_target_kinds=("domain",),
         note="Broad recon adapters are included but remain readiness-checked and non-restricted only.",
     ),
     SearchProfile(
@@ -233,6 +237,7 @@ SEARCH_PROFILES: tuple[SearchProfile, ...] = (
         target_kinds=("email",),
         native_kinds=("email",),
         adapter_profiles=("email-safe", "broad-recon"),
+        derived_target_kinds=("domain",),
         excluded_repositories=("megadose/holehe", "martinvigo/email2phonenumber"),
         note="Recovery/account-enumeration adapters are excluded from the default email fan-out.",
     ),
@@ -360,6 +365,7 @@ def _load_search_profile_item(item: dict[str, object], *, index: int) -> SearchP
         "adapter_profiles",
         "adapter_repositories",
         "local_tools",
+        "derived_target_kinds",
         "excluded_repositories",
         "include_restricted",
         "note",
@@ -382,6 +388,7 @@ def _load_search_profile_item(item: dict[str, object], *, index: int) -> SearchP
     adapter_profiles = _string_tuple(item, "adapter_profiles", index=index)
     adapter_repositories = _string_tuple(item, "adapter_repositories", index=index)
     local_tools = _string_tuple(item, "local_tools", index=index)
+    derived_target_kinds = _string_tuple(item, "derived_target_kinds", index=index)
     excluded_repositories = _string_tuple(item, "excluded_repositories", index=index)
     include_restricted = item.get("include_restricted", False)
     if not isinstance(include_restricted, bool):
@@ -393,6 +400,7 @@ def _load_search_profile_item(item: dict[str, object], *, index: int) -> SearchP
     _validate_adapter_profiles(adapter_profiles, index=index)
     _validate_adapter_repositories(adapter_repositories, field="adapter_repositories", index=index)
     _validate_local_tools(local_tools, index=index)
+    _validate_target_kinds(derived_target_kinds, field="derived_target_kinds", index=index)
     _validate_adapter_repositories(excluded_repositories, field="excluded_repositories", index=index)
 
     return SearchProfile(
@@ -404,6 +412,7 @@ def _load_search_profile_item(item: dict[str, object], *, index: int) -> SearchP
         adapter_profiles=adapter_profiles,
         adapter_repositories=adapter_repositories,
         local_tools=local_tools,
+        derived_target_kinds=derived_target_kinds,
         excluded_repositories=excluded_repositories,
         include_restricted=include_restricted,
         note=note,
@@ -545,6 +554,8 @@ def build_search_plan(
     steps: list[PlannedStep] = []
     steps.extend(_native_steps(target, profile))
     steps.extend(_adapter_steps(target, profile, include_restricted=include_restricted))
+    for derived_target in _derived_targets_for_seed(target, profile):
+        steps.extend(_derived_steps(derived_target, target, include_restricted=include_restricted))
     steps.extend(_local_tool_steps(target, profile))
     if not include_restricted:
         steps.extend(_excluded_steps(target, profile))
@@ -570,6 +581,34 @@ def ready_adapter_repositories(plan: SearchPlan, *, limit: int | None = None) ->
         if limit is not None and len(repositories) >= limit:
             break
     return tuple(repositories)
+
+
+def derived_search_targets(plan: SearchPlan) -> tuple[ScanTarget, ...]:
+    targets: list[ScanTarget] = []
+    seen: set[tuple[str, str, str]] = set()
+    for step in plan.steps:
+        if step.stage != "derived" or step.status != "planned":
+            continue
+        target = ScanTarget(kind=step.target_kind, value=step.target_value, region=plan.target.region)
+        key = (target.kind, target.value.lower(), target.region)
+        if key in seen:
+            continue
+        seen.add(key)
+        targets.append(target)
+    return tuple(targets)
+
+
+def native_kinds_for_plan(plan: SearchPlan) -> tuple[str, ...]:
+    kinds: list[str] = []
+    seen: set[str] = set()
+    for step in plan.steps:
+        if step.stage != "native" or step.readiness != "built_in":
+            continue
+        if step.target_kind in seen:
+            continue
+        seen.add(step.target_kind)
+        kinds.append(step.target_kind)
+    return tuple(kinds)
 
 
 def _profile_for_target(
@@ -658,6 +697,56 @@ def _adapter_steps(
         command = format_command(adapter.render_command(step_target))
         steps.append(_adapter_step(step_target, setup, command))
     return tuple(steps)
+
+
+def _derived_targets_for_seed(target: ScanTarget, profile: SearchProfile) -> tuple[ScanTarget, ...]:
+    if not profile.derived_target_kinds:
+        return ()
+    targets: list[ScanTarget] = []
+    if target.kind == "email" and "domain" in profile.derived_target_kinds:
+        domain = _domain_from_email(target.value)
+        if domain:
+            targets.append(ScanTarget(kind="domain", value=domain, region=target.region))
+    return tuple(targets)
+
+
+def _derived_steps(
+    target: ScanTarget,
+    source_target: ScanTarget,
+    *,
+    include_restricted: bool,
+) -> tuple[PlannedStep, ...]:
+    profile = _profile_for_target("auto", target.kind, custom_profiles=())
+    steps: list[PlannedStep] = [
+        PlannedStep(
+            stage="derived",
+            source=f"derive {target.kind}",
+            title=f"Derived {target.kind} target",
+            target_kind=target.kind,
+            target_value=target.value,
+            status="planned",
+            readiness="built_in",
+            reason=f"Derived from {source_target.kind}:{source_target.value}.",
+            metadata={
+                "source_kind": source_target.kind,
+                "source_value": source_target.value,
+                "derived_profile": profile.name,
+            },
+        )
+    ]
+    steps.extend(_native_steps(target, profile))
+    steps.extend(_adapter_steps(target, profile, include_restricted=include_restricted))
+    steps.extend(_local_tool_steps(target, profile))
+    return tuple(steps)
+
+
+def _domain_from_email(value: str) -> str:
+    if "@" not in value:
+        return ""
+    domain = value.rsplit("@", 1)[-1].strip().lower()
+    if not re.fullmatch(r"[a-z0-9.-]+\.[a-z]{2,}", domain):
+        return ""
+    return domain
 
 
 def _adapter_step(target: ScanTarget, setup: AdapterSetup, command: str) -> PlannedStep:

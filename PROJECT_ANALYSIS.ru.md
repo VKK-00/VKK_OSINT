@@ -225,7 +225,7 @@ CLI работает в пяти режимах:
   - форматирование таблиц, Markdown, CSV и JSON.
   - `format_search_profiles()` и `format_search_profile_detail()` — вывод built-in/custom search profiles для `profiles list/show`.
 - `osint_toolkit/search.py`
-  - `SearchProfile`, `LocalToolSpec`, `PlannedStep`, `SearchPlan` — модели unified plan.
+  - `SearchProfile`, `LocalToolSpec`, `PlannedStep`, `SearchPlan` — модели unified plan; `derived_target_kinds` описывает дополнительные targets, выводимые из исходного seed.
   - `load_search_profiles()` — загрузка custom search profiles из JSON-файла с валидацией имён, target kinds, adapter profiles, repositories и local tools.
   - `classify_target()` — auto-kind для phone/email/domain/url/social/image/person/username.
   - `build_search_plan()` — строит deterministic fan-out plan по target/profile/region.
@@ -274,11 +274,12 @@ Search-поток:
 2. `classify_target()` определяет target kind для `auto`.
 3. `build_search_plan()` выбирает profile: например phone -> `phone-full`, email -> `email-full`, image -> `image-full`.
 4. Planner добавляет built-in native steps, разворачивает adapter profiles через `expand_adapter_repositories()` и проверяет readiness через `build_adapter_setup()`.
-5. Для image target planner добавляет local-tool routes: PowerShell baseline/hash, ExifTool, ImageMagick, Tesseract и zbarimg.
-6. В plan-only режиме результат выводится как table/Markdown/CSV/JSON через `format_search_plan()`. Missing/config/restricted tools остаются строками плана, а не ошибками.
-7. В adapter execution режиме `ready_adapter_repositories()` выбирает только `stage=adapter,status=ready,readiness=ready` и отсекает restricted entries даже при `--include-restricted`.
-8. `run_investigation()` получает исходный target, `profile.native_kinds` и allowlist ready repositories, запускает только native target kinds из профиля и внешние adapters через существующий `run_adapter_findings()`, затем сохраняет Markdown/JSON report и SQLite case при `--out`/`--case-db`; `--scope-note` попадает в case metadata как текстовый контекст/рамки проверки.
-9. Для `image` target `run_image_search()` запускает ready local tools, добавляет missing/error/timeout findings по остальным local tools, извлекает URL/email/phone/username/domain clues и маршрутизирует derived targets через обычный `search`/`run_investigation()` flow.
+5. Если profile содержит `derived_target_kinds`, planner добавляет derived targets; сейчас `email-full`/`safe`/`all-safe` выводят domain target из email и добавляют default domain/web fan-out.
+6. Для image target planner добавляет local-tool routes: PowerShell baseline/hash, ExifTool, ImageMagick, Tesseract и zbarimg.
+7. В plan-only режиме результат выводится как table/Markdown/CSV/JSON через `format_search_plan()`. Missing/config/restricted tools остаются строками плана, а не ошибками.
+8. В adapter execution режиме `ready_adapter_repositories()` выбирает только `stage=adapter,status=ready,readiness=ready` и отсекает restricted entries даже при `--include-restricted`.
+9. `run_investigation()` получает исходный target, derived targets из `SearchPlan`, native target kinds из planned native steps и allowlist ready repositories, запускает только planned native target kinds и внешние adapters через существующий `run_adapter_findings()`, затем сохраняет Markdown/JSON report и SQLite case при `--out`/`--case-db`; `--scope-note` попадает в case metadata как текстовый контекст/рамки проверки.
+10. Для `image` target `run_image_search()` запускает ready local tools, добавляет missing/error/timeout findings по остальным local tools, извлекает URL/email/phone/username/domain clues и маршрутизирует derived targets через обычный `search`/`run_investigation()` flow.
 
 Scan-поток:
 
@@ -353,7 +354,7 @@ Toolbox:
 
 Search:
 
-`seed -> classify_target() -> SearchProfile -> native steps + AdapterSpec readiness + LocalToolSpec readiness -> SearchPlan -> plan output OR profile-scoped native execution + ready adapter allowlist/local image runner -> run_investigation() -> report/case`
+`seed -> classify_target() -> SearchProfile -> native steps + derived targets + AdapterSpec readiness + LocalToolSpec readiness -> SearchPlan -> plan output OR profile-scoped native execution + ready adapter allowlist/local image runner -> run_investigation() -> report/case`
 
 Сканирование:
 
@@ -756,3 +757,4 @@ osint-toolkit stats
 - 2026-06-25: served toolbox расширен минимальным profile editor: `/api/profiles/save`, `/api/profiles/delete`, поля profile target/native/adapter/local/excluded lists, canonical JSON write и повторная валидация всего custom profile file перед сохранением.
 - 2026-06-25: `search --execute-adapters` теперь передаёт `profile.native_kinds` в `run_investigation()`, поэтому custom adapter-only profiles не запускают скрытые native-модули вне выбранного профиля.
 - 2026-06-25: `toolbox --serve` получил `/api/tools` и кнопки Tools/Install/Env, чтобы profile readiness/install/env views были доступны из того же окна без shell и без вывода значений env variables.
+- 2026-06-25: `SearchProfile.derived_target_kinds` добавлен в planner/custom profile schema; `email-full`/`safe`/`all-safe` теперь выводят domain target из email seed и включают domain/web fan-out в plan/execution/report/case metadata.

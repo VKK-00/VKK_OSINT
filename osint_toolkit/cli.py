@@ -46,9 +46,11 @@ from .search import (
     TARGET_KINDS,
     SearchPlan,
     build_search_plan,
+    derived_search_targets,
     find_search_profile,
     list_search_profiles,
     load_search_profiles,
+    native_kinds_for_plan,
     ready_adapter_repositories,
 )
 from .toolbox import write_toolbox
@@ -554,8 +556,9 @@ def handle_search(args: argparse.Namespace) -> int:
                 print(saved_message, file=sys.stderr)
         return 0
     executable_adapters = ready_adapter_repositories(plan, limit=args.adapter_limit)
+    derived_targets = derived_search_targets(plan)
     result = run_investigation(
-        (plan.target,),
+        (plan.target, *derived_targets),
         title=f"Unified search: {plan.target.kind}:{plan.target.value}",
         live=False,
         timeout=args.timeout,
@@ -565,15 +568,26 @@ def handle_search(args: argparse.Namespace) -> int:
         adapter_timeout=args.adapter_timeout,
         adapter_limit=args.adapter_limit,
         adapter_repositories=executable_adapters,
-        native_kinds=plan.profile.native_kinds,
+        native_kinds=native_kinds_for_plan(plan),
     )
-    content = _render_search_execution(plan, result, executable_adapters, output_format=args.format)
+    content = _render_search_execution(
+        plan,
+        result,
+        executable_adapters,
+        derived_targets=derived_targets,
+        output_format=args.format,
+    )
     saved_message = ""
     if args.case_db:
         case_id = CaseStore(args.case_db).save(
             result,
             case_id=args.case_id,
-            metadata=_search_case_metadata(plan, args, executed_adapters=executable_adapters),
+            metadata=_search_case_metadata(
+                plan,
+                args,
+                executed_adapters=executable_adapters,
+                derived_targets=derived_targets,
+            ),
         )
         saved_message = f"Saved case {case_id} to {args.case_db}"
     if args.out:
@@ -594,12 +608,17 @@ def _render_search_execution(
     result,
     executable_adapters: tuple[str, ...],
     *,
+    derived_targets: tuple[ScanTarget, ...] = (),
     output_format: str,
 ) -> str:
     if output_format == "json":
         return json.dumps(
             {
                 "search_plan": plan.to_dict(),
+                "derived_targets": [
+                    {"kind": target.kind, "value": target.value, "region": target.region}
+                    for target in derived_targets
+                ],
                 "executed_adapters": list(executable_adapters),
                 "investigation": result.to_dict(),
             },
@@ -609,6 +628,7 @@ def _render_search_execution(
     plan_markdown = format_search_plan(plan, output_format="markdown")
     investigation_markdown = render_investigation_markdown(result)
     adapter_lines = "\n".join(f"- `{repository}`" for repository in executable_adapters) or "- none"
+    derived_lines = "\n".join(f"- `{target.kind}:{target.value}`" for target in derived_targets) or "- none"
     return "\n".join(
         [
             f"# Search Execution Report: {plan.target.kind}",
@@ -616,6 +636,10 @@ def _render_search_execution(
             f"- Target: `{plan.target.value}`",
             f"- Profile: `{plan.profile.name}`",
             "- Restricted execution: disabled",
+            "",
+            "## Derived Targets",
+            "",
+            derived_lines,
             "",
             "## Executed Adapters",
             "",

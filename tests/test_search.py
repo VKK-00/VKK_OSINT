@@ -9,8 +9,10 @@ from osint_toolkit.search import (
     SearchPlan,
     build_search_plan,
     classify_target,
+    derived_search_targets,
     find_search_profile,
     load_search_profiles,
+    native_kinds_for_plan,
     parse_search_profiles,
     ready_adapter_repositories,
 )
@@ -137,6 +139,7 @@ class SearchPlanTests(unittest.TestCase):
                         "name": "case-email-safe",
                         "target_kinds": ["email"],
                         "native_kinds": ["email"],
+                        "derived_target_kinds": ["domain"],
                         "adapter_profiles": ["email-safe"],
                     }
                 ]
@@ -145,6 +148,7 @@ class SearchPlanTests(unittest.TestCase):
 
         self.assertEqual(profiles[0].name, "case-email-safe")
         self.assertEqual(profiles[0].target_kinds, ("email",))
+        self.assertEqual(profiles[0].derived_target_kinds, ("domain",))
 
     def test_custom_profile_file_rejects_builtin_override(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -208,6 +212,20 @@ class SearchPlanTests(unittest.TestCase):
         self.assertIn("sherlock-project/sherlock", sources)
         self.assertEqual(sources["sherlock-project/sherlock"].target_kind, "username")
         self.assertEqual(sources["sherlock-project/sherlock"].target_value, "<derived usernames>")
+
+    def test_email_full_plan_derives_domain_fanout(self):
+        plan = build_search_plan("email", "person@example.com", profile_name="email-full")
+        sources = {step.source: step for step in plan.steps}
+
+        self.assertEqual(
+            [(target.kind, target.value) for target in derived_search_targets(plan)],
+            [("domain", "example.com")],
+        )
+        self.assertIn("derive domain", sources)
+        self.assertEqual(sources["derive domain"].target_value, "example.com")
+        self.assertEqual(sources["scan domain"].target_value, "example.com")
+        self.assertIn("projectdiscovery/subfinder", sources)
+        self.assertIn("domain", native_kinds_for_plan(plan))
 
     def test_ready_adapter_repositories_only_returns_ready_non_restricted_steps(self):
         plan = SearchPlan(

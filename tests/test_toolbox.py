@@ -65,6 +65,8 @@ class ToolboxTests(unittest.TestCase):
         self.assertIn("custom_profile", html)
         self.assertIn("profile_target_kinds", html)
         self.assertIn("profile_adapter_profiles", html)
+        self.assertIn("profile_derived_targets", html)
+        self.assertIn("derived_target_kinds", html)
         self.assertIn("/api/profiles", html)
         self.assertIn("/api/profiles/save", html)
         self.assertIn("/api/profiles/delete", html)

@@ -326,6 +326,7 @@ class ToolboxServerTests(unittest.TestCase):
                         "title": "Case email safe",
                         "target_kinds": ["email"],
                         "native_kinds": ["email"],
+                        "derived_target_kinds": ["domain"],
                         "adapter_profiles": ["email-safe"],
                     },
                 }
@@ -339,6 +340,7 @@ class ToolboxServerTests(unittest.TestCase):
                 self.assertTrue(saved["saved"])
                 self.assertEqual(saved["custom_count"], 1)
                 self.assertEqual(saved["profile"]["name"], "case-email-safe")
+                self.assertEqual(saved["profile"]["derived_target_kinds"], ["domain"])
 
                 profile_payload["profile"]["description"] = "Updated profile"
                 updated = self._request_json(

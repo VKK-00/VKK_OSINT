@@ -392,6 +392,7 @@ python -m osint_toolkit case-delete --case-db cases.sqlite case-001 --yes
 - repeated `--adapter <repository>` allowlist for one case;
 - explicit executed adapter ingestion via `--execute-adapters`;
 - profile-scoped native execution for `search --execute-adapters` through `profile.native_kinds`;
+- derived email-domain fan-out for `search email ... --profile email-full|safe|all-safe`;
 - Markdown/JSON report;
 - Entity Summary from targets, finding URLs, evidence and metadata;
 - Graph Edges for base entity relations;

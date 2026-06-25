@@ -55,6 +55,7 @@ TOOLBOX_INPUTS: tuple[ToolboxInput, ...] = (
     ToolboxInput("profile_description", "Profile description", "Case-specific safe email profile"),
     ToolboxInput("profile_target_kinds", "Profile targets", "email"),
     ToolboxInput("profile_native_kinds", "Profile native", "email"),
+    ToolboxInput("profile_derived_targets", "Profile derived targets", "domain"),
     ToolboxInput("profile_adapter_profiles", "Profile adapter groups", "email-safe"),
     ToolboxInput("profile_repositories", "Profile repositories", "p1ngul1n0/blackbird"),
     ToolboxInput("profile_local_tools", "Profile local tools", "powershell-file-baseline"),
@@ -1355,6 +1356,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       const description = readValue("profile_description");
       const note = readValue("profile_note");
       const nativeKinds = csvList("profile_native_kinds");
+      const derivedTargets = csvList("profile_derived_targets");
       const adapterProfiles = csvList("profile_adapter_profiles");
       const repositories = csvList("profile_repositories");
       const localTools = csvList("profile_local_tools");
@@ -1362,6 +1364,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       if (title) profile.title = title;
       if (description) profile.description = description;
       if (nativeKinds.length) profile.native_kinds = nativeKinds;
+      if (derivedTargets.length) profile.derived_target_kinds = derivedTargets;
       if (adapterProfiles.length) profile.adapter_profiles = adapterProfiles;
       if (repositories.length) profile.adapter_repositories = repositories;
       if (localTools.length) profile.local_tools = localTools;
