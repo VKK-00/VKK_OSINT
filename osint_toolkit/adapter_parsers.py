@@ -54,6 +54,7 @@ PARSER_REPOSITORIES = {
     "soxoj/maigret",
     "thewhiteh4t/nexfil",
     "qeeqbox/social-analyzer",
+    "iojw/socialscan",
     "p1ngul1n0/blackbird",
     "snooppr/snoop",
     "alpkeskin/mosint",
@@ -107,6 +108,8 @@ def parse_adapter_output(
         return _nexfil_findings(repository, target, text)
     if repository == "qeeqbox/social-analyzer":
         return _social_analyzer_findings(repository, target, text)
+    if repository == "iojw/socialscan":
+        return _socialscan_findings(repository, target, text)
     if repository == "p1ngul1n0/blackbird":
         return _blackbird_findings(repository, target, text)
     if repository == "kaifcodec/user-scanner":
@@ -4556,6 +4559,145 @@ def _social_analyzer_evidence(site_name: str, group: str, raw_status: str, rate:
     details = [detail for detail in (raw_status, rate) if detail]
     suffix = f" ({', '.join(details)})" if details else ""
     return f"Social Analyzer {group}: {label}{suffix}"
+
+
+def _socialscan_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    records = _socialscan_records(_load_json_payload(text))
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+    for record in records:
+        finding = _socialscan_record_finding(repository, target, record, seen)
+        if finding:
+            findings.append(finding)
+    return tuple(findings)
+
+
+def _socialscan_records(payload: object | None) -> tuple[dict[str, Any], ...]:
+    records: list[dict[str, Any]] = []
+
+    def collect(value: object) -> None:
+        if isinstance(value, dict):
+            if any(key in value for key in ("platform", "query", "available", "valid", "success", "message", "link")):
+                records.append(value)
+                return
+            for nested in value.values():
+                collect(nested)
+            return
+        if isinstance(value, list):
+            for item in value:
+                collect(item)
+
+    collect(payload)
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        key = json.dumps(record, sort_keys=True, ensure_ascii=False, default=str)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(record)
+    return tuple(deduped)
+
+
+def _socialscan_record_finding(
+    repository: str,
+    target: ScanTarget,
+    record: dict[str, Any],
+    seen: set[tuple[str, str, str]],
+) -> Finding | None:
+    platform = _first_scalar(record.get("platform"))
+    query_value = _first_scalar(record.get("query")) or target.value
+    message = _first_scalar(record.get("message"))
+    link = _first_scalar(record.get("link"))
+    if not platform and not query_value and not message:
+        return None
+
+    status, confidence, availability_status = _socialscan_status(record)
+    finding_url = link if status == "candidate" and link.startswith(("http://", "https://")) else ""
+    key = (platform.lower(), query_value.lower(), availability_status)
+    if key in seen:
+        return None
+    seen.add(key)
+
+    metadata = _socialscan_metadata(
+        repository=repository,
+        target=target,
+        record=record,
+        platform=platform,
+        query_value=query_value,
+        link=link,
+        finding_url=finding_url,
+        availability_status=availability_status,
+    )
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status=status,
+        url=finding_url,
+        confidence=confidence,
+        evidence=_short(_socialscan_evidence(platform, query_value, availability_status, message)),
+        metadata=metadata,
+    )
+
+
+def _socialscan_status(record: dict[str, Any]) -> tuple[str, str, str]:
+    success = _socialscan_bool(record.get("success"))
+    valid = _socialscan_bool(record.get("valid"))
+    available = _socialscan_bool(record.get("available"))
+    if not success:
+        return "error", "low", "error"
+    if not valid:
+        return "skipped", "medium", "invalid"
+    if available:
+        return "not_found", "medium", "available"
+    return "candidate", "high", "taken_or_reserved"
+
+
+def _socialscan_metadata(
+    *,
+    repository: str,
+    target: ScanTarget,
+    record: dict[str, Any],
+    platform: str,
+    query_value: str,
+    link: str,
+    finding_url: str,
+    availability_status: str,
+) -> dict[str, str]:
+    metadata = {
+        "repository": repository,
+        "parser": "socialscan",
+        "target_kind": target.kind,
+        "availability_status": availability_status,
+    }
+    _set_metadata(metadata, "platform", platform)
+    _set_metadata(metadata, "query", query_value)
+    _set_metadata(metadata, "message", _first_scalar(record.get("message")))
+    _set_metadata(metadata, "available", _first_scalar(record.get("available")))
+    _set_metadata(metadata, "valid", _first_scalar(record.get("valid")))
+    _set_metadata(metadata, "success", _first_scalar(record.get("success")))
+    if target.kind == "email" or EMAIL_RE.fullmatch(query_value):
+        metadata["email"] = query_value.lower()
+    elif query_value:
+        metadata["username"] = query_value.lstrip("@")
+    url = finding_url or link
+    if link and not finding_url:
+        metadata["checked_url"] = link
+    domain = (urlparse(url).hostname or "").lower()
+    if domain:
+        metadata["domain"] = domain
+    return metadata
+
+
+def _socialscan_bool(value: object) -> bool:
+    return _first_scalar(value).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _socialscan_evidence(platform: str, query_value: str, availability_status: str, message: str) -> str:
+    label = platform or "platform"
+    details = f": {message}" if message else ""
+    return f"Socialscan {label} for {query_value}: {availability_status}{details}"
 
 
 def _blackbird_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:

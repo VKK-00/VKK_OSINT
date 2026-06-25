@@ -1192,6 +1192,103 @@ class AdapterParserTests(unittest.TestCase):
         self.assertIn(("username", "example_user"), entities)
         self.assertIn(("country", "us"), entities)
 
+    def test_parse_socialscan_json_results(self):
+        findings = parse_adapter_output(
+            "iojw/socialscan",
+            ScanTarget(kind="username", value="example_user"),
+            json.dumps(
+                {
+                    "example_user": [
+                        {
+                            "platform": "GitHub",
+                            "query": "example_user",
+                            "available": "False",
+                            "valid": "True",
+                            "success": "True",
+                            "message": "Username is already taken",
+                            "link": "https://github.com/example_user",
+                        },
+                        {
+                            "platform": "GitLab",
+                            "query": "example_user",
+                            "available": "True",
+                            "valid": "True",
+                            "success": "True",
+                            "message": "Available",
+                        },
+                        {
+                            "platform": "Reddit",
+                            "query": "bad username",
+                            "available": "False",
+                            "valid": "False",
+                            "success": "True",
+                            "message": "Invalid username",
+                        },
+                        {
+                            "platform": "Twitter",
+                            "query": "example_user",
+                            "available": "False",
+                            "valid": "False",
+                            "success": "False",
+                            "message": "ClientError - rate limited",
+                        },
+                    ]
+                }
+            ),
+        )
+
+        statuses = {finding.metadata.get("platform"): finding.status for finding in findings}
+        self.assertEqual(statuses["GitHub"], "candidate")
+        self.assertEqual(statuses["GitLab"], "not_found")
+        self.assertEqual(statuses["Reddit"], "skipped")
+        self.assertEqual(statuses["Twitter"], "error")
+
+        github = next(finding for finding in findings if finding.metadata.get("platform") == "GitHub")
+        self.assertEqual(github.url, "https://github.com/example_user")
+        self.assertEqual(github.confidence, "high")
+        self.assertEqual(github.metadata["parser"], "socialscan")
+        self.assertEqual(github.metadata["availability_status"], "taken_or_reserved")
+        self.assertEqual(github.metadata["username"], "example_user")
+        self.assertEqual(github.metadata["domain"], "github.com")
+        self.assertEqual(github.metadata["available"], "False")
+
+        gitlab = next(finding for finding in findings if finding.metadata.get("platform") == "GitLab")
+        self.assertEqual(gitlab.url, "")
+        self.assertEqual(gitlab.metadata["availability_status"], "available")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("url", "https://github.com/example_user"), entities)
+        self.assertIn(("domain", "github.com"), entities)
+        self.assertIn(("username", "example_user"), entities)
+
+    def test_parse_socialscan_email_json_results(self):
+        findings = parse_adapter_output(
+            "iojw/socialscan",
+            ScanTarget(kind="email", value="person@example.com"),
+            json.dumps(
+                {
+                    "GitHub": [
+                        {
+                            "platform": "GitHub",
+                            "query": "person@example.com",
+                            "available": "False",
+                            "valid": "True",
+                            "success": "True",
+                            "message": "Email is already taken",
+                        }
+                    ]
+                }
+            ),
+        )
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].status, "candidate")
+        self.assertEqual(findings[0].metadata["parser"], "socialscan")
+        self.assertEqual(findings[0].metadata["email"], "person@example.com")
+        self.assertEqual(findings[0].metadata["platform"], "GitHub")
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("email", "person@example.com"), entities)
+
     def test_parse_blackbird_json_export_profiles(self):
         findings = parse_adapter_output(
             "p1ngul1n0/blackbird",
@@ -1641,6 +1738,47 @@ class AdapterParserTests(unittest.TestCase):
         self.assertEqual(findings[0].status, "completed")
         self.assertTrue(any(finding.metadata.get("parser") == "social-analyzer" for finding in findings[1:]))
         self.assertTrue(any(finding.url == "https://github.com/example_user" for finding in findings[1:]))
+
+    def test_run_socialscan_adapter_reads_generated_json_after_execution(self):
+        def fake_run(args, **kwargs):
+            self.assertEqual(args[:2], ["C:\\tools\\socialscan.exe", "example_user"])
+            self.assertIn("--json", args)
+            output_path = Path(args[args.index("--json") + 1])
+            output_path.write_text(
+                json.dumps(
+                    {
+                        "example_user": [
+                            {
+                                "platform": "GitHub",
+                                "query": "example_user",
+                                "available": "False",
+                                "valid": "True",
+                                "success": "True",
+                                "message": "Username is already taken",
+                                "link": "https://github.com/example_user",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="Completed 1 queries\n", stderr="")
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="C:\\tools\\socialscan.exe"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            findings = run_adapter_findings(
+                "iojw/socialscan",
+                ScanTarget(kind="username", value="example_user"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertEqual(findings[0].metadata["generated_output_files"], "1")
+        parsed = [finding for finding in findings[1:] if finding.metadata.get("parser") == "socialscan"]
+        self.assertTrue(parsed)
+        self.assertTrue(any(finding.url == "https://github.com/example_user" for finding in parsed))
 
     def test_run_blackbird_adapter_reads_fresh_generated_json_after_execution(self):
         with tempfile.TemporaryDirectory() as directory:

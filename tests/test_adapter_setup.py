@@ -108,6 +108,26 @@ class AdapterSetupTests(unittest.TestCase):
             ("user-scanner", "-u", "example_user", "-f", "json"),
         )
 
+    def test_socialscan_setup_uses_generated_json_output(self):
+        adapter = find_adapter("iojw/socialscan")
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "missing")
+        self.assertEqual(setup.install_kind, "pipx")
+        self.assertEqual(setup.install_command, "pipx install socialscan")
+        self.assertEqual(
+            adapter.render_command(ScanTarget(kind="username", value="example_user")),
+            ("socialscan", "example_user"),
+        )
+        self.assertEqual(
+            adapter.render_command(ScanTarget(kind="email", value="person@example.com")),
+            ("socialscan", "person@example.com"),
+        )
+        self.assertEqual(adapter.render_output_file_args("C:\\tmp\\socialscan.json"), ("--json", "C:\\tmp\\socialscan.json"))
+        self.assertEqual(adapter.generated_output_patterns, ("*.json",))
+
     def test_social_analyzer_setup_uses_upstream_app_path_and_region_filter(self):
         adapter = find_adapter("qeeqbox/social-analyzer")
 

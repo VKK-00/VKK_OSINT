@@ -252,7 +252,8 @@ python -m osint_toolkit search person "Ivan Petrenko" --profile person-full --re
 - Snoop RU/UA.
 - user-scanner.
 - Instaloader for Instagram.
-- DetectDee executable detect route and socialscan candidate after mapping.
+- DetectDee executable detect route.
+- Socialscan username/email generated JSON adapter.
 
 Что нужно реализовать:
 
@@ -410,7 +411,6 @@ Profile fields:
 
 Приоритет 2:
 
-- Socialscan integration review.
 - Maigret richer dossier fields.
 - BBOT broader passive presets with explicit profile.
 - theHarvester API-source attribution.
@@ -580,6 +580,7 @@ Notes:
 35. Done: add zbarimg raw payload parser for QR/barcode clues and derived seed extraction.
 36. Done: add Argus per-target parser fixtures and target provenance metadata for parsed Argus URL/email/phone/subdomain/IP/port/technology signals.
 37. Done: add Yark archive JSON parser, safe temporary archive execution route and generated `yark.json` ingestion for YouTube channel/video archive clues.
+38. Done: add Socialscan username/email adapter, generated JSON parser and safe availability-signal mapping for `candidate`/`not_found`/`skipped`/`error` results.
 
 ## Definition of done
 

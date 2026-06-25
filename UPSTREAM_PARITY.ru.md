@@ -54,6 +54,8 @@ python -m osint_toolkit scan username <username> --live
 - parser для Blackbird JSON exports/stdout found-lines: `FOUND` -> `candidate`, `NOT-FOUND` -> `not_found`, `ERROR` -> `error`, с сохранением site/category/profile URL/platform domain и extracted metadata;
 - executable adapter для `Yvesssn/DetectDee`: `DetectDee detect -n <username> -f <DETECTDEE_DATA> -o <temp>`;
 - parser для DetectDee generated result/stdout rows: identity, site и profile URL нормализуются в `candidate` findings;
+- executable adapter для `iojw/socialscan`: `socialscan <username-or-email> --json <temp.json>`;
+- parser для Socialscan generated JSON: `taken/reserved` -> `candidate`, `available` -> `not_found`, invalid query -> `skipped`, upstream/platform failures -> `error`;
 - executable adapter для `sherlock-project/sherlock`: при `--execute` добавляются `--no-color --print-all --csv --txt --folderoutput <tempdir>`;
 - parser для Sherlock stdout и CSV/TXT reports: `Claimed` -> `candidate`, `Available` -> `not_found`, `Unknown`/`WAF` -> `error`, `Illegal` -> `skipped`;
 - executable adapter для `thewhiteh4t/nexfil`: `nexfil -u <username>` запускается в isolated temporary workdir/HOME;
@@ -347,6 +349,7 @@ python -m osint_toolkit adapter-setup <repository>
 - adapter-specific parser for `user-scanner` JSON and verbose line output;
 - adapter-specific parser for Snoop stdout and CSV report rows;
 - adapter-specific parser for Social Analyzer JSON detected/unknown/failed profile rows;
+- adapter-specific parser for Socialscan generated JSON availability/usage rows;
 - adapter-specific parser for Blackbird JSON exports and stdout found profile rows;
 - adapter-specific parser for DetectDee generated result/stdout profile rows;
 - adapter-specific parser for PhoneInfoga CLI sections and REST/API-like JSON scanner outputs;
@@ -367,7 +370,7 @@ python -m osint_toolkit adapter-setup <repository>
 Gap:
 
 - нет встроенной CLI-команды `install adapters`, но текущая dev/toolbox машина может быть приведена к `all-safe` ready через user-local `pipx`, Go binaries, portable image tools и venv-backed manual checkouts;
-- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, pwnedOrNot stdout, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, Social Analyzer JSON, Blackbird JSON/stdout, DetectDee generated result/stdout, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events, SpiderFoot events, Argus stdout/cache-like output, Yark generated `yark.json` archive output, ExifTool JSON local image metadata, Tesseract OCR text и zbarimg QR/barcode payloads;
+- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, pwnedOrNot stdout, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, Social Analyzer JSON, Socialscan generated JSON, Blackbird JSON/stdout, DetectDee generated result/stdout, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events, SpiderFoot events, Argus stdout/cache-like output, Yark generated `yark.json` archive output, ExifTool JSON local image metadata, Tesseract OCR text и zbarimg QR/barcode payloads;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.
 
