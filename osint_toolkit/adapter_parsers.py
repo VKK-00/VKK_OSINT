@@ -1147,7 +1147,7 @@ def _spiderfoot_event_finding(
 
     if event_type in {"TCP_PORT_OPEN", "UDP_PORT_OPEN", "OPEN_TCP_PORT"}:
         host, port = _spiderfoot_host_port(data_text, record)
-        metadata = _spiderfoot_base_metadata(repository, record, event_type)
+        metadata = _spiderfoot_base_metadata(repository, record, event_type, target)
         _set_metadata(metadata, "host", host)
         _set_metadata(metadata, "port", port)
         return _spiderfoot_custom_finding(
@@ -1177,7 +1177,7 @@ def _spiderfoot_event_finding(
         return _spiderfoot_observed_finding(repository, target, record, event_type, "asn", data_text, seen)
 
     if event_type.startswith("VULNERABILITY") or event_type in {"FINDING", "LEAKSITE_DOMAIN", "MALICIOUS_IPADDR"}:
-        metadata = _spiderfoot_base_metadata(repository, record, event_type)
+        metadata = _spiderfoot_base_metadata(repository, record, event_type, target)
         metadata["value"] = data_text
         return _spiderfoot_custom_finding(
             repository=repository,
@@ -1191,7 +1191,7 @@ def _spiderfoot_event_finding(
             confidence="high",
         )
 
-    metadata = _spiderfoot_base_metadata(repository, record, event_type)
+    metadata = _spiderfoot_base_metadata(repository, record, event_type, target)
     metadata["value"] = data_text
     return _spiderfoot_custom_finding(
         repository=repository,
@@ -1227,7 +1227,7 @@ def _spiderfoot_observed_finding(
     if key in seen:
         return None
     seen.add(key)
-    metadata = _spiderfoot_base_metadata(repository, record, event_type)
+    metadata = _spiderfoot_base_metadata(repository, record, event_type, target)
     metadata[metadata_key] = normalized
     if metadata_key == "email":
         metadata["domain"] = normalized.rsplit("@", 1)[1].lower()
@@ -1257,7 +1257,7 @@ def _spiderfoot_url_finding(
     if key in seen:
         return None
     seen.add(key)
-    metadata = _spiderfoot_base_metadata(repository, record, event_type)
+    metadata = _spiderfoot_base_metadata(repository, record, event_type, target)
     domain = (urlparse(value).hostname or "").lower()
     if domain:
         metadata["domain"] = domain
@@ -1303,12 +1303,20 @@ def _spiderfoot_custom_finding(
     )
 
 
-def _spiderfoot_base_metadata(repository: str, record: dict[str, Any], event_type: str) -> dict[str, str]:
+def _spiderfoot_base_metadata(
+    repository: str,
+    record: dict[str, Any],
+    event_type: str,
+    target: ScanTarget | None = None,
+) -> dict[str, str]:
     metadata = {
         "repository": repository,
         "parser": "spiderfoot",
         "event_type": event_type,
     }
+    if target is not None:
+        metadata["target_kind"] = target.kind
+        metadata["target_value"] = target.value
     for source_key, metadata_key in (
         ("module", "spiderfoot_module"),
         ("sourceModule", "spiderfoot_module"),

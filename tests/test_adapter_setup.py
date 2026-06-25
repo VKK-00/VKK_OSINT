@@ -257,6 +257,18 @@ class AdapterSetupTests(unittest.TestCase):
                 spiderfoot.render_command(ScanTarget(kind="domain", value="example.com")),
                 ("python", "C:\\tools\\spiderfoot\\sf.py", "-s", "example.com", "-u", "passive", "-o", "json", "-q"),
             )
+            self.assertEqual(
+                spiderfoot.render_command(ScanTarget(kind="email", value="person@example.com")),
+                ("python", "C:\\tools\\spiderfoot\\sf.py", "-s", "person@example.com", "-u", "passive", "-o", "json", "-q"),
+            )
+            self.assertEqual(
+                spiderfoot.render_command(ScanTarget(kind="phone", value="+380441234567")),
+                ("python", "C:\\tools\\spiderfoot\\sf.py", "-s", "+380441234567", "-u", "passive", "-o", "json", "-q"),
+            )
+            self.assertEqual(
+                spiderfoot.render_command(ScanTarget(kind="username", value="example_user")),
+                ("python", "C:\\tools\\spiderfoot\\sf.py", "-s", "example_user", "-u", "passive", "-o", "json", "-q"),
+            )
         with patch.dict(
             os.environ,
             {

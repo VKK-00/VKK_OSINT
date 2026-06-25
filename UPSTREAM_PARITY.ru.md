@@ -294,7 +294,7 @@ Gap:
 - executable adapter target для `blacklanternsecurity/bbot`: `bbot -t <target> -p subdomain-enum -rf passive --output <tempdir> --name osint-toolkit`;
 - parser для BBOT generated JSON/NDJSON/stdout events: `DNS_NAME`, `EMAIL_ADDRESS`, `URL`, `IP_ADDRESS`, `OPEN_TCP_PORT`, `TECHNOLOGY`, `FINDING` и `VULNERABILITY` нормализуются в `Finding`/entities/graph signals;
 - executable adapter target для `smicallef/spiderfoot`: `<SPIDERFOOT_PYTHON|python> <SPIDERFOOT_SF_PATH> -s <target> -u passive -o json -q`;
-- parser для SpiderFoot JSON/stdout events: `INTERNET_NAME`, `DOMAIN_NAME`, `EMAILADDR`, `WEBLINK`, `IP_ADDRESS`, `TCP_PORT_OPEN`, `PHONE_NUMBER`, `HUMAN_NAME`, `TECHNOLOGY`, ASN и vulnerability/finding events нормализуются в `Finding`/entities/graph signals;
+- parser для SpiderFoot JSON/stdout events: `INTERNET_NAME`, `DOMAIN_NAME`, `EMAILADDR`, `WEBLINK`, `IP_ADDRESS`, `TCP_PORT_OPEN`, `PHONE_NUMBER`, `HUMAN_NAME`, `TECHNOLOGY`, ASN и vulnerability/finding events нормализуются в `Finding`/entities/graph signals; покрыты examples для domain, email, phone и username target modes с `target_kind`/`target_value` provenance metadata;
 - executable interactive adapter target для `jasonxtn/argus`: `argus` со stdin-сценарием `set target <target>`, `runall infra`, `viewout`, `exit`;
 - parser для Argus stdout/cache-like output: URL, email, phone, host/subdomain, IP, port и technology signals нормализуются в `Finding`/entities/graph signals;
 - adapter profile `domain-recon` для Subfinder/httpx/passive Amass/theHarvester/BBOT/SpiderFoot.
@@ -355,7 +355,7 @@ python -m osint_toolkit adapter-setup <repository>
 - adapter-specific parser for passive Amass stdout/JSON-like subdomain output;
 - adapter-specific parser for theHarvester generated JSON/stdout domain recon output;
 - adapter-specific parser for BBOT generated JSON/NDJSON/stdout event output;
-- adapter-specific parser for SpiderFoot JSON/stdout event output;
+- adapter-specific parser for SpiderFoot JSON/stdout event output with domain/email/phone/username target fixtures;
 - adapter-specific parser for Argus interactive stdout/cache-like output;
 - adapter profile `domain-recon` for passive domain/web upstream adapters;
 - adapter profile `broad-recon` for broad recon suites BBOT/SpiderFoot/Argus;

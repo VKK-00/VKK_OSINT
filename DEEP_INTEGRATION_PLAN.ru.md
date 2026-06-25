@@ -407,7 +407,6 @@ Profile fields:
 
 Приоритет 1:
 
-- SpiderFoot phone/email/username mode examples.
 - Argus per-target parser fixtures.
 - ExifTool JSON parser.
 - Tesseract OCR text parser and seed extractor.
@@ -580,6 +579,7 @@ Notes:
 29. Done: add Windows runtime env refresh so CLI/toolbox readiness sees newly installed user-local `pipx`, Go, portable binaries and configured OSINT env variables without restarting the current terminal.
 30. Done: add DetectDee executable route and parser for username/email/phone profiles; readiness uses `DetectDee` in `PATH` plus `DETECTDEE_DATA`, and execution only uses upstream detect mode.
 31. Done: add pwnedOrNot stdout parser for safe `-n` breach lookups, including HIBP breach summary/rows and credential-output redaction guard.
+32. Done: add SpiderFoot phone/email/username mode examples and target provenance metadata for parsed SpiderFoot events.
 
 ## Definition of done
 

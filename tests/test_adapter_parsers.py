@@ -881,6 +881,7 @@ class AdapterParserTests(unittest.TestCase):
 
         metadata = [finding.metadata for finding in findings]
         self.assertTrue(any(item.get("parser") == "spiderfoot" for item in metadata))
+        self.assertTrue(any(item.get("target_kind") == "domain" and item.get("target_value") == "example.com" for item in metadata))
         self.assertTrue(any(item.get("subdomain") == "api.example.com" for item in metadata))
         self.assertTrue(any(item.get("email") == "admin@example.com" for item in metadata))
         self.assertTrue(any(item.get("ip") == "93.184.216.34" for item in metadata))
@@ -912,6 +913,59 @@ class AdapterParserTests(unittest.TestCase):
         self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings))
         self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings))
         self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings))
+
+    def test_parse_spiderfoot_non_domain_target_examples(self):
+        cases = (
+            (
+                ScanTarget(kind="email", value="person@example.com"),
+                """
+                [
+                  {"type":"EMAILADDR","data":"person@example.com","module":"sfp_email","confidence":90},
+                  {"type":"PHONE_NUMBER","data":"+380441234567","module":"sfp_phone","confidence":80},
+                  {"type":"ACCOUNT_EXTERNAL_OWNED","data":"@example_user","module":"sfp_accounts","confidence":70},
+                  {"type":"WEBLINK","data":"https://example.com/profile","module":"sfp_spider","confidence":80}
+                ]
+                """,
+                {("email", "person@example.com"), ("phone", "+380441234567"), ("username", "example_user"), ("url", "https://example.com/profile")},
+            ),
+            (
+                ScanTarget(kind="phone", value="+380441234567"),
+                """
+                [
+                  {"type":"PHONE_NUMBER","data":"+380441234567","module":"sfp_phone","confidence":90},
+                  {"type":"EMAILADDR","data":"owner@example.com","module":"sfp_email","confidence":60},
+                  {"type":"USERNAME","data":"example_user","module":"sfp_accounts","confidence":70}
+                ]
+                """,
+                {("phone", "+380441234567"), ("email", "owner@example.com"), ("username", "example_user")},
+            ),
+            (
+                ScanTarget(kind="username", value="example_user"),
+                """
+                [
+                  {"type":"USERNAME","data":"example_user","module":"sfp_accounts","confidence":90},
+                  {"type":"HUMAN_NAME","data":"Example Person","module":"sfp_names","confidence":70},
+                  {"type":"WEBLINK","data":"https://social.example/example_user","module":"sfp_spider","confidence":70}
+                ]
+                """,
+                {("username", "example_user"), ("name", "Example Person"), ("url", "https://social.example/example_user")},
+            ),
+        )
+
+        for target, output, expected_entities in cases:
+            with self.subTest(target=target):
+                findings = parse_adapter_output("smicallef/spiderfoot", target, output)
+                metadata = [finding.metadata for finding in findings]
+                self.assertTrue(
+                    any(
+                        item.get("parser") == "spiderfoot"
+                        and item.get("target_kind") == target.kind
+                        and item.get("target_value") == target.value
+                        for item in metadata
+                    )
+                )
+                entities = {(entity.kind, entity.value) for entity in entities_from_findings(findings)}
+                self.assertTrue(expected_entities.issubset(entities))
 
     def test_parse_argus_stdout_events(self):
         findings = parse_adapter_output(
@@ -1320,12 +1374,12 @@ class AdapterParserTests(unittest.TestCase):
 
     def test_run_spiderfoot_adapter_parses_json_stdout_after_execution(self):
         completed = subprocess.CompletedProcess(
-            args=["python", "sf.py", "-s", "example.com", "-u", "passive", "-o", "json", "-q"],
+            args=["python", "sf.py", "-s", "person@example.com", "-u", "passive", "-o", "json", "-q"],
             returncode=0,
             stdout=(
-                '[{"type":"INTERNET_NAME","data":"api.example.com","module":"sfp_dnsresolve","confidence":100},'
-                '{"type":"EMAILADDR","data":"admin@example.com","module":"sfp_email","confidence":80},'
-                '{"type":"WEBLINK","data":"https://www.example.com/login","module":"sfp_spider","confidence":80}]'
+                '[{"type":"EMAILADDR","data":"person@example.com","module":"sfp_email","confidence":90},'
+                '{"type":"PHONE_NUMBER","data":"+380441234567","module":"sfp_phone","confidence":80},'
+                '{"type":"USERNAME","data":"example_user","module":"sfp_accounts","confidence":70}]'
             ),
             stderr="",
         )
@@ -1336,19 +1390,20 @@ class AdapterParserTests(unittest.TestCase):
         ), patch("osint_toolkit.adapter_runner.subprocess.run", return_value=completed) as run:
             findings = run_adapter_findings(
                 "smicallef/spiderfoot",
-                ScanTarget(kind="domain", value="example.com"),
+                ScanTarget(kind="email", value="person@example.com"),
                 execute=True,
             )
 
         args = run.call_args.args[0]
         self.assertEqual(args[:3], ["C:\\Python\\python.exe", "C:\\tools\\spiderfoot\\sf.py", "-s"])
+        self.assertEqual(args[3], "person@example.com")
         self.assertIn("-u", args)
         self.assertIn("passive", args)
         self.assertEqual(findings[0].status, "completed")
         self.assertTrue(any(finding.metadata.get("parser") == "spiderfoot" for finding in findings[1:]))
-        self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
-        self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings[1:]))
-        self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("email") == "person@example.com" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("phone") == "+380441234567" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("username") == "example_user" for finding in findings[1:]))
 
     def test_run_argus_adapter_feeds_interactive_script_after_execution(self):
         def fake_run(args, **kwargs):
