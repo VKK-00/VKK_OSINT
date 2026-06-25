@@ -274,7 +274,7 @@ Search-поток:
 2. `classify_target()` определяет target kind для `auto`.
 3. `build_search_plan()` выбирает profile: например phone -> `phone-full`, email -> `email-full`, image -> `image-full`.
 4. Planner добавляет built-in native steps, разворачивает adapter profiles через `expand_adapter_repositories()` и проверяет readiness через `build_adapter_setup()`.
-5. Если profile содержит `derived_target_kinds`, planner добавляет derived targets: `email-full`/`safe`/`all-safe` выводят domain target из email, а `web-full`/`passive-recon`/`safe`/`all-safe` выводят URL host как domain target и добавляют default domain/web fan-out.
+5. Если profile содержит `derived_target_kinds`, planner добавляет derived targets: `email-full`/`safe`/`all-safe` выводят domain target из email и username target из валидного local-part, а `web-full`/`passive-recon`/`safe`/`all-safe` выводят URL host как domain target и добавляют default domain/web fan-out.
 6. Для image target planner добавляет local-tool routes: PowerShell baseline/hash, ExifTool, ImageMagick, Tesseract и zbarimg.
 7. В plan-only режиме результат выводится как table/Markdown/CSV/JSON через `format_search_plan()`. Missing/config/restricted tools остаются строками плана, а не ошибками.
 8. В adapter execution режиме `ready_adapter_repositories()` выбирает только `stage=adapter,status=ready,readiness=ready` и отсекает restricted entries даже при `--include-restricted`.
@@ -757,4 +757,4 @@ osint-toolkit stats
 - 2026-06-25: served toolbox расширен минимальным profile editor: `/api/profiles/save`, `/api/profiles/delete`, поля profile target/native/adapter/local/excluded lists, canonical JSON write и повторная валидация всего custom profile file перед сохранением.
 - 2026-06-25: `search --execute-adapters` теперь передаёт `profile.native_kinds` в `run_investigation()`, поэтому custom adapter-only profiles не запускают скрытые native-модули вне выбранного профиля.
 - 2026-06-25: `toolbox --serve` получил `/api/tools` и кнопки Tools/Install/Env, чтобы profile readiness/install/env views были доступны из того же окна без shell и без вывода значений env variables.
-- 2026-06-25: `SearchProfile.derived_target_kinds` добавлен в planner/custom profile schema; `email-full`/`safe`/`all-safe` теперь выводят domain target из email seed, а `web-full`/`passive-recon`/`safe`/`all-safe` выводят URL host как domain target и включают domain/web fan-out в plan/execution/report/case metadata.
+- 2026-06-25: `SearchProfile.derived_target_kinds` добавлен в planner/custom profile schema; `email-full`/`safe`/`all-safe` теперь выводят domain и username targets из email seed, а `web-full`/`passive-recon`/`safe`/`all-safe` выводят URL host как domain target и включают derived fan-out в plan/execution/report/case metadata.

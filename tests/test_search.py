@@ -213,19 +213,32 @@ class SearchPlanTests(unittest.TestCase):
         self.assertEqual(sources["sherlock-project/sherlock"].target_kind, "username")
         self.assertEqual(sources["sherlock-project/sherlock"].target_value, "<derived usernames>")
 
-    def test_email_full_plan_derives_domain_fanout(self):
+    def test_email_full_plan_derives_domain_and_username_fanout(self):
         plan = build_search_plan("email", "person@example.com", profile_name="email-full")
         sources = {step.source: step for step in plan.steps}
 
         self.assertEqual(
             [(target.kind, target.value) for target in derived_search_targets(plan)],
-            [("domain", "example.com")],
+            [("domain", "example.com"), ("username", "person")],
         )
         self.assertIn("derive domain", sources)
+        self.assertIn("derive username", sources)
         self.assertEqual(sources["derive domain"].target_value, "example.com")
+        self.assertEqual(sources["derive username"].target_value, "person")
         self.assertEqual(sources["scan domain"].target_value, "example.com")
+        self.assertEqual(sources["scan username"].target_value, "person")
         self.assertIn("projectdiscovery/subfinder", sources)
+        self.assertIn("sherlock-project/sherlock", sources)
         self.assertIn("domain", native_kinds_for_plan(plan))
+        self.assertIn("username", native_kinds_for_plan(plan))
+
+    def test_email_full_skips_username_fanout_for_short_local_part(self):
+        plan = build_search_plan("email", "ab@example.com", profile_name="email-full")
+
+        self.assertEqual(
+            [(target.kind, target.value) for target in derived_search_targets(plan)],
+            [("domain", "example.com")],
+        )
 
     def test_web_full_plan_derives_domain_fanout_from_url(self):
         plan = build_search_plan("url", "https://sub.example.com/path", profile_name="web-full")

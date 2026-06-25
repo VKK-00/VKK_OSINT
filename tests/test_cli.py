@@ -954,7 +954,14 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["investigation"]["targets"][0]["value"], "person@example.com")
         targets = {(target["kind"], target["value"]) for target in payload["investigation"]["targets"]}
         self.assertIn(("domain", "example.com"), targets)
-        self.assertEqual(payload["derived_targets"], [{"kind": "domain", "value": "example.com", "region": "all"}])
+        self.assertIn(("username", "person"), targets)
+        self.assertEqual(
+            payload["derived_targets"],
+            [
+                {"kind": "domain", "value": "example.com", "region": "all"},
+                {"kind": "username", "value": "person", "region": "all"},
+            ],
+        )
 
     def test_search_execute_adapters_derives_domain_from_url(self):
         result = self.run_cli(

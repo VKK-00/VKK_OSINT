@@ -574,6 +574,7 @@ Notes:
 21. Done: expose profile readiness/install/env views in served toolbox through `/api/tools` and Tools/Install/Env controls.
 22. Done: add `derived_target_kinds` and email -> domain fan-out so `email-full`/`safe`/`all-safe` route the email domain through domain/web search planning and execution.
 23. Done: add URL host -> domain fan-out so `web-full`/`passive-recon`/`safe`/`all-safe` route URL seeds through domain/web search planning and execution.
+24. Done: add email local-part -> username fan-out so `email-full`/`safe`/`all-safe` route email seeds through username/profile search planning and execution when the local-part is handle-like.
 
 ## Definition of done
 

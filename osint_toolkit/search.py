@@ -206,7 +206,7 @@ SEARCH_PROFILES: tuple[SearchProfile, ...] = (
         native_kinds=("person", "username", "email", "phone", "domain", "url", "telegram", "instagram", "social", "ru-ua"),
         adapter_profiles=("username-full", "email-safe", "phone-safe", "domain-recon", "url-archive"),
         local_tools=("powershell-file-baseline", "exiftool", "imagemagick-identify", "tesseract-ocr", "zbarimg"),
-        derived_target_kinds=("domain",),
+        derived_target_kinds=("domain", "username"),
         note="Restricted adapters are excluded.",
     ),
     SearchProfile(
@@ -217,7 +217,7 @@ SEARCH_PROFILES: tuple[SearchProfile, ...] = (
         native_kinds=("person", "username", "email", "phone", "domain", "url", "telegram", "instagram", "social", "ru-ua"),
         adapter_profiles=("username-full", "username-ru-ua", "email-safe", "phone-safe", "url-archive", "domain-recon", "broad-recon"),
         local_tools=("powershell-file-baseline", "exiftool", "imagemagick-identify", "tesseract-ocr", "zbarimg"),
-        derived_target_kinds=("domain",),
+        derived_target_kinds=("domain", "username"),
         note="Broad recon adapters are included but remain readiness-checked and non-restricted only.",
     ),
     SearchProfile(
@@ -238,7 +238,7 @@ SEARCH_PROFILES: tuple[SearchProfile, ...] = (
         target_kinds=("email",),
         native_kinds=("email",),
         adapter_profiles=("email-safe", "broad-recon"),
-        derived_target_kinds=("domain",),
+        derived_target_kinds=("domain", "username"),
         excluded_repositories=("megadose/holehe", "martinvigo/email2phonenumber"),
         note="Recovery/account-enumeration adapters are excluded from the default email fan-out.",
     ),
@@ -710,6 +710,10 @@ def _derived_targets_for_seed(target: ScanTarget, profile: SearchProfile) -> tup
         domain = _domain_from_email(target.value)
         if domain:
             targets.append(ScanTarget(kind="domain", value=domain, region=target.region))
+    if target.kind == "email" and "username" in profile.derived_target_kinds:
+        username = _username_from_email(target.value)
+        if username:
+            targets.append(ScanTarget(kind="username", value=username, region=target.region))
     if target.kind == "url" and "domain" in profile.derived_target_kinds:
         domain = _domain_from_url(target.value)
         if domain:
@@ -762,6 +766,18 @@ def _domain_from_url(value: str) -> str:
     if not re.fullmatch(r"[a-z0-9.-]+\.[a-z]{2,}", host):
         return ""
     return host
+
+
+def _username_from_email(value: str) -> str:
+    if "@" not in value:
+        return ""
+    local_part = value.rsplit("@", 1)[0].strip().lower()
+    if "+" in local_part:
+        local_part = local_part.split("+", 1)[0]
+    username = local_part.strip("._-")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{2,31}", username):
+        return ""
+    return username
 
 
 def _adapter_step(target: ScanTarget, setup: AdapterSetup, command: str) -> PlannedStep:

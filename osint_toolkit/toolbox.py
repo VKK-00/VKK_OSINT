@@ -55,7 +55,7 @@ TOOLBOX_INPUTS: tuple[ToolboxInput, ...] = (
     ToolboxInput("profile_description", "Profile description", "Case-specific safe email profile"),
     ToolboxInput("profile_target_kinds", "Profile targets", "email"),
     ToolboxInput("profile_native_kinds", "Profile native", "email"),
-    ToolboxInput("profile_derived_targets", "Profile derived targets", "domain"),
+    ToolboxInput("profile_derived_targets", "Profile derived targets", "domain, username"),
     ToolboxInput("profile_adapter_profiles", "Profile adapter groups", "email-safe"),
     ToolboxInput("profile_repositories", "Profile repositories", "p1ngul1n0/blackbird"),
     ToolboxInput("profile_local_tools", "Profile local tools", "powershell-file-baseline"),
