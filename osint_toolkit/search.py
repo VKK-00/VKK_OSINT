@@ -63,6 +63,7 @@ class LocalToolSpec:
     target_kinds: tuple[str, ...]
     command_template: tuple[str, ...]
     executable: str = ""
+    install_command: str = ""
     install_note: str = ""
     docs_url: str = ""
 
@@ -146,6 +147,7 @@ LOCAL_TOOLS: tuple[LocalToolSpec, ...] = (
             'Get-FileHash -Algorithm SHA256 -LiteralPath "{image_path}"',
         ),
         executable="powershell",
+        install_command="",
         install_note="Built into Windows PowerShell.",
     ),
     LocalToolSpec(
@@ -154,6 +156,7 @@ LOCAL_TOOLS: tuple[LocalToolSpec, ...] = (
         target_kinds=("image",),
         command_template=("exiftool", "-a", "-u", "-g1", "-ee", "{image_path}"),
         executable="exiftool",
+        install_command="winget install OliverBetz.ExifTool",
         install_note="Install ExifTool and ensure exiftool is on PATH.",
         docs_url="https://exiftool.org/",
     ),
@@ -163,6 +166,7 @@ LOCAL_TOOLS: tuple[LocalToolSpec, ...] = (
         target_kinds=("image",),
         command_template=("magick", "identify", "-verbose", "{image_path}"),
         executable="magick",
+        install_command="winget install ImageMagick.ImageMagick",
         install_note="Install ImageMagick and ensure magick is on PATH.",
         docs_url="https://imagemagick.org/",
     ),
@@ -172,6 +176,7 @@ LOCAL_TOOLS: tuple[LocalToolSpec, ...] = (
         target_kinds=("image",),
         command_template=("tesseract", "{image_path}", "stdout", "-l", "eng+rus+ukr"),
         executable="tesseract",
+        install_command="winget install UB-Mannheim.TesseractOCR",
         install_note="Install Tesseract OCR with eng, rus and ukr language packs.",
         docs_url="https://github.com/tesseract-ocr/tesseract",
     ),
@@ -181,6 +186,7 @@ LOCAL_TOOLS: tuple[LocalToolSpec, ...] = (
         target_kinds=("image",),
         command_template=("zbarimg", "--raw", "{image_path}"),
         executable="zbarimg",
+        install_command="choco install zbar",
         install_note="Install ZBar tools and ensure zbarimg is on PATH.",
         docs_url="https://github.com/mchehab/zbar",
     ),
@@ -501,6 +507,7 @@ def _local_tool_steps(target: ScanTarget, profile: SearchProfile) -> tuple[Plann
                 metadata={
                     "executable": tool.executable,
                     "executable_path": executable_path or "",
+                    "install_command": tool.install_command,
                 },
             )
         )

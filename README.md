@@ -56,7 +56,8 @@ python -m osint_toolkit search phone +380441234567 --profile phone-full --plan-o
 python -m osint_toolkit search phone +380441234567 --profile phone-full --execute-adapters --adapter-limit 3 --out reports/phone.md --case-db cases.sqlite --case-id phone-001
 python -m osint_toolkit search email person@example.com --profile email-full --plan-only --format markdown
 python -m osint_toolkit search auto https://vk.com/example --profile auto --plan-only --format json
-python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --plan-only
+python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --execute-adapters --out reports/photo.md --case-db cases.sqlite --case-id photo-001
+python -m osint_toolkit tools doctor --profile all-safe
 python -m osint_toolkit catalog --kind people --direct-only --limit 10
 python -m osint_toolkit catalog --kind ru-ua --level direct_ru_ua
 python -m osint_toolkit scan person "Ivan Petrenko" --limit 8
@@ -128,10 +129,26 @@ python -m osint_toolkit search username example_user --profile username-full --r
 python -m osint_toolkit search domain example.com --profile passive-recon --plan-only
 python -m osint_toolkit search url https://example.com --profile web-full --plan-only
 python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --plan-only
+python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --execute-adapters --out reports/photo.md --case-db cases.sqlite --case-id photo-001
 python -m osint_toolkit search phone +380441234567 --profile phone-full --include-restricted --plan-only --format json
+python -m osint_toolkit tools doctor --profile all-safe --format markdown
+python -m osint_toolkit tools install-plan --profile image-full --format markdown
+python -m osint_toolkit tools env --profile email-full --format json
 ```
 
-Без `--execute-adapters` команда показывает план и ничего не запускает. `--execute-adapters` использует readiness из плана, запускает только `ready` adapters, не запускает `missing`/`config_missing`/`not_configured`/`excluded`/`restricted` entries и сохраняет результат через тот же investigation/case-store слой. Для `image` execution пока не запускает локальные ExifTool/OCR/QR tools: используй `--plan-only`, затем выполняй локальные команды из плана или toolbox.
+Без `--execute-adapters` команда показывает план и ничего не запускает. `--execute-adapters` использует readiness из плана, запускает только `ready` adapters, не запускает `missing`/`config_missing`/`not_configured`/`excluded`/`restricted` entries и сохраняет результат через тот же investigation/case-store слой. Для `image` этот же execution mode запускает ready local tools: PowerShell hash/baseline, ExifTool, ImageMagick, Tesseract и zbarimg, извлекает URL/email/phone/username/domain clues и маршрутизирует derived seeds в обычный `search` fan-out. Face-ID не выполняется.
+
+### `tools`
+
+Profile-level readiness helpers для сценария “не подключать каждый сервис отдельно”:
+
+```powershell
+python -m osint_toolkit tools doctor --profile all-safe --format markdown
+python -m osint_toolkit tools install-plan --profile phone-full --format markdown
+python -m osint_toolkit tools env --profile email-full --format json
+```
+
+`tools doctor` показывает readiness adapters и local tools по профилю. `tools install-plan` генерирует install/config actions для missing/config tools, но ничего не устанавливает автоматически и не предлагает excluded/restricted adapters как обычную установку. `tools env` выводит только имена required/optional env variables, без значений.
 
 ### `toolbox`
 

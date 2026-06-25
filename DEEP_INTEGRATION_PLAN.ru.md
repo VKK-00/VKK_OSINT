@@ -54,7 +54,7 @@ python -m osint_toolkit search domain example.com --profile passive-recon --plan
 - graph edges and cross-case entity index;
 - static `toolbox` window.
 
-Главный оставшийся gap: `search --plan-only` уже строит единый high-level fan-out plan, а `search --execute-adapters` запускает ready non-restricted external adapters. Не реализованы ещё local image tool execution, installer/doctor profile workflow и локальный UI backend для запуска команд из браузерного окна.
+Главный core gap закрыт: `search --plan-only` строит единый high-level fan-out plan, `search --execute-adapters` запускает ready non-restricted external adapters, image execution запускает ready local tools и маршрутизирует derived seeds, а `tools doctor/install-plan/env --profile` закрывает readiness/install/config visibility. Оставшийся optional gap — полноценный локальный UI backend для запуска команд прямо из браузерного окна; текущий toolbox остаётся static control window с copy-ready командами.
 
 ## Целевая архитектура
 
@@ -363,8 +363,8 @@ Acceptance:
 
 Решение:
 
-1. `tools doctor --profile <profile>` показывает missing/ready/config-required.
-2. `tools install-plan <profile>` генерирует команды установки под Windows.
+1. `tools doctor --profile <profile>` показывает missing/ready/config-required/excluded.
+2. `tools install-plan --profile <profile>` генерирует команды установки под Windows для missing/config tools; excluded/restricted не выдаются как обычная установка.
 3. `tools install <profile>` можно добавить позже как explicit mode with prompts.
 4. `tools env` показывает только names of required variables, never values.
 
@@ -463,9 +463,10 @@ Deliverables:
 - auto target classifier;
 - mapping target kind -> native modules + adapter profiles + local image tools;
 - `--plan-only`;
-- ready-only `--execute-adapters` path for non-image targets.
+- ready-only `--execute-adapters` path for external adapters;
+- local image tool execution with derived seed routing.
 
-Status: planner and ready-only external adapter execution are implemented in the current codebase. Image local-tool execution remains a later stage.
+Status: planner, ready-only external adapter execution and image local-tool execution are implemented in the current codebase.
 
 Tests:
 
@@ -548,9 +549,9 @@ Notes:
 
 1. Done: add `search --plan-only` for phone/email/username/person/domain/url/image/social/ru-ua.
 2. Done: add built-in `phone-full`, `email-full`, `image-full`, `all-safe` and related profiles.
-3. Next: add `tools doctor --profile`.
+3. Done: add `tools doctor/install-plan/env --profile`.
 4. Done: add fan-out execution for ready non-restricted adapters.
-5. Next: add image local tool execution and derived seed extraction.
+5. Done: add image local tool execution and derived seed extraction.
 6. Done for stable routes: replace toolbox command cards with `search` plan/execution commands where high-level routing is stable.
 
 ## Definition of done

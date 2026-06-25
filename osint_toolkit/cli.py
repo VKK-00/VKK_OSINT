@@ -14,6 +14,7 @@ from .catalog import Catalog, CatalogError
 from .doctor import inspect_adapters
 from .engine import RunConfig, ScanTarget
 from .graph import analyze_case_graph
+from .image_runner import render_image_search_execution, run_image_search
 from .investigation import (
     render_investigation_json,
     render_investigation_markdown,
@@ -44,6 +45,12 @@ from .search import (
     ready_adapter_repositories,
 )
 from .toolbox import write_toolbox
+from .tools import (
+    build_profile_tool_readiness,
+    format_env_plan,
+    format_install_plan,
+    format_tool_readiness,
+)
 from .workflows import TASK_PROFILES, recommend_projects, render_brief, render_recommendation, write_brief
 
 
@@ -116,6 +123,24 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     doctor.set_defaults(handler=handle_doctor)
 
+    tools = subparsers.add_parser("tools", help="Profile-level readiness, install and environment helpers.")
+    tools_subparsers = tools.add_subparsers(dest="tools_command", required=True)
+
+    tools_doctor = tools_subparsers.add_parser("doctor", help="Check readiness for all tools in a search profile.")
+    tools_doctor.add_argument("--profile", choices=tuple(profile.name for profile in list_search_profiles()), required=True)
+    tools_doctor.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
+    tools_doctor.set_defaults(handler=handle_tools_doctor)
+
+    tools_install = tools_subparsers.add_parser("install-plan", help="Show install/config actions for a search profile.")
+    tools_install.add_argument("--profile", choices=tuple(profile.name for profile in list_search_profiles()), required=True)
+    tools_install.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
+    tools_install.set_defaults(handler=handle_tools_install_plan)
+
+    tools_env = tools_subparsers.add_parser("env", help="Show required and optional env variable names for a search profile.")
+    tools_env.add_argument("--profile", choices=tuple(profile.name for profile in list_search_profiles()), required=True)
+    tools_env.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
+    tools_env.set_defaults(handler=handle_tools_env)
+
     adapter_setup = subparsers.add_parser("adapter-setup", help="Show install/config plan for upstream adapters.")
     adapter_setup.add_argument("repository", nargs="?", help="Adapter repository, for example sherlock-project/sherlock.")
     adapter_setup.add_argument("--status", choices=("partial_native", "planned", "restricted"))
@@ -169,6 +194,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--timeout", type=float, default=10.0)
     search.add_argument("--adapter-timeout", type=float, default=60.0)
     search.add_argument("--adapter-limit", type=int, default=20)
+    search.add_argument("--derived-limit", type=int, default=20, help="Maximum image-derived seeds to route into normal search.")
     search.set_defaults(handler=handle_search)
 
     investigate = subparsers.add_parser("investigate", help="Run a multi-target OSINT case through native modules.")
@@ -299,6 +325,24 @@ def handle_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_tools_doctor(args: argparse.Namespace) -> int:
+    rows = build_profile_tool_readiness(args.profile)
+    print(format_tool_readiness(rows, output_format=args.format))
+    return 0
+
+
+def handle_tools_install_plan(args: argparse.Namespace) -> int:
+    rows = build_profile_tool_readiness(args.profile)
+    print(format_install_plan(rows, output_format=args.format))
+    return 0
+
+
+def handle_tools_env(args: argparse.Namespace) -> int:
+    rows = build_profile_tool_readiness(args.profile)
+    print(format_env_plan(rows, output_format=args.format))
+    return 0
+
+
 def handle_adapter_setup(args: argparse.Namespace) -> int:
     if args.repository:
         adapters = (find_adapter(args.repository),)
@@ -361,7 +405,29 @@ def handle_search(args: argparse.Namespace) -> int:
     if args.case_id and not args.case_db:
         raise ValueError("--case-id requires --case-db.")
     if plan.target.kind == "image":
-        raise ValueError("search --execute-adapters does not execute local image tools yet; use --plan-only for image targets.")
+        execution = run_image_search(
+            plan,
+            timeout=args.timeout,
+            adapter_timeout=args.adapter_timeout,
+            adapter_limit=args.adapter_limit,
+            derived_limit=args.derived_limit,
+        )
+        content = render_image_search_execution(plan, execution, output_format=args.format)
+        saved_message = ""
+        if args.case_db:
+            case_id = CaseStore(args.case_db).save(execution.investigation, case_id=args.case_id)
+            saved_message = f"Saved case {case_id} to {args.case_db}"
+        if args.out:
+            path = write_investigation(args.out, content)
+            print(f"Wrote {path}")
+        else:
+            print(content)
+        if saved_message:
+            if args.out:
+                print(saved_message)
+            else:
+                print(saved_message, file=sys.stderr)
+        return 0
     executable_adapters = ready_adapter_repositories(plan, limit=args.adapter_limit)
     result = run_investigation(
         (plan.target,),

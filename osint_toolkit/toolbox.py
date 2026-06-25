@@ -77,6 +77,18 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     note="Этот route не делает face-ID; он планирует metadata/OCR/QR/hash checks.",
                 ),
                 ToolboxCommand(
+                    "Image local execution",
+                    "Запускает ready local image tools, извлекает derived seeds и пишет unified report/case.",
+                    (
+                        'python -m osint_toolkit search image "{image_path}" '
+                        "--profile image-full --execute-adapters --adapter-limit {adapter_limit} "
+                        "--out {out} --case-db {case_db} --case-id {case_id}"
+                    ),
+                    required_inputs=("image_path", "adapter_limit", "out", "case_db", "case_id"),
+                    badges=("execute", "image-full", "local-tools"),
+                    note="Face-ID не выполняется; derived URL/email/phone/username/domain seeds идут в обычный search fan-out.",
+                ),
+                ToolboxCommand(
                     "Локальный baseline файла",
                     "Размер, timestamps и SHA256 без внешних зависимостей.",
                     (
@@ -531,6 +543,25 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     "Проверяет, какие upstream CLI реально доступны локально.",
                     "python -m osint_toolkit doctor --format markdown",
                     badges=("readiness", "local"),
+                ),
+                ToolboxCommand(
+                    "Profile tools doctor",
+                    "Проверяет adapters и local tools для выбранного unified profile.",
+                    "python -m osint_toolkit tools doctor --profile all-safe --format markdown",
+                    badges=("tools", "doctor", "profile"),
+                ),
+                ToolboxCommand(
+                    "Profile install plan",
+                    "Показывает install/config actions для missing tools профиля.",
+                    "python -m osint_toolkit tools install-plan --profile all-safe --format markdown",
+                    badges=("tools", "install-plan"),
+                    note="Команда ничего не устанавливает автоматически.",
+                ),
+                ToolboxCommand(
+                    "Profile env names",
+                    "Показывает required/optional env variable names без значений.",
+                    "python -m osint_toolkit tools env --profile all-safe --format markdown",
+                    badges=("tools", "env"),
                 ),
                 ToolboxCommand(
                     "Adapter setup plan",

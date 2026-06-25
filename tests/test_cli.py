@@ -736,18 +736,37 @@ class CliTests(unittest.TestCase):
             self.assertIn("## Fan-out Plan", content)
             self.assertIn("## Investigation Report", content)
 
-    def test_search_execute_adapters_rejects_image_targets(self):
-        result = self.run_cli(
-            "search",
-            "image",
-            r"C:\x\photo.jpg",
-            "--profile",
-            "image-full",
-            "--execute-adapters",
-        )
+    def test_search_execute_adapters_runs_image_local_tools_and_saves_case(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "photo.jpg"
+            image_path.write_bytes(b"not really an image")
+            report_path = Path(tmpdir) / "image.md"
+            db_path = Path(tmpdir) / "cases.sqlite"
+            result = self.run_cli(
+                "search",
+                "image",
+                str(image_path),
+                "--profile",
+                "image-full",
+                "--execute-adapters",
+                "--adapter-limit",
+                "0",
+                "--out",
+                str(report_path),
+                "--case-db",
+                str(db_path),
+                "--case-id",
+                "image-search-1",
+            )
 
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("does not execute local image tools yet", result.stderr)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(report_path.exists())
+            self.assertTrue(db_path.exists())
+            self.assertIn("Saved case image-search-1", result.stdout)
+            content = report_path.read_text(encoding="utf-8")
+            self.assertIn("# Search Execution Report: image", content)
+            self.assertIn("Executed Local Tools", content)
+            self.assertIn("Face recognition: disabled", content)
 
     def test_search_execute_adapters_rejects_plan_only_conflict(self):
         result = self.run_cli(
@@ -779,6 +798,41 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("--case-id requires --case-db", result.stderr)
+
+    def test_tools_doctor_profile_reports_search_profile_readiness(self):
+        result = self.run_cli("tools", "doctor", "--profile", "image-full", "--format", "json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        names = {row["name"] for row in payload}
+
+        self.assertIn("powershell-file-baseline", names)
+        self.assertIn("tesseract-ocr", names)
+
+    def test_tools_install_plan_profile_shows_actions(self):
+        result = self.run_cli("tools", "install-plan", "--profile", "image-full", "--format", "markdown")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        self.assertIn("Install / action", result.stdout)
+        self.assertIn("ExifTool", result.stdout)
+
+    def test_tools_install_plan_skips_excluded_restricted_adapters(self):
+        doctor = self.run_cli("tools", "doctor", "--profile", "phone-full", "--format", "json")
+        self.assertEqual(doctor.returncode, 0, doctor.stderr)
+        rows = {row["name"]: row for row in json.loads(doctor.stdout)}
+        self.assertEqual(rows["megadose/ignorant"]["readiness"], "excluded")
+
+        result = self.run_cli("tools", "install-plan", "--profile", "phone-full", "--format", "markdown")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("megadose/ignorant", result.stdout)
+
+    def test_tools_env_profile_shows_names_only(self):
+        result = self.run_cli("tools", "env", "--profile", "email-full", "--format", "json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        serialized = json.dumps(payload)
+
+        self.assertIn("BLACKBIRD_DIR", serialized)
+        self.assertNotIn("secret-value", serialized)
 
 
 if __name__ == "__main__":

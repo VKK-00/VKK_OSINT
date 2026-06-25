@@ -18,7 +18,7 @@ CLI работает в пяти режимах:
 
 - catalog/recommend/brief — работа с curated-каталогом;
 - scan/adapters — единое ядро выполнения и карта функциональной совместимости upstream-проектов;
-- search — high-level fan-out планировщик и ready-only executor: один seed -> native checks, compatible adapters, readiness/install hints, local image tools, а при `--execute-adapters` запуск ready non-restricted adapters в единый report/case;
+- search — high-level fan-out планировщик и executor: один seed -> native checks, compatible adapters, readiness/install hints, local image tools; при `--execute-adapters` запускаются ready non-restricted adapters или ready local image tools с derived-seed fan-out в единый report/case;
 - investigate — объединение нескольких seed values, native findings, adapter dry-runs и нормализованных сущностей в один отчёт;
 - toolbox — локальное HTML-окно для ручного выбора OSINT-направления и сборки copy-ready CLI-команд.
 
@@ -59,7 +59,8 @@ CLI работает в пяти режимах:
 - adapter setup/readiness layer: install hints, docs URLs, PATH/env readiness;
 - adapter profiles: готовые группы upstream adapters для типовых расследований;
 - adapter doctor: проверка фактической доступности upstream CLI в `PATH`;
-- unified search planner/executor: `search` классифицирует один seed, выбирает default/full profile, строит план native/adapters/local-tools, показывает readiness/missing/config/restricted/excluded статусы и запускает только ready non-restricted adapters при `--execute-adapters`;
+- profile tools workflow: `tools doctor/install-plan/env --profile ...` показывает readiness, install/config actions и env variable names без значений;
+- unified search planner/executor: `search` классифицирует один seed, выбирает default/full profile, строит план native/adapters/local-tools, показывает readiness/missing/config/restricted/excluded статусы, запускает ready non-restricted adapters и выполняет local image tools при `--execute-adapters`;
 - investigation runner: один кейс, несколько seed-типов, entity summary, graph edges, единый Markdown/JSON отчёт;
 - executed adapter ingestion inside investigation: явный `--execute-adapters` добавляет parsed upstream CLI findings в entities, graph edges и case store;
 - SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges и findings;
@@ -255,9 +256,9 @@ Search-поток:
 4. Planner добавляет built-in native steps, разворачивает adapter profiles через `expand_adapter_repositories()` и проверяет readiness через `build_adapter_setup()`.
 5. Для image target planner добавляет local-tool routes: PowerShell baseline/hash, ExifTool, ImageMagick, Tesseract и zbarimg.
 6. В plan-only режиме результат выводится как table/Markdown/CSV/JSON через `format_search_plan()`. Missing/config/restricted tools остаются строками плана, а не ошибками.
-7. В execution режиме `ready_adapter_repositories()` выбирает только `stage=adapter,status=ready,readiness=ready` и отсекает restricted entries даже при `--include-restricted`.
+7. В adapter execution режиме `ready_adapter_repositories()` выбирает только `stage=adapter,status=ready,readiness=ready` и отсекает restricted entries даже при `--include-restricted`.
 8. `run_investigation()` получает исходный target и allowlist ready repositories, запускает внешние adapters через существующий `run_adapter_findings()` и сохраняет Markdown/JSON report и SQLite case при `--out`/`--case-db`.
-9. Для `image` target execution пока не запускает локальные tools; image остаётся plan/local-command workflow.
+9. Для `image` target `run_image_search()` запускает ready local tools, добавляет missing/error/timeout findings по остальным local tools, извлекает URL/email/phone/username/domain clues и маршрутизирует derived targets через обычный `search`/`run_investigation()` flow.
 
 Scan-поток:
 
@@ -324,7 +325,7 @@ Toolbox:
 
 Search:
 
-`seed -> classify_target() -> SearchProfile -> native steps + AdapterSpec readiness + LocalToolSpec readiness -> SearchPlan -> plan output OR ready adapter allowlist -> run_investigation() -> report/case`
+`seed -> classify_target() -> SearchProfile -> native steps + AdapterSpec readiness + LocalToolSpec readiness -> SearchPlan -> plan output OR ready adapter allowlist/local image runner -> run_investigation() -> report/case`
 
 Сканирование:
 
@@ -398,8 +399,12 @@ External adapters должны подключать upstream CLI/API без ко
 - `search --profile` — built-in profile для fan-out планирования: `auto`, `phone-full`, `email-full`, `username-full`, `person-full`, `passive-recon`, `web-full`, `image-full`, `social-full`, `ru-ua-full`, `all-safe`, `safe`.
 - `search --plan-only` — вывести план без запуска tools.
 - `search --execute-adapters` — запустить только ready non-restricted adapters из SearchPlan и записать unified report/case.
+- `search image ... --execute-adapters` — запустить ready local image tools, извлечь derived seeds и записать unified report/case.
 - `search --include-restricted` — показать restricted tools в плане с явной маркировкой.
 - `search --format table|markdown|csv|json` — формат плана.
+- `tools doctor --profile` — readiness по adapters и local tools search-профиля.
+- `tools install-plan --profile` — install/config actions по missing/config tools без автоматической установки; excluded/restricted adapters не выдаются как обычные install actions.
+- `tools env --profile` — только имена required/optional env variables, без значений.
 - `scan --live` — явное разрешение сетевых проверок.
 - `scan --timeout` — HTTP timeout.
 - `scan email --live` — дополнительно делает domain resolution, MX/TXT lookup, SPF classification и DMARC lookup/classification.
@@ -446,6 +451,10 @@ python -m osint_toolkit search phone +380441234567 --profile phone-full --execut
 python -m osint_toolkit search email person@example.com --profile email-full --plan-only --format markdown
 python -m osint_toolkit search auto https://vk.com/example --profile auto --plan-only --format json
 python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --plan-only
+python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --execute-adapters --out reports/photo.md --case-db cases.sqlite --case-id photo-001
+python -m osint_toolkit tools doctor --profile all-safe --format markdown
+python -m osint_toolkit tools install-plan --profile image-full --format markdown
+python -m osint_toolkit tools env --profile email-full --format json
 python -m osint_toolkit catalog --kind people --direct-only --limit 10
 python -m osint_toolkit scan person "Ivan Petrenko" --limit 10
 python -m osint_toolkit scan username exampleuser --limit 10
@@ -567,7 +576,7 @@ osint-toolkit stats
 - Instagram module пока является safe public metadata wrapper: нет login/session handling, private data access, follower/following scraping, comments/messages export, media archive ingestion или обхода platform rate limits.
 - Social module для VK/OK/Yandex/Mail.ru пока является safe public metadata wrapper: нет VK/OK/Yandex/Mail.ru API adapters, login/session handling, private profile access, follower scraping, comments/messages export или обхода platform rate limits.
 - Toolbox не выполняет команды из браузера и не содержит собственного OCR/EXIF engine: он собирает copy-ready команды для локально установленных ExifTool, ImageMagick, Tesseract, zbarimg и PowerShell hash baseline. Reverse image search остаётся ручной загрузкой на внешние сайты. Face recognition и поиск человека по лицу не добавлены.
-- `search --execute-adapters` запускает только ready non-restricted external adapters. Локальное execution для image tools (ExifTool/OCR/QR/hash) пока не реализовано; image profile остаётся plan-only/local-command workflow.
+- `search --execute-adapters` запускает только ready non-restricted external adapters. Для image targets он запускает ready local tools и маршрутизирует derived seeds; face recognition и identity-by-face matching не реализуются.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
@@ -664,3 +673,5 @@ osint-toolkit stats
 - 2026-06-25: добавлен `DEEP_INTEGRATION_PLAN.ru.md` — план перехода от отдельных `scan`/`run-adapter` маршрутов к unified `search`, где один phone/email/username/person/domain/url/image/social seed запускает все совместимые native-модули и adapters в единый отчёт.
 - 2026-06-25: реализован Stage 1 unified search planner: команда `search --plan-only`, profiles `phone-full`/`email-full`/`username-full`/`person-full`/`passive-recon`/`web-full`/`image-full`/`social-full`/`ru-ua-full`, readiness статусы adapters/local tools и форматирование плана.
 - 2026-06-25: реализован ready-only execution для `search --execute-adapters`: из SearchPlan выбираются только ready non-restricted adapters, результаты проходят через existing investigation/report/case-store слой, restricted и image local tools не запускаются.
+- 2026-06-25: добавлен local image execution: ready ExifTool/ImageMagick/Tesseract/zbarimg/PowerShell tools выполняются локально, extracted seeds превращаются в обычные search targets, отчёт и case-store получают provenance, entities и graph.
+- 2026-06-25: добавлен `tools doctor/install-plan/env --profile`: profile-level readiness, install/config actions и безопасный вывод env variable names без значений.
