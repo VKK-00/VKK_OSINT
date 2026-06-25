@@ -594,6 +594,7 @@ Notes:
 42. Done: add BBOT Docker fallback route for Windows/POSIX startup failures so `all-safe` can use `docker run --rm -v <output_dir>:/root/.bbot/scans -v <config_dir>:/root/.config/bbot blacklanternsecurity/bbot:stable ...` when native BBOT fails its runtime probe.
 43. Done: add source-by-source execution summaries to unified search reports: `Phone Sources`, `Email Sources`, `Web Sources`, `Image Sources` or generic `Source Summary`, plus JSON `source_summary`.
 44. Done: add execution provenance to adapter summary and parsed findings: command, route, executable path, return code, start/end timestamps, duration, timeout, generated output count and parser version are available in metadata for reports/case-store audit.
+45. Done: surface adapter execution provenance in source summaries: Markdown/table output includes `Runs`, `Routes`, `Exit`, `Duration ms` and `Parser`, while JSON/CSV include execution counts, routes, return codes, total duration, generated output files and parser versions.
 
 ## Definition of done
 

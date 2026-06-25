@@ -110,6 +110,7 @@ def finding_source_summary(findings: Iterable[Finding]) -> tuple[dict[str, objec
     rows: list[dict[str, object]] = []
     for source in sorted(grouped):
         source_findings = grouped[source]
+        execution_records = _source_execution_records(source_findings)
         rows.append(
             {
                 "source": source,
@@ -118,6 +119,16 @@ def finding_source_summary(findings: Iterable[Finding]) -> tuple[dict[str, objec
                 "confidence": _count_values(finding.confidence for finding in source_findings),
                 "signals": _source_signal_kinds(source_findings),
                 "modules": tuple(sorted({finding.module for finding in source_findings if finding.module})),
+                "execution_count": len(execution_records),
+                "execution_routes": tuple(
+                    sorted({record["route"] for record in execution_records if record["route"]})
+                ),
+                "returncodes": _count_values(record["returncode"] for record in execution_records if record["returncode"]),
+                "duration_ms_total": sum(_int_or_zero(record["duration_ms"]) for record in execution_records),
+                "generated_output_files": sum(_int_or_zero(record["generated_output_files"]) for record in execution_records),
+                "parser_versions": tuple(
+                    sorted({record["parser_version"] for record in execution_records if record["parser_version"]})
+                ),
             }
         )
     return tuple(rows)
@@ -136,7 +147,20 @@ def format_finding_source_summary(
         buffer = io.StringIO()
         writer = csv.DictWriter(
             buffer,
-            fieldnames=("source", "finding_count", "statuses", "confidence", "signals", "modules"),
+            fieldnames=(
+                "source",
+                "finding_count",
+                "statuses",
+                "confidence",
+                "signals",
+                "modules",
+                "execution_count",
+                "execution_routes",
+                "returncodes",
+                "duration_ms_total",
+                "generated_output_files",
+                "parser_versions",
+            ),
             lineterminator="\n",
         )
         writer.writeheader()
@@ -149,6 +173,12 @@ def format_finding_source_summary(
                     "confidence": _summary_map_text(row["confidence"]),
                     "signals": ", ".join(row["signals"]),
                     "modules": ", ".join(row["modules"]),
+                    "execution_count": row["execution_count"],
+                    "execution_routes": ", ".join(row["execution_routes"]),
+                    "returncodes": _summary_map_text(row["returncodes"]),
+                    "duration_ms_total": row["duration_ms_total"],
+                    "generated_output_files": row["generated_output_files"],
+                    "parser_versions": ", ".join(row["parser_versions"]),
                 }
             )
         return buffer.getvalue().strip()
@@ -156,18 +186,23 @@ def format_finding_source_summary(
         lines = [
             f"## {title}",
             "",
-            "| Source | Findings | Statuses | Confidence | Signals |",
-            "|---|---:|---|---|---|",
+            "| Source | Findings | Statuses | Confidence | Signals | Runs | Routes | Exit | Duration ms | Parser |",
+            "|---|---:|---|---|---|---:|---|---|---:|---|",
         ]
         if not rows:
-            lines.append("| none | 0 |  |  |  |")
+            lines.append("| none | 0 |  |  |  | 0 |  |  | 0 |  |")
             return "\n".join(lines)
         for row in rows:
             lines.append(
                 f"| {_escape_md(str(row['source']))} | {row['finding_count']} | "
                 f"{_escape_md(_summary_map_text(row['statuses']))} | "
                 f"{_escape_md(_summary_map_text(row['confidence']))} | "
-                f"{_escape_md(', '.join(row['signals']))} |"
+                f"{_escape_md(', '.join(row['signals']))} | "
+                f"{row['execution_count']} | "
+                f"{_escape_md(', '.join(row['execution_routes']))} | "
+                f"{_escape_md(_summary_map_text(row['returncodes']))} | "
+                f"{row['duration_ms_total']} | "
+                f"{_escape_md(', '.join(row['parser_versions']))} |"
             )
         return "\n".join(lines)
     if output_format == "table":
@@ -178,13 +213,32 @@ def format_finding_source_summary(
                 _summary_map_text(row["statuses"]),
                 _summary_map_text(row["confidence"]),
                 _short(", ".join(row["signals"]), 60),
+                str(row["execution_count"]),
+                _short(", ".join(row["execution_routes"]), 24),
+                _summary_map_text(row["returncodes"]),
+                str(row["duration_ms_total"]),
+                _short(", ".join(row["parser_versions"]), 28),
             )
             for row in rows
         ]
         return "\n".join(
             [
                 title,
-                _format_table(("Source", "Findings", "Statuses", "Confidence", "Signals"), table_rows),
+                _format_table(
+                    (
+                        "Source",
+                        "Findings",
+                        "Statuses",
+                        "Confidence",
+                        "Signals",
+                        "Runs",
+                        "Routes",
+                        "Exit",
+                        "Duration ms",
+                        "Parser",
+                    ),
+                    table_rows,
+                ),
             ]
         )
     raise ValueError(f"Unsupported output format: {output_format}")
@@ -1156,6 +1210,55 @@ def _summary_map_text(value: object) -> str:
         f"{key}:{count}"
         for key, count in sorted(value.items(), key=lambda item: (-int(item[1]), str(item[0])))
     )
+
+
+def _source_execution_records(findings: Iterable[Finding]) -> tuple[dict[str, str], ...]:
+    records: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for finding in findings:
+        record = _finding_execution_record(finding)
+        if not record:
+            continue
+        key = (record["repository"], record["target"], record["started_at"], record["command"])
+        if key in seen:
+            continue
+        seen.add(key)
+        records.append(record)
+    return tuple(records)
+
+
+def _finding_execution_record(finding: Finding) -> dict[str, str] | None:
+    metadata = finding.metadata
+    repository = metadata.get("adapter_repository") or finding.source
+    command = metadata.get("adapter_command") or metadata.get("command") or ""
+    route = metadata.get("adapter_execution_route") or metadata.get("execution_route") or ""
+    returncode = metadata.get("adapter_returncode") or metadata.get("returncode") or ""
+    started_at = metadata.get("adapter_started_at") or metadata.get("started_at") or ""
+    duration_ms = metadata.get("adapter_duration_ms") or metadata.get("duration_ms") or ""
+    generated_output_files = (
+        metadata.get("adapter_generated_output_files") or metadata.get("generated_output_files") or ""
+    )
+    parser_version = metadata.get("parser_version") or ""
+    if not any((command, route, returncode, started_at, duration_ms, generated_output_files, parser_version)):
+        return None
+    return {
+        "repository": repository,
+        "target": finding.target,
+        "command": command,
+        "route": route,
+        "returncode": returncode,
+        "started_at": started_at,
+        "duration_ms": duration_ms,
+        "generated_output_files": generated_output_files,
+        "parser_version": parser_version,
+    }
+
+
+def _int_or_zero(value: object) -> int:
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _source_signal_kinds(findings: Iterable[Finding]) -> tuple[str, ...]:

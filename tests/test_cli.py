@@ -954,6 +954,12 @@ class CliTests(unittest.TestCase):
         self.assertTrue(payload["source_summary"])
         self.assertIn("source", payload["source_summary"][0])
         self.assertIn("finding_count", payload["source_summary"][0])
+        self.assertIn("execution_count", payload["source_summary"][0])
+        self.assertIn("execution_routes", payload["source_summary"][0])
+        self.assertIn("returncodes", payload["source_summary"][0])
+        self.assertIn("duration_ms_total", payload["source_summary"][0])
+        self.assertIn("generated_output_files", payload["source_summary"][0])
+        self.assertIn("parser_versions", payload["source_summary"][0])
         self.assertEqual(payload["investigation"]["targets"][0]["value"], "person@example.com")
         targets = {(target["kind"], target["value"]) for target in payload["investigation"]["targets"]}
         self.assertIn(("domain", "example.com"), targets)

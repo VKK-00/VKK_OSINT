@@ -339,6 +339,7 @@ python -m osint_toolkit adapter-setup <repository>
 - restricted adapter guard via `--allow-restricted`;
 - `run_adapter_findings()` returns summary + parsed findings;
 - adapter summary findings and parsed adapter findings include execution provenance metadata: command, execution route, executable path, return code, start/end timestamps, duration, timeout, generated output count and parser version;
+- source summary rows surface execution provenance as runs, routes, return codes, total duration, generated output files and parser versions in Markdown/table/CSV/JSON reports;
 - stdout parser for common URL/email/phone/key-value lines from generic adapter output;
 - scripted stdin support for interactive CLI adapters;
 - generated report ingestion: adapters can run with a temporary output folder, temporary output file or isolated temporary working directory and feed generated files back into `parse_adapter_output()`;
