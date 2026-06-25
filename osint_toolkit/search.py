@@ -326,7 +326,7 @@ def load_search_profiles(path: str | Path | None) -> tuple[SearchProfile, ...]:
     if not isinstance(profiles_raw, list):
         raise ValueError("Search profile file must contain a list or an object with a 'profiles' list.")
 
-    built_in_names = {profile.name.lower() for profile in SEARCH_PROFILES}
+    built_in_by_name = {profile.name.lower(): profile for profile in SEARCH_PROFILES}
     seen_names: set[str] = set()
     profiles: list[SearchProfile] = []
     for index, item in enumerate(profiles_raw):
@@ -334,7 +334,10 @@ def load_search_profiles(path: str | Path | None) -> tuple[SearchProfile, ...]:
             raise ValueError(f"Search profile #{index + 1} must be a JSON object.")
         profile = _load_search_profile_item(item, index=index)
         normalized_name = profile.name.lower()
-        if normalized_name in built_in_names:
+        built_in_profile = built_in_by_name.get(normalized_name)
+        if built_in_profile and profile.to_dict() == built_in_profile.to_dict():
+            continue
+        if built_in_profile:
             raise ValueError(f"Custom search profile cannot override built-in profile: {profile.name}")
         if normalized_name in seen_names:
             raise ValueError(f"Duplicate custom search profile: {profile.name}")

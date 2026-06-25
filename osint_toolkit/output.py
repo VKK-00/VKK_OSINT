@@ -11,7 +11,7 @@ from .case_store import CaseEntityHit, CaseEntityRecord, CaseRecord
 from .engine import Finding
 from .graph import GraphAnalysis
 from .models import OsintProject
-from .search import SearchPlan
+from .search import SearchPlan, SearchProfile
 
 
 def format_projects(projects: Iterable[OsintProject], *, output_format: str, kind: str = "all") -> str:
@@ -202,6 +202,99 @@ def format_adapter_profiles(profiles: Iterable[AdapterProfile], *, output_format
             for profile in profile_list
         ]
         return _format_table(headers, rows)
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
+def format_search_profiles(profiles: Iterable[SearchProfile], *, output_format: str = "table") -> str:
+    profile_list = tuple(profiles)
+    if output_format == "json":
+        return json.dumps([profile.to_dict() for profile in profile_list], ensure_ascii=False, indent=2)
+    if output_format == "markdown":
+        lines = [
+            "| Profile | Targets | Native | Adapter profiles | Local tools | Description |",
+            "|---|---|---|---|---|---|",
+        ]
+        for profile in profile_list:
+            lines.append(
+                f"| {profile.name} | {_escape_md(', '.join(profile.target_kinds))} | "
+                f"{_escape_md(', '.join(profile.native_kinds) or '-')} | "
+                f"{_escape_md(', '.join(profile.adapter_profiles) or '-')} | "
+                f"{_escape_md(', '.join(profile.local_tools) or '-')} | "
+                f"{_escape_md(profile.description)} |"
+            )
+        return "\n".join(lines)
+    if output_format == "csv":
+        buffer = io.StringIO()
+        writer = csv.DictWriter(
+            buffer,
+            fieldnames=(
+                "name",
+                "title",
+                "description",
+                "target_kinds",
+                "native_kinds",
+                "adapter_profiles",
+                "adapter_repositories",
+                "local_tools",
+                "excluded_repositories",
+                "include_restricted",
+                "note",
+            ),
+            lineterminator="\n",
+        )
+        writer.writeheader()
+        for profile in profile_list:
+            writer.writerow(_search_profile_csv_row(profile))
+        return buffer.getvalue().strip()
+    if output_format == "table":
+        headers = ("Profile", "Targets", "Native", "Adapter profiles", "Local tools", "Description")
+        rows = [
+            (
+                profile.name,
+                _short(", ".join(profile.target_kinds), 30),
+                _short(", ".join(profile.native_kinds) or "-", 30),
+                _short(", ".join(profile.adapter_profiles) or "-", 42),
+                _short(", ".join(profile.local_tools) or "-", 42),
+                _short(profile.description, 56),
+            )
+            for profile in profile_list
+        ]
+        return _format_table(headers, rows)
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
+def format_search_profile_detail(profile: SearchProfile, *, output_format: str = "table") -> str:
+    if output_format == "json":
+        return json.dumps(profile.to_dict(), ensure_ascii=False, indent=2)
+    if output_format == "markdown":
+        lines = [
+            f"# {profile.name}",
+            "",
+            f"- Title: {_escape_md(profile.title)}",
+            f"- Description: {_escape_md(profile.description or '-')}",
+            f"- Target kinds: {_escape_md(', '.join(profile.target_kinds))}",
+            f"- Native kinds: {_escape_md(', '.join(profile.native_kinds) or '-')}",
+            f"- Adapter profiles: {_escape_md(', '.join(profile.adapter_profiles) or '-')}",
+            f"- Adapter repositories: {_escape_md(', '.join(profile.adapter_repositories) or '-')}",
+            f"- Local tools: {_escape_md(', '.join(profile.local_tools) or '-')}",
+            f"- Excluded repositories: {_escape_md(', '.join(profile.excluded_repositories) or '-')}",
+            f"- Include restricted: {str(profile.include_restricted).lower()}",
+            f"- Note: {_escape_md(profile.note or '-')}",
+        ]
+        return "\n".join(lines)
+    if output_format == "csv":
+        buffer = io.StringIO()
+        writer = csv.DictWriter(
+            buffer,
+            fieldnames=tuple(_search_profile_csv_row(profile).keys()),
+            lineterminator="\n",
+        )
+        writer.writeheader()
+        writer.writerow(_search_profile_csv_row(profile))
+        return buffer.getvalue().strip()
+    if output_format == "table":
+        row = _search_profile_csv_row(profile)
+        return _format_table(("Field", "Value"), [(key, _short(str(value), 100)) for key, value in row.items()])
     raise ValueError(f"Unsupported output format: {output_format}")
 
 
@@ -795,6 +888,22 @@ def _search_plan_csv(plan: SearchPlan) -> str:
             }
         )
     return buffer.getvalue().strip()
+
+
+def _search_profile_csv_row(profile: SearchProfile) -> dict[str, str]:
+    return {
+        "name": profile.name,
+        "title": profile.title,
+        "description": profile.description,
+        "target_kinds": ", ".join(profile.target_kinds),
+        "native_kinds": ", ".join(profile.native_kinds),
+        "adapter_profiles": ", ".join(profile.adapter_profiles),
+        "adapter_repositories": ", ".join(profile.adapter_repositories),
+        "local_tools": ", ".join(profile.local_tools),
+        "excluded_repositories": ", ".join(profile.excluded_repositories),
+        "include_restricted": str(profile.include_restricted).lower(),
+        "note": profile.note,
+    }
 
 
 def _markdown_count_table(label: str, counts: tuple[tuple[str, int], ...]) -> list[str]:

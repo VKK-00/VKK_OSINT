@@ -218,6 +218,82 @@ class CliTests(unittest.TestCase):
         self.assertIn("email-safe", profiles)
         self.assertIn("sherlock-project/sherlock", profiles["username-full"]["repositories"])
 
+    def test_profiles_list_command(self):
+        result = self.run_cli("profiles", "list", "--format", "json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        profiles = {profile["name"]: profile for profile in payload}
+
+        self.assertIn("phone-full", profiles)
+        self.assertIn("image-full", profiles)
+        self.assertIn("phone", profiles["phone-full"]["target_kinds"])
+
+    def test_profiles_show_accepts_custom_profile_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "profiles.json"
+            profile_path.write_text(
+                json.dumps(
+                    {
+                        "profiles": [
+                            {
+                                "name": "case-image-local",
+                                "target_kinds": ["image"],
+                                "local_tools": ["powershell-file-baseline"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_cli(
+                "profiles",
+                "show",
+                "case-image-local",
+                "--profile-file",
+                str(profile_path),
+                "--format",
+                "json",
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(payload["name"], "case-image-local")
+        self.assertEqual(payload["local_tools"], ["powershell-file-baseline"])
+
+    def test_profiles_export_writes_reusable_profile_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            export_path = Path(tmpdir) / "profiles" / "email-full.json"
+            export_result = self.run_cli(
+                "profiles",
+                "export",
+                "email-full",
+                "--out",
+                str(export_path),
+            )
+            self.assertEqual(export_result.returncode, 0, export_result.stderr)
+            self.assertTrue(export_path.exists())
+
+            exported = json.loads(export_path.read_text(encoding="utf-8"))
+            self.assertEqual(exported["profiles"][0]["name"], "email-full")
+            search_result = self.run_cli(
+                "search",
+                "email",
+                "person@example.com",
+                "--profile",
+                "email-full",
+                "--profile-file",
+                str(export_path),
+                "--plan-only",
+                "--format",
+                "json",
+            )
+
+        self.assertEqual(search_result.returncode, 0, search_result.stderr)
+        payload = json.loads(search_result.stdout)
+        self.assertEqual(payload["profile"]["name"], "email-full")
+
     def test_run_adapter_dry_run_command(self):
         result = self.run_cli("run-adapter", "sherlock-project/sherlock", "username", "example_user")
         self.assertEqual(result.returncode, 0, result.stderr)

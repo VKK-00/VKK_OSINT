@@ -33,6 +33,8 @@ from .output import (
     format_findings,
     format_project_detail,
     format_projects,
+    format_search_profile_detail,
+    format_search_profiles,
     format_search_plan,
     format_stats,
 )
@@ -41,6 +43,8 @@ from .search import (
     TARGET_KINDS,
     SearchPlan,
     build_search_plan,
+    find_search_profile,
+    list_search_profiles,
     load_search_profiles,
     ready_adapter_repositories,
 )
@@ -117,6 +121,26 @@ def build_parser() -> argparse.ArgumentParser:
     adapter_profiles = subparsers.add_parser("adapter-profiles", help="Show reusable adapter groups for investigations.")
     adapter_profiles.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     adapter_profiles.set_defaults(handler=handle_adapter_profiles)
+
+    profiles = subparsers.add_parser("profiles", help="List, show or export unified search profiles.")
+    profiles_subparsers = profiles.add_subparsers(dest="profiles_command", required=True)
+
+    profiles_list = profiles_subparsers.add_parser("list", help="List built-in and optional custom search profiles.")
+    profiles_list.add_argument("--profile-file", help="JSON file with custom search profiles.")
+    profiles_list.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
+    profiles_list.set_defaults(handler=handle_profiles_list)
+
+    profiles_show = profiles_subparsers.add_parser("show", help="Show one built-in or custom search profile.")
+    profiles_show.add_argument("profile")
+    profiles_show.add_argument("--profile-file", help="JSON file with custom search profiles.")
+    profiles_show.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
+    profiles_show.set_defaults(handler=handle_profiles_show)
+
+    profiles_export = profiles_subparsers.add_parser("export", help="Export one search profile as reusable JSON.")
+    profiles_export.add_argument("profile")
+    profiles_export.add_argument("--profile-file", help="JSON file with custom search profiles.")
+    profiles_export.add_argument("--out", required=True, help="Output JSON path.")
+    profiles_export.set_defaults(handler=handle_profiles_export)
 
     doctor = subparsers.add_parser("doctor", help="Check local readiness of configured upstream adapters.")
     doctor.add_argument("--status", choices=("partial_native", "planned", "restricted"))
@@ -324,6 +348,31 @@ def handle_adapters(args: argparse.Namespace) -> int:
 
 def handle_adapter_profiles(args: argparse.Namespace) -> int:
     print(format_adapter_profiles(list_adapter_profiles(), output_format=args.format))
+    return 0
+
+
+def handle_profiles_list(args: argparse.Namespace) -> int:
+    custom_profiles = load_search_profiles(args.profile_file)
+    print(format_search_profiles(list_search_profiles(custom_profiles), output_format=args.format))
+    return 0
+
+
+def handle_profiles_show(args: argparse.Namespace) -> int:
+    custom_profiles = load_search_profiles(args.profile_file)
+    profile = find_search_profile(args.profile, custom_profiles=custom_profiles)
+    print(format_search_profile_detail(profile, output_format=args.format))
+    return 0
+
+
+def handle_profiles_export(args: argparse.Namespace) -> int:
+    custom_profiles = load_search_profiles(args.profile_file)
+    profile = find_search_profile(args.profile, custom_profiles=custom_profiles)
+    path = Path(args.out)
+    if path.parent != Path("."):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"profiles": [profile.to_dict()]}
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"Wrote {path}")
     return 0
 
 

@@ -61,6 +61,8 @@ python -m osint_toolkit search auto https://vk.com/example --profile auto --plan
 python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --execute-adapters --out reports/photo.md --case-db cases.sqlite --case-id photo-001
 python -m osint_toolkit tools doctor --profile all-safe
 python -m osint_toolkit search email person@example.com --profile case-email-safe --profile-file profiles\case_profiles.json --plan-only
+python -m osint_toolkit profiles list --format markdown
+python -m osint_toolkit profiles export email-full --out profiles\email-full.json
 python -m osint_toolkit catalog --kind people --direct-only --limit 10
 python -m osint_toolkit catalog --kind ru-ua --level direct_ru_ua
 python -m osint_toolkit scan person "Ivan Petrenko" --limit 8
@@ -166,7 +168,19 @@ python -m osint_toolkit search email person@example.com --profile case-email-saf
 python -m osint_toolkit tools doctor --profile case-email-safe --profile-file profiles\case_profiles.json --format markdown
 ```
 
-Файл принимает либо объект с `profiles`, либо top-level JSON-list. Валидатор не даёт переопределять built-in profiles и отклоняет неизвестные `target_kinds`, `adapter_profiles`, repositories, local tools и лишние поля.
+Файл принимает либо объект с `profiles`, либо top-level JSON-list. Валидатор не даёт изменённым custom entries переопределять built-in profiles и отклоняет неизвестные `target_kinds`, `adapter_profiles`, repositories, local tools и лишние поля. Точный экспорт built-in profile принимается обратно как безопасный no-op, чтобы exported files можно было использовать без ручной чистки.
+
+### `profiles`
+
+Управление search profiles из CLI: посмотреть built-ins, подключить custom JSON, показать один profile или экспортировать reusable JSON.
+
+```powershell
+python -m osint_toolkit profiles list --format markdown
+python -m osint_toolkit profiles list --profile-file profiles\case_profiles.json --format json
+python -m osint_toolkit profiles show image-full --format markdown
+python -m osint_toolkit profiles show case-email-safe --profile-file profiles\case_profiles.json --format json
+python -m osint_toolkit profiles export email-full --out profiles\email-full.json
+```
 
 ### `tools`
 
