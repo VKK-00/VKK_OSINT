@@ -1124,6 +1124,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
             <button type="button" class="secondary" id="listProfiles">Профили</button>
             <button type="button" class="secondary" id="toolsDoctor">Tools</button>
             <button type="button" class="secondary" id="toolsInstall">Install</button>
+            <button type="button" class="secondary" id="toolsInstallRun">Run install</button>
             <button type="button" class="secondary" id="toolsEnv">Env</button>
             <button type="button" class="secondary" id="saveProfile">Save profile</button>
             <button type="button" class="secondary" id="deleteProfile">Delete profile</button>
@@ -1357,6 +1358,20 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       const profileFile = readValue("profile_file");
       if (profileFile) params.profile_file = profileFile;
       const data = await fetchCaseJson("/api/tools", params);
+      setBackendLog(data.content || JSON.stringify(data, null, 2));
+    }}
+
+    async function runProfileToolsInstall(execute) {{
+      if (execute && !window.confirm("Run allowlisted install commands for missing tools in this profile?")) {{
+        return;
+      }}
+      const payload = {{
+        profile: readValue("custom_profile") || document.getElementById("backendProfile").value,
+        profile_file: readValue("profile_file"),
+        execute,
+        format: "markdown"
+      }};
+      const data = await postBackendJson("/api/tools/install", payload);
       setBackendLog(data.content || JSON.stringify(data, null, 2));
     }}
 
@@ -1924,7 +1939,11 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
     }});
 
     document.getElementById("toolsInstall").addEventListener("click", () => {{
-      loadProfileTools("install-plan").catch((error) => setBackendLog(String(error)));
+      runProfileToolsInstall(false).catch((error) => setBackendLog(String(error)));
+    }});
+
+    document.getElementById("toolsInstallRun").addEventListener("click", () => {{
+      runProfileToolsInstall(true).catch((error) => setBackendLog(String(error)));
     }});
 
     document.getElementById("toolsEnv").addEventListener("click", () => {{
@@ -2006,6 +2025,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       document.getElementById("listProfiles").disabled = true;
       document.getElementById("toolsDoctor").disabled = true;
       document.getElementById("toolsInstall").disabled = true;
+      document.getElementById("toolsInstallRun").disabled = true;
       document.getElementById("toolsEnv").disabled = true;
       document.getElementById("saveProfile").disabled = true;
       document.getElementById("deleteProfile").disabled = true;

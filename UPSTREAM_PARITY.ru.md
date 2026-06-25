@@ -16,6 +16,25 @@
 
 ## Уже реализовано
 
+### Unified profile installer/control plane
+
+Команды:
+
+```powershell
+python -m osint_toolkit tools doctor --profile all-safe
+python -m osint_toolkit tools install all-safe --execute
+python -m osint_toolkit toolbox --serve --open
+```
+
+Покрытие:
+
+- profile-aware readiness для adapters и local image tools;
+- dry-run installer results для missing tools;
+- explicit execute только для allowlisted package-manager commands (`pipx`, `go`, `winget`, `choco`);
+- served toolbox endpoint `/api/tools/install` и кнопки `Install`/`Run install` для запуска того же installer layer из одного окна;
+- custom `profile_file` path guard внутри рабочей папки backend;
+- `config_missing`, `runtime_error`, manual и restricted steps не превращаются в автоматическую установку.
+
 ### Username / social profile discovery
 
 Команда:

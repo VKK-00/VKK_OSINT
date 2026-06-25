@@ -563,6 +563,77 @@ class ToolboxServerTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_tools_install_endpoint_runs_profile_aware_dry_run_and_execute(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_dir = Path(tmpdir) / "profiles"
+            profile_dir.mkdir()
+            (profile_dir / "case_profiles.json").write_text(
+                json.dumps(
+                    {
+                        "profiles": [
+                            {
+                                "name": "empty-email-safe",
+                                "target_kinds": ["email"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            runner = ToolboxJobRunner(cwd=tmpdir, auth="test-auth")
+            server = create_toolbox_server(host="127.0.0.1", port=0, runner=runner)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base_url = f"http://{server.server_address[0]}:{server.server_address[1]}"
+            try:
+                dry_run = self._request_json(
+                    f"{base_url}/api/tools/install",
+                    method="POST",
+                    auth="test-auth",
+                    payload={
+                        "profile": "empty-email-safe",
+                        "profile_file": "profiles/case_profiles.json",
+                        "execute": False,
+                        "format": "markdown",
+                    },
+                )
+                self.assertFalse(dry_run["execute"])
+                self.assertEqual(dry_run["profile"]["name"], "empty-email-safe")
+                self.assertEqual(dry_run["results"], [])
+                self.assertIn("| Kind | Name | Readiness | Action | Status |", dry_run["content"])
+
+                executed = self._request_json(
+                    f"{base_url}/api/tools/install",
+                    method="POST",
+                    auth="test-auth",
+                    payload={
+                        "profile": "empty-email-safe",
+                        "profile_file": "profiles/case_profiles.json",
+                        "execute": True,
+                        "format": "markdown",
+                    },
+                )
+                self.assertTrue(executed["execute"])
+                self.assertEqual(executed["results"], [])
+
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    self._request_json(
+                        f"{base_url}/api/tools/install",
+                        method="POST",
+                        auth="test-auth",
+                        payload={
+                            "profile": "empty-email-safe",
+                            "profile_file": "../outside.json",
+                            "execute": False,
+                        },
+                    )
+                self.assertEqual(raised.exception.code, 400)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_case_endpoints_reject_db_outside_working_directory(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = ToolboxJobRunner(cwd=tmpdir, auth="test-auth")

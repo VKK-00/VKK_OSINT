@@ -637,7 +637,7 @@ osint-toolkit stats
 - SQLite case store отделён от engine: сканирование можно использовать без записи на диск, а сохранение включается явно через `--case-db`.
 - Graph analysis отделён от case store: SQLite хранит факты кейса, а `analyze_case_graph()` вычисляет summary и neighbors без изменения схемы БД.
 - Cross-case entity index использует уже сохранённую таблицу `entities`; новая таблица не добавлена, потому что индекс пока вычисляется read-only запросами и не требует миграции.
-- Toolbox сохраняет static mode без сервера и новых зависимостей; served mode открывает локальный порт только по явному `--serve`, требует per-session token и принимает только structured unified `search` jobs, а не произвольные shell-команды.
+- Toolbox сохраняет static mode без сервера и новых зависимостей; served mode открывает локальный порт только по явному `--serve`, требует per-session token и принимает только structured unified `search` jobs/profile/tools/case payloads, а не произвольные shell-команды.
 - В photo-направлении toolbox добавляет только небиометрические маршруты: file hash/baseline, EXIF/metadata, OCR, QR/barcodes и reverse image source/context search. Идентификация личности по лицу не реализуется.
 - Unified `search` использует planner как источник правды для execution: запуск идёт только по ready non-restricted adapter steps, поэтому missing/config/restricted tools не превращаются в неявные процессы.
 - Dry-run используется по умолчанию для scan-команд. Live-сетевые проверки требуют явного `--live`.
@@ -647,7 +647,7 @@ osint-toolkit stats
 
 ## Рассмотренные варианты реализации
 
-- Полноценный web UI заменён более узким local execution backend: `toolbox --serve` запускает только allowlisted unified `search`, а не любые commands из cards. Это закрывает one-window execution для главного fan-out сценария без превращения браузера в shell.
+- Полноценный web UI заменён более узким local execution backend: `toolbox --serve` запускает только allowlisted unified `search` и profile-aware installer actions, а не любые commands из cards. Это закрывает one-window execution для главного fan-out/install сценария без превращения браузера в shell.
 - Буквальное копирование кода из всех проектов: допускается только после license review. Обязательный путь для цели — 1:1 functional parity поведения через native-compatible modules, external adapters и documented restricted/excluded decisions.
 - Новая база данных SQLite: пока не нужна, CSV достаточно для каталога; для истории scan-запусков может понадобиться позже.
 
@@ -670,7 +670,7 @@ osint-toolkit stats
 - Instagram module пока является safe public metadata wrapper: нет login/session handling, private data access, follower/following scraping, comments/messages export, media archive ingestion или обхода platform rate limits.
 - Social module для VK/OK/Yandex/Mail.ru пока является safe public metadata wrapper: нет VK/OK/Yandex/Mail.ru API adapters, login/session handling, private profile access, follower scraping, comments/messages export или обхода platform rate limits.
 - Toolbox static mode не выполняет команды из браузера; served mode выполняет structured unified `search` jobs через локальный backend. Собственного OCR/EXIF engine нет: image execution использует локально установленные ExifTool, ImageMagick, Tesseract, zbarimg и PowerShell hash baseline; ExifTool JSON, Tesseract OCR stdout и zbarimg payload parsers нормализуют camera/GPS/date/source metadata, decoded text/payload counts и contact/profile clues в findings/seeds. Reverse image search остаётся ручной загрузкой на внешние сайты. Face recognition и поиск человека по лицу не добавлены.
-- Served toolbox принимает custom `profile_file` только из рабочей папки backend; profile editor пишет только canonical validated JSON в этой границе. Это осознанное ограничение против чтения/записи произвольных локальных файлов из браузера.
+- Served toolbox принимает custom `profile_file` только из рабочей папки backend; profile editor пишет только canonical validated JSON в этой границе. `/api/tools/install` использует тот же path guard и запускает только allowlisted missing-tool install commands (`pipx`, `go`, `winget`, `choco`) через existing installer layer. Это осознанное ограничение против чтения/записи произвольных локальных файлов или запуска произвольных команд из браузера.
 - Case management intentionally narrow: `case-update` и `/api/cases/<id>/update` меняют только title/scope_note, а `case-delete` и `/api/cases/<id>/delete` требуют явного подтверждения; нет bulk delete, raw SQL editor или редактирования saved findings/entities/edges из UI.
 - `search --execute-adapters` запускает только ready non-restricted external adapters. Для image targets он запускает ready local tools и маршрутизирует derived seeds; face recognition и identity-by-face matching не реализуются.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
@@ -805,6 +805,7 @@ osint-toolkit stats
 - 2026-06-26: добавлен `adapter_runtime` route layer и Docker fallback для BBOT: на Windows native `fcntl` failure больше не блокирует `all-safe`, если доступен Docker; plan/execution используют `docker run --rm -v <output_dir>:/root/.bbot/scans -v <config_dir>:/root/.config/bbot blacklanternsecurity/bbot:stable ...`.
 - 2026-06-26: adapter execution provenance добавлен в summary и parsed adapter findings: command, execution route, executable path, return code, start/end timestamps, duration, timeout, generated output count и `parser_version` теперь сохраняются в metadata для report/case-store audit trail.
 - 2026-06-26: source summary в unified search/image reports расширен run-level колонками и JSON/CSV полями для adapter execution provenance: runs, routes, return codes, total duration, generated output files и parser versions.
+- 2026-06-26: served toolbox получил `/api/tools/install` и кнопку `Run install`: из одного окна можно выполнить profile-aware dry-run или явный execute missing allowlisted tools с теми же ограничениями, что `tools install --execute`.
 - 2026-06-25: Blackbird и SpiderFoot adapters получили env-backed venv executable support через `BLACKBIRD_PYTHON` и `SPIDERFOOT_PYTHON`; pwnedOrNot переведён на `-e <email> -n`, а локальная all-safe toolchain проверена через `tools doctor --profile all-safe`.
 - 2026-06-25: добавлен Windows runtime env refresh для CLI и toolbox `/api/tools`: user/machine `PATH` и известные OSINT env variables подхватываются из системного окружения, поэтому newly installed user-local tools видны без рестарта текущего терминала.
 - 2026-06-25: добавлен pwnedOrNot stdout parser: HIBP breach summary и breach rows нормализуются в `Finding`/entities, а dump/password output помечается как credential-exposure без переноса чувствительных значений.

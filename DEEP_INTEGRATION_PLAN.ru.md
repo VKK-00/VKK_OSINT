@@ -54,7 +54,7 @@ python -m osint_toolkit search domain example.com --profile passive-recon --plan
 - graph edges and cross-case entity index;
 - static `toolbox` window and optional local execution backend.
 
-Главный core gap закрыт: `search --plan-only` строит единый high-level fan-out plan, `search --execute-adapters` запускает ready non-restricted external adapters, image execution запускает ready local tools и маршрутизирует derived seeds, `tools doctor/install-plan/env --profile` закрывает readiness/install/config visibility, `tools install <profile>` добавляет осторожный dry-run/`--execute` installer layer, а `search --install-missing` связывает этот installer layer с resolved search profile. UI gap также закрыт для unified search: `toolbox --serve` поднимает локальный token-protected backend, запускает queued `/api/search` jobs, показывает logs/status/report links и отдаёт `/api/tools` readiness/install/env views по выбранному профилю. Static `toolbox --out` остаётся безопасным copy-ready режимом.
+Главный core gap закрыт: `search --plan-only` строит единый high-level fan-out plan, `search --execute-adapters` запускает ready non-restricted external adapters, image execution запускает ready local tools и маршрутизирует derived seeds, `tools doctor/install-plan/env --profile` закрывает readiness/install/config visibility, `tools install <profile>` добавляет осторожный dry-run/`--execute` installer layer, а `search --install-missing` связывает этот installer layer с resolved search profile. UI gap также закрыт для unified search и установки: `toolbox --serve` поднимает локальный token-protected backend, запускает queued `/api/search` jobs, показывает logs/status/report links, отдаёт `/api/tools` readiness/install/env views и `/api/tools/install` для explicit profile-aware installer dry-run/execute. Static `toolbox --out` остаётся безопасным copy-ready режимом.
 
 ## Целевая архитектура
 
@@ -595,6 +595,7 @@ Notes:
 43. Done: add source-by-source execution summaries to unified search reports: `Phone Sources`, `Email Sources`, `Web Sources`, `Image Sources` or generic `Source Summary`, plus JSON `source_summary`.
 44. Done: add execution provenance to adapter summary and parsed findings: command, route, executable path, return code, start/end timestamps, duration, timeout, generated output count and parser version are available in metadata for reports/case-store audit.
 45. Done: surface adapter execution provenance in source summaries: Markdown/table output includes `Runs`, `Routes`, `Exit`, `Duration ms` and `Parser`, while JSON/CSV include execution counts, routes, return codes, total duration, generated output files and parser versions.
+46. Done: expose the installer layer in served toolbox through `/api/tools/install`, `Install` dry-run and `Run install` explicit execute controls for profile-aware allowlisted missing tools.
 
 ## Definition of done
 

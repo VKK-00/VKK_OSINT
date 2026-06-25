@@ -27,9 +27,11 @@ from .search import (
 )
 from .toolbox import render_toolbox_html, write_toolbox
 from .tools import (
+    build_tool_install_results,
     build_profile_tool_readiness,
     format_env_plan,
     format_install_plan,
+    format_tool_install_results,
     format_tool_readiness,
 )
 
@@ -223,6 +225,26 @@ class ToolboxJobRunner:
             "format": output_format,
             "rows": [row.to_dict() for row in rows],
             "content": content,
+        }
+
+    def profile_tools_install(self, payload: dict[str, Any]) -> dict[str, object]:
+        refresh_runtime_environment()
+        profile = str(payload.get("profile", "all-safe") or "all-safe").strip() or "all-safe"
+        profile_file = str(payload.get("profile_file", "") or "").strip()
+        output_format = _choice(payload, "format", VALID_FORMATS, default="markdown")
+        execute = bool(payload.get("execute", False))
+        timeout = _float_value(payload, "timeout", default=300.0, minimum=0.1, maximum=7200.0)
+        custom_profiles, profile_file_path = self._custom_profiles(profile_file)
+        selected_profile = find_search_profile(profile, custom_profiles=custom_profiles)
+        rows = build_profile_tool_readiness(selected_profile.name, custom_profiles=custom_profiles)
+        results = build_tool_install_results(rows, execute=execute, timeout=timeout)
+        return {
+            "profile_file": str(profile_file_path) if profile_file_path else "",
+            "profile": selected_profile.to_dict(),
+            "execute": execute,
+            "format": output_format,
+            "results": [result.to_dict() for result in results],
+            "content": format_tool_install_results(results, output_format=output_format),
         }
 
     def list_cases(
@@ -716,6 +738,9 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/profiles/delete":
                 self._send_json(200, self._runner().delete_profile(self._read_json()))
+                return
+            if path == "/api/tools/install":
+                self._send_json(200, self._runner().profile_tools_install(self._read_json()))
                 return
             case_id, case_route = self._case_route(path)
             if case_id and case_route in {"update", "delete"}:
