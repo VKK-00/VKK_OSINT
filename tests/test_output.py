@@ -1,9 +1,12 @@
+import csv
+import io
 import unittest
 
 from osint_toolkit.engine import Finding
 from osint_toolkit.output import (
     finding_source_summary,
     findings_from_case_payload,
+    format_case_detail,
     format_case_source_summary,
     format_finding_source_summary,
 )
@@ -113,6 +116,15 @@ class OutputTests(unittest.TestCase):
         self.assertIn("# Case Source Summary: case-1", markdown)
         self.assertIn("## Saved Case Sources", markdown)
         self.assertIn("| khast3x/h8mail | 1 | candidate:1 | medium:1 |", markdown)
+
+        csv_text = format_case_detail(payload, output_format="csv")
+        rows = list(csv.DictReader(io.StringIO(csv_text)))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["case_id"], "case-1")
+        self.assertEqual(rows[0]["collection"], "native")
+        self.assertEqual(rows[0]["source"], "email-baseline")
+        self.assertIn('"signal": "email"', rows[0]["metadata_json"])
+        self.assertEqual(rows[1]["source"], "khast3x/h8mail")
 
 
 if __name__ == "__main__":

@@ -112,6 +112,7 @@ python -m osint_toolkit cases --case-db cases.sqlite
 python -m osint_toolkit cases --case-db cases.sqlite --workflow search --profile email-full --scope-query "validation"
 python -m osint_toolkit case-update --case-db cases.sqlite case-one --title "case one reviewed" --scope-note "reviewed scope"
 python -m osint_toolkit case-show --case-db cases.sqlite case-one --format markdown
+python -m osint_toolkit case-show --case-db cases.sqlite case-one --format csv
 python -m osint_toolkit case-sources --case-db cases.sqlite case-one --format markdown
 python -m osint_toolkit case-graph --case-db cases.sqlite case-one
 python -m osint_toolkit case-graph --case-db cases.sqlite case-one --entity-kind email --entity-value person@example.com
@@ -415,6 +416,7 @@ python -m osint_toolkit cases --case-db cases.sqlite --workflow search --profile
 python -m osint_toolkit cases --case-db cases.sqlite --format json
 python -m osint_toolkit case-show --case-db cases.sqlite case-001
 python -m osint_toolkit case-show --case-db cases.sqlite case-001 --format markdown
+python -m osint_toolkit case-show --case-db cases.sqlite case-001 --format csv
 python -m osint_toolkit case-sources --case-db cases.sqlite case-001 --format markdown
 python -m osint_toolkit case-update --case-db cases.sqlite case-001 --title "reviewed case" --scope-note "reviewed scope" --format markdown
 python -m osint_toolkit case-delete --case-db cases.sqlite case-001 --yes --format json
@@ -429,7 +431,7 @@ python -m osint_toolkit case-network --case-db cases.sqlite --kind domain --rela
 
 `cases` показывает свежие saved cases и поддерживает metadata filters: `--workflow`, `--profile`, `--scope-query`.
 
-`case-show` в JSON/Markdown показывает `metadata`: workflow, profile/policy, `scope_note` и execution flags, если кейс был сохранён через `search --case-db` или `investigate --case-db`.
+`case-show` в JSON/Markdown показывает `metadata`: workflow, profile/policy, `scope_note` и execution flags, если кейс был сохранён через `search --case-db` или `investigate --case-db`. `--format csv` экспортирует сохранённые findings в плоскую таблицу с `case_id`, `collection`, source/status/confidence/evidence и `metadata_json` для audit/provenance.
 
 `case-sources` пересчитывает source-by-source summary по сохранённым findings: число сигналов, статусы, confidence, типы сигналов, routes/exit codes/parser versions и execution duration для adapter/local-tool provenance, если эта metadata была сохранена в кейсе.
 

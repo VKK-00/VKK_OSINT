@@ -700,11 +700,16 @@ def format_case_detail(payload: dict[str, object], *, output_format: str = "json
     if output_format == "json":
         return json.dumps(payload, ensure_ascii=False, indent=2)
 
-    case = payload["case"]
-    targets = payload["targets"]
-    entities = payload["entities"]
-    edges = payload["edges"]
-    findings = payload["findings"]
+    case = payload.get("case")
+    findings = payload.get("findings")
+    if output_format == "csv":
+        if not isinstance(case, dict) or not isinstance(findings, list):
+            raise ValueError("Invalid case payload.")
+        return _case_findings_csv(str(case.get("case_id", "") or "unknown"), findings)
+
+    targets = payload.get("targets")
+    entities = payload.get("entities")
+    edges = payload.get("edges")
     metadata = payload.get("metadata", {})
     valid_payload = (
         isinstance(case, dict)
@@ -1243,6 +1248,50 @@ def _findings_csv(findings: tuple[Finding, ...]) -> str:
                 "http_status": finding.http_status if finding.http_status is not None else "",
                 "confidence": finding.confidence,
                 "evidence": finding.evidence,
+            }
+        )
+    return buffer.getvalue().strip()
+
+
+def _case_findings_csv(case_id: str, findings: list[object]) -> str:
+    buffer = io.StringIO()
+    fieldnames = (
+        "case_id",
+        "collection",
+        "module",
+        "source",
+        "target",
+        "status",
+        "url",
+        "title",
+        "http_status",
+        "confidence",
+        "evidence",
+        "checked_at",
+        "metadata_json",
+    )
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames, lineterminator="\n")
+    writer.writeheader()
+    for raw in findings:
+        if not isinstance(raw, dict):
+            continue
+        metadata = raw.get("metadata")
+        metadata_json = json.dumps(metadata if isinstance(metadata, dict) else {}, ensure_ascii=False, sort_keys=True)
+        writer.writerow(
+            {
+                "case_id": case_id,
+                "collection": raw.get("collection", ""),
+                "module": raw.get("module", ""),
+                "source": raw.get("source", ""),
+                "target": raw.get("target", ""),
+                "status": raw.get("status", ""),
+                "url": raw.get("url", ""),
+                "title": raw.get("title", ""),
+                "http_status": "" if raw.get("http_status") is None else raw.get("http_status", ""),
+                "confidence": raw.get("confidence", ""),
+                "evidence": raw.get("evidence", ""),
+                "checked_at": raw.get("checked_at", ""),
+                "metadata_json": metadata_json,
             }
         )
     return buffer.getvalue().strip()

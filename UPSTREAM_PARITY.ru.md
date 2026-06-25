@@ -417,6 +417,7 @@ python -m osint_toolkit cases --case-db cases.sqlite
 python -m osint_toolkit cases --case-db cases.sqlite --workflow search --profile email-full --scope-query internal
 python -m osint_toolkit case-update --case-db cases.sqlite case-001 --title "reviewed case" --scope-note "reviewed scope"
 python -m osint_toolkit case-show --case-db cases.sqlite case-001
+python -m osint_toolkit case-show --case-db cases.sqlite case-001 --format csv
 python -m osint_toolkit case-sources --case-db cases.sqlite case-001
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001 --entity-kind email --entity-value person@example.com
@@ -447,6 +448,7 @@ python -m osint_toolkit case-delete --case-db cases.sqlite case-001 --yes
 - SQLite persistence for cases, targets, entities, edges and findings;
 - per-case workflow/profile/adapter/scope policy metadata stored in SQLite and visible through `case-show`;
 - list/show saved cases through CLI;
+- flat saved-case findings export through `case-show --format csv`, including `case_id`, collection and `metadata_json` provenance;
 - saved-case source summary through CLI `case-sources`, served `/api/cases/<id>/sources` and toolbox `Sources`, including per-source counts, status/confidence/signal mix and adapter/local-tool execution provenance when present;
 - saved graph summary: node/edge counts, relation counts, entity kind counts and top connected nodes;
 - focus-neighbor query for one saved entity;

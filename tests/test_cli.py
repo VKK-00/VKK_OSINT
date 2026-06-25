@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import subprocess
 import sys
@@ -571,6 +573,14 @@ class CliTests(unittest.TestCase):
                 for edge in payload["edges"]
             }
             self.assertIn(("email", "email_domain", "domain", "example.com"), edges)
+
+            show_csv_result = self.run_cli("case-show", "--case-db", str(db_path), "case-1", "--format", "csv")
+            self.assertEqual(show_csv_result.returncode, 0, show_csv_result.stderr)
+            csv_rows = list(csv.DictReader(io.StringIO(show_csv_result.stdout)))
+            self.assertGreaterEqual(len(csv_rows), 1)
+            self.assertEqual(csv_rows[0]["case_id"], "case-1")
+            self.assertIn("collection", csv_rows[0])
+            self.assertTrue(any(row["target"] == "person@example.com" for row in csv_rows))
 
             graph_result = self.run_cli("case-graph", "--case-db", str(db_path), "case-1", "--format", "json")
             self.assertEqual(graph_result.returncode, 0, graph_result.stderr)

@@ -243,6 +243,7 @@ CLI работает в пяти режимах:
   - форматирование таблиц, Markdown, CSV и JSON.
   - `format_search_profiles()` и `format_search_profile_detail()` — вывод built-in/custom search profiles для `profiles list/show`.
   - `format_case_source_summary()` и `findings_from_case_payload()` — повторная source-by-source сводка по findings, уже сохранённым в SQLite case store.
+  - `format_case_detail(..., output_format="csv")` — плоский CSV export сохранённых case findings с `case_id`, `collection` и `metadata_json`.
 - `osint_toolkit/search.py`
   - `SearchProfile`, `LocalToolSpec`, `PlannedStep`, `SearchPlan` — модели unified plan; `derived_target_kinds` описывает дополнительные targets, выводимые из исходного seed.
   - `load_search_profiles()` — загрузка custom search profiles из JSON-файла с валидацией имён, target kinds, adapter profiles, repositories и local tools.
@@ -345,7 +346,7 @@ Case-store поток:
 1. Пользователь запускает `python -m osint_toolkit cases --case-db <path>`.
 2. `CaseStore.list_cases()` читает summary сохранённых кейсов и применяет optional filters `workflow`, `profile`, `scope_query`.
 3. Пользователь запускает `python -m osint_toolkit case-show --case-db <path> <case_id>`.
-4. `CaseStore.load_case()` возвращает targets, entities, edges и findings в table/Markdown/JSON формате.
+4. `CaseStore.load_case()` возвращает targets, entities, edges и findings в table/Markdown/JSON формате; `case-show --format csv` экспортирует сохранённые findings как плоскую таблицу с audit/provenance metadata.
 5. Пользователь запускает `python -m osint_toolkit case-update --case-db <path> <case_id> --title ... --scope-note ...`.
 6. `CaseStore.update_case()` меняет только title и metadata, не пересчитывая findings/entities/edges.
 7. Пользователь запускает `python -m osint_toolkit case-delete --case-db <path> <case_id> --yes`.
@@ -787,7 +788,7 @@ osint-toolkit stats
 - 2026-06-25: добавлен `toolbox --serve`: локальный token-protected backend для запуска queued unified `search` jobs из HTML-пульта, с logs/status/report endpoints и ограничением output paths рабочей папкой backend.
 - 2026-06-25: добавлен `--profile-file` для `search` и `tools doctor/install-plan/env`: custom search profiles загружаются из JSON, валидируются и участвуют в fan-out planning/readiness без изменения built-in profiles.
 - 2026-06-25: добавлена команда `profiles list/show/export`: built-in и custom search profiles можно просматривать и экспортировать в reusable JSON без чтения кода.
-- 2026-06-25: SQLite case store расширен таблицей `case_metadata`: `search --case-db` и `investigate --case-db` сохраняют workflow/profile/adapter policy metadata, а `case-show` выводит её в JSON/Markdown/table.
+- 2026-06-25: SQLite case store расширен таблицей `case_metadata`: `search --case-db` и `investigate --case-db` сохраняют workflow/profile/adapter policy metadata, а `case-show` выводит её в JSON/Markdown/table; CSV-режим экспортирует findings как плоскую таблицу.
 - 2026-06-25: `toolbox --serve` расширен Case Browser: HTML-пульт читает `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph` и `/api/case-index` через token-protected backend без произвольного shell.
 - 2026-06-25: `search --scope-note` и `investigate --scope-note` сохраняют текстовый scope/context в `case_metadata`, чтобы saved cases фиксировали рамки проверки рядом с profile/execution policy.
 - 2026-06-25: Case Browser в `toolbox --serve` получил bounded SVG-визуализацию saved case graph из `entities`/`edges`; `/api/search` payload теперь передаёт `scope_note` в allowlisted CLI command.
@@ -809,6 +810,7 @@ osint-toolkit stats
 - 2026-06-26: served toolbox получил `/api/tools/install` и кнопку `Run install`: из одного окна можно выполнить profile-aware dry-run или явный execute missing allowlisted tools с теми же ограничениями, что `tools install --execute`.
 - 2026-06-26: Case Browser в served toolbox получил client-side фильтры SVG-графа по entity kind/value, relation и текстовому `Graph contains`, плюс сброс фильтров без изменения saved case data.
 - 2026-06-26: добавлен saved-case source summary: CLI `case-sources`, endpoint `/api/cases/<id>/sources` и кнопка `Sources` в served toolbox пересчитывают источники, статусы, confidence, signals и adapter/local-tool provenance по уже сохранённым findings.
+- 2026-06-26: `case-show --format csv` добавлен как flat findings export для saved cases: строки включают `case_id`, `collection`, source/status/confidence/evidence и `metadata_json` для audit/provenance.
 - 2026-06-25: Blackbird и SpiderFoot adapters получили env-backed venv executable support через `BLACKBIRD_PYTHON` и `SPIDERFOOT_PYTHON`; pwnedOrNot переведён на `-e <email> -n`, а локальная all-safe toolchain проверена через `tools doctor --profile all-safe`.
 - 2026-06-25: добавлен Windows runtime env refresh для CLI и toolbox `/api/tools`: user/machine `PATH` и известные OSINT env variables подхватываются из системного окружения, поэтому newly installed user-local tools видны без рестарта текущего терминала.
 - 2026-06-25: добавлен pwnedOrNot stdout parser: HIBP breach summary и breach rows нормализуются в `Finding`/entities, а dump/password output помечается как credential-exposure без переноса чувствительных значений.

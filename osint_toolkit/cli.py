@@ -300,7 +300,7 @@ def build_parser() -> argparse.ArgumentParser:
     case_show = subparsers.add_parser("case-show", help="Show one saved investigation case.")
     case_show.add_argument("--case-db", required=True, help="SQLite database path.")
     case_show.add_argument("case_id")
-    case_show.add_argument("--format", choices=("table", "markdown", "json"), default="json")
+    case_show.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="json")
     case_show.set_defaults(handler=handle_case_show)
 
     case_sources = subparsers.add_parser("case-sources", help="Summarize finding sources for one saved case.")
