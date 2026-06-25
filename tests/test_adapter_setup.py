@@ -340,6 +340,17 @@ class AdapterSetupTests(unittest.TestCase):
         self.assertEqual(argus_setup.install_kind, "pipx")
         self.assertEqual(argus_setup.install_command, "pipx install argus-recon")
 
+    def test_url_archive_adapters_render_upstream_commands(self):
+        yark = find_adapter("Owez/yark")
+        target = ScanTarget(kind="url", value="https://www.youtube.com/channel/ExampleChannel")
+
+        self.assertEqual(
+            yark.render_command(target),
+            ("yark", "new", "youtube.com-channel-examplechannel", "https://www.youtube.com/channel/ExampleChannel"),
+        )
+        self.assertEqual(yark.generated_output_patterns, ("*/yark.json",))
+        self.assertTrue(yark.generated_output_workdir)
+
     def test_httpx_setup_rejects_wrong_executable_on_path(self):
         adapter = find_adapter("projectdiscovery/httpx")
         wrong_help = subprocess.CompletedProcess(

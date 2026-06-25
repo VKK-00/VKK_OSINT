@@ -68,6 +68,7 @@ PARSER_REPOSITORIES = {
     "blacklanternsecurity/bbot",
     "smicallef/spiderfoot",
     "jasonxtn/argus",
+    "Owez/yark",
     "Yvesssn/DetectDee",
 }
 
@@ -136,6 +137,8 @@ def parse_adapter_output(
         return _spiderfoot_findings(repository, target, text)
     if repository == "jasonxtn/argus":
         return _argus_findings(repository, target, text)
+    if repository == "Owez/yark":
+        return _yark_findings(repository, target, text)
     if repository == "Yvesssn/DetectDee":
         return _detectdee_findings(repository, target, text)
 
@@ -1638,6 +1641,194 @@ def _valid_port(value: str) -> bool:
     except ValueError:
         return False
     return 0 < port <= 65535
+
+
+def _yark_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    payload = _load_json_payload(text)
+    if isinstance(payload, dict) and _looks_like_yark_archive(payload):
+        return _yark_archive_findings(repository, target, payload)
+    return _yark_report_findings(repository, target, text)
+
+
+def _looks_like_yark_archive(payload: dict[str, Any]) -> bool:
+    return "url" in payload and all(key in payload for key in ("videos", "livestreams", "shorts"))
+
+
+def _yark_archive_findings(repository: str, target: ScanTarget, payload: dict[str, Any]) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    channel_url = _first_scalar(payload.get("url"))
+    videos = _list_of_dicts(payload.get("videos"))
+    livestreams = _list_of_dicts(payload.get("livestreams"))
+    shorts = _list_of_dicts(payload.get("shorts"))
+    metadata = _yark_base_metadata(repository, target)
+    _set_metadata(metadata, "archive_url", channel_url)
+    _set_metadata(metadata, "archive_version", _first_scalar(payload.get("version")))
+    metadata["videos_count"] = str(len(videos))
+    metadata["livestreams_count"] = str(len(livestreams))
+    metadata["shorts_count"] = str(len(shorts))
+    if channel_url.startswith(("http://", "https://")):
+        metadata["canonical_url"] = channel_url
+        domain = (urlparse(channel_url).hostname or "").lower()
+        if domain:
+            metadata["domain"] = domain
+    total = len(videos) + len(livestreams) + len(shorts)
+    findings.append(
+        Finding(
+            module="external-adapter-parser",
+            source=repository,
+            target=target.value,
+            status="observed",
+            confidence="medium",
+            evidence=_short(f"Yark archive parsed: {total} item(s) for {channel_url or target.value}"),
+            metadata=metadata,
+        )
+    )
+
+    for category, records in (("videos", videos), ("livestreams", livestreams), ("shorts", shorts)):
+        for record in records:
+            finding = _yark_video_finding(repository, target, category, record)
+            if finding:
+                findings.append(finding)
+    return tuple(findings)
+
+
+def _yark_video_finding(
+    repository: str,
+    target: ScanTarget,
+    category: str,
+    record: dict[str, Any],
+) -> Finding | None:
+    video_id = _first_scalar(record.get("id"))
+    if not video_id:
+        return None
+    title = _yark_current_value(record.get("title"))
+    description = _yark_current_value(record.get("description"))
+    views = _yark_current_value(record.get("views"))
+    likes = _yark_current_value(record.get("likes"))
+    deleted = _yark_current_value(record.get("deleted")).lower()
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    metadata = _yark_base_metadata(repository, target)
+    metadata.update(
+        {
+            "category": category.rstrip("s"),
+            "video_id": video_id,
+            "youtube_video_url": url,
+        }
+    )
+    for key, value in (
+        ("title", title),
+        ("uploaded", _first_scalar(record.get("uploaded"))),
+        ("width", _first_scalar(record.get("width"))),
+        ("height", _first_scalar(record.get("height"))),
+        ("views", views),
+        ("likes", likes),
+        ("deleted", deleted),
+        ("notes_count", str(len(_list_of_dicts(record.get("notes"))))),
+    ):
+        _set_metadata(metadata, key, value)
+    if description:
+        metadata["description_excerpt"] = _short(description, limit=180)
+        metadata.update(_yark_text_clue_metadata(description))
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status="observed" if deleted == "true" else "candidate",
+        url=url,
+        confidence="medium",
+        evidence=_short(f"Yark archived {category.rstrip('s')}: {title or video_id}"),
+        metadata=metadata,
+    )
+
+
+def _yark_report_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    seen: set[str] = set()
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact:
+            continue
+        if compact.startswith(("Report for ", "Finding interesting changes in ", "No interesting ")):
+            key = compact.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            metadata = _yark_base_metadata(repository, target)
+            match = re.search(r"(?:Report for|changes in)\s+(?P<archive>[^:.]+)", compact, re.IGNORECASE)
+            if match:
+                metadata["archive_name"] = match.group("archive").strip()
+            findings.append(
+                Finding(
+                    module="external-adapter-parser",
+                    source=repository,
+                    target=target.value,
+                    status="observed",
+                    confidence="low",
+                    evidence=_short(compact),
+                    metadata=metadata,
+                )
+            )
+            continue
+        viewer_match = re.search(r"http://127\.0\.0\.1:7667/channel/[^/\s]+/(?P<category>videos|livestreams|shorts)/(?P<video_id>[A-Za-z0-9_-]+)", compact)
+        if viewer_match:
+            video_id = viewer_match.group("video_id")
+            if video_id in seen:
+                continue
+            seen.add(video_id)
+            metadata = _yark_base_metadata(repository, target)
+            metadata["category"] = viewer_match.group("category").rstrip("s")
+            metadata["video_id"] = video_id
+            metadata["local_viewer_url"] = viewer_match.group(0)
+            findings.append(
+                Finding(
+                    module="external-adapter-parser",
+                    source=repository,
+                    target=target.value,
+                    status="observed",
+                    confidence="low",
+                    evidence=_short(compact),
+                    metadata=metadata,
+                )
+            )
+    return tuple(findings)
+
+
+def _yark_base_metadata(repository: str, target: ScanTarget) -> dict[str, str]:
+    return {
+        "repository": repository,
+        "parser": "yark",
+        "target_kind": target.kind,
+        "target_value": target.value,
+    }
+
+
+def _yark_text_clue_metadata(text: str) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    urls = _dedupe_text([url.rstrip(".,;") for url in URL_RE.findall(text)])
+    emails = _dedupe_text([email.lower() for email in EMAIL_RE.findall(text)])
+    phones = _dedupe_text(list(PHONE_RE.findall(text)))
+    if urls:
+        metadata["external_urls"] = "|".join(urls)
+    if emails:
+        metadata["emails"] = "|".join(emails)
+    if phones:
+        metadata["phones"] = "|".join(phones)
+    return metadata
+
+
+def _yark_current_value(value: object) -> str:
+    if isinstance(value, dict):
+        if not value:
+            return ""
+        key = sorted(str(item) for item in value.keys())[-1]
+        return _first_scalar(value.get(key))
+    return _first_scalar(value)
+
+
+def _list_of_dicts(value: object) -> tuple[dict[str, Any], ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(item for item in value if isinstance(item, dict))
 
 
 def _mosint_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:

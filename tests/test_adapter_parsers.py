@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import tempfile
@@ -115,6 +116,75 @@ class AdapterParserTests(unittest.TestCase):
         self.assertEqual(github.metadata["parser"], "detectdee")
         self.assertEqual(github.metadata["username"], "example_user")
         self.assertEqual(github.status, "candidate")
+
+    def test_parse_yark_archive_json(self):
+        archive = {
+            "version": 3,
+            "url": "https://www.youtube.com/channel/ExampleChannel",
+            "videos": [
+                {
+                    "id": "abc123DEF",
+                    "uploaded": "2026-06-20T10:00:00",
+                    "width": 1920,
+                    "height": 1080,
+                    "title": {
+                        "2026-06-20T10:00:00": "Original title",
+                        "2026-06-21T10:00:00": "Updated title",
+                    },
+                    "description": {"2026-06-20T10:00:00": "Contact admin@example.com"},
+                    "views": {"2026-06-20T10:00:00": 1200},
+                    "likes": {"2026-06-20T10:00:00": 55},
+                    "thumbnail": {"2026-06-20T10:00:00": "thumbhash"},
+                    "deleted": {"2026-06-20T10:00:00": False},
+                    "notes": [{"id": "note-1", "timestamp": 10, "title": "clip", "body": "note"}],
+                }
+            ],
+            "livestreams": [],
+            "shorts": [
+                {
+                    "id": "short001",
+                    "uploaded": "2026-06-22T10:00:00",
+                    "width": 1080,
+                    "height": 1920,
+                    "title": {"2026-06-22T10:00:00": "Short title"},
+                    "description": {"2026-06-22T10:00:00": ""},
+                    "views": {"2026-06-22T10:00:00": 300},
+                    "likes": {"2026-06-22T10:00:00": None},
+                    "thumbnail": {"2026-06-22T10:00:00": "shortthumb"},
+                    "deleted": {"2026-06-22T10:00:00": True},
+                    "notes": [],
+                }
+            ],
+        }
+
+        findings = parse_adapter_output(
+            "Owez/yark",
+            ScanTarget(kind="url", value="https://www.youtube.com/channel/ExampleChannel"),
+            json.dumps(archive),
+        )
+
+        summary = next(finding for finding in findings if finding.status == "observed" and not finding.url)
+        self.assertEqual(summary.metadata["parser"], "yark")
+        self.assertEqual(summary.metadata["archive_url"], "https://www.youtube.com/channel/ExampleChannel")
+        self.assertEqual(summary.metadata["videos_count"], "1")
+        self.assertEqual(summary.metadata["shorts_count"], "1")
+        self.assertEqual(summary.metadata["target_kind"], "url")
+
+        video = next(finding for finding in findings if finding.metadata.get("video_id") == "abc123DEF")
+        self.assertEqual(video.status, "candidate")
+        self.assertEqual(video.url, "https://www.youtube.com/watch?v=abc123DEF")
+        self.assertEqual(video.metadata["title"], "Updated title")
+        self.assertEqual(video.metadata["views"], "1200")
+        self.assertEqual(video.metadata["notes_count"], "1")
+        self.assertEqual(video.metadata["description_excerpt"], "Contact admin@example.com")
+        short = next(finding for finding in findings if finding.metadata.get("video_id") == "short001")
+        self.assertEqual(short.status, "observed")
+        self.assertEqual(short.metadata["category"], "short")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("url", "https://www.youtube.com/watch?v=abc123def"), entities)
+        self.assertIn(("domain", "www.youtube.com"), entities)
+        self.assertIn(("email", "admin@example.com"), entities)
 
     def test_parse_pwnedornot_breach_stdout(self):
         findings = parse_adapter_output(
@@ -1494,6 +1564,55 @@ class AdapterParserTests(unittest.TestCase):
         self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
         self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings[1:]))
         self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings[1:]))
+
+    def test_run_yark_adapter_reads_generated_archive_json_after_execution(self):
+        target = ScanTarget(kind="url", value="https://www.youtube.com/channel/ExampleChannel")
+
+        def fake_run(args, **kwargs):
+            self.assertEqual(args[:2], ["C:\\tools\\yark.exe", "new"])
+            self.assertEqual(args[2], "youtube.com-channel-examplechannel")
+            self.assertEqual(args[3], target.value)
+            archive_dir = Path(kwargs["cwd"]) / args[2]
+            archive_dir.mkdir(parents=True)
+            (archive_dir / "yark.json").write_text(
+                json.dumps(
+                    {
+                        "version": 3,
+                        "url": target.value,
+                        "videos": [
+                            {
+                                "id": "abc123DEF",
+                                "uploaded": "2026-06-20T10:00:00",
+                                "width": 1920,
+                                "height": 1080,
+                                "title": {"2026-06-20T10:00:00": "Archived title"},
+                                "description": {"2026-06-20T10:00:00": "Archived description"},
+                                "views": {"2026-06-20T10:00:00": 1200},
+                                "likes": {"2026-06-20T10:00:00": 55},
+                                "thumbnail": {"2026-06-20T10:00:00": "thumbhash"},
+                                "deleted": {"2026-06-20T10:00:00": False},
+                                "notes": [],
+                            }
+                        ],
+                        "livestreams": [],
+                        "shorts": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="Creating new channel..\n", stderr="")
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="C:\\tools\\yark.exe"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            findings = run_adapter_findings("Owez/yark", target, execute=True)
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertEqual(findings[0].metadata["generated_output_files"], "1")
+        parsed = [finding for finding in findings[1:] if finding.metadata.get("parser") == "yark"]
+        self.assertTrue(parsed)
+        self.assertTrue(any(finding.url == "https://www.youtube.com/watch?v=abc123DEF" for finding in parsed))
 
     def test_run_social_analyzer_adapter_parses_json_stdout_after_execution(self):
         def fake_run(args, **kwargs):

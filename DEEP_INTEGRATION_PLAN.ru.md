@@ -294,7 +294,6 @@ python -m osint_toolkit search url https://example.com --profile web-full --exec
 - profiles `passive-recon`, `web-full`;
 - host normalization and root-domain extraction;
 - duplicate entity merge across CT/Subfinder/Amass/BBOT/SpiderFoot;
-- better parser for Yark outputs;
 - result severity/risk tags for exposed tech, open ports and findings.
 
 Acceptance:
@@ -412,7 +411,6 @@ Profile fields:
 Приоритет 2:
 
 - Socialscan integration review.
-- Yark output parser.
 - Maigret richer dossier fields.
 - BBOT broader passive presets with explicit profile.
 - theHarvester API-source attribution.
@@ -581,6 +579,7 @@ Notes:
 34. Done: add Tesseract OCR text parser with structured OCR metadata and derived seed extraction.
 35. Done: add zbarimg raw payload parser for QR/barcode clues and derived seed extraction.
 36. Done: add Argus per-target parser fixtures and target provenance metadata for parsed Argus URL/email/phone/subdomain/IP/port/technology signals.
+37. Done: add Yark archive JSON parser, safe temporary archive execution route and generated `yark.json` ingestion for YouTube channel/video archive clues.
 
 ## Definition of done
 

@@ -144,6 +144,7 @@ class AdapterSpec:
             "social_analyzer_app": _social_analyzer_app_value(),
             "instagram_profile": _instagram_profile_value(target.value),
             "bbot_target": _bbot_target_value(target),
+            "yark_archive_name": _yark_archive_name(target.value),
             "blackbird_python": _blackbird_python_value(),
             "detectdee_data": _detectdee_data_value(),
             "spiderfoot_script": _spiderfoot_script_value(),
@@ -304,14 +305,16 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "external_cli",
         "MIT",
         "planned",
-        "yark new <channel_url>",
-        "Adapter should normalize archive outputs into unified Finding records.",
+        "yark new <archive_name> <channel_url>",
+        "Adapter creates a temporary Yark archive and normalizes generated yark.json output into unified Finding records.",
         ("url",),
-        ("yark", "new", "{target_value}"),
+        ("yark", "new", "{yark_archive_name}", "{target_value}"),
         "pipx",
         ("pipx", "install", "yark"),
         "FFmpeg is optional upstream dependency for some archive workflows.",
         "https://github.com/owez/yark",
+        generated_output_patterns=("*/yark.json",),
+        generated_output_workdir=True,
     ),
     AdapterSpec(
         "projectdiscovery/subfinder",
@@ -876,6 +879,20 @@ def _bbot_target_value(target: ScanTarget) -> str:
     if target.kind == "username":
         return f"USER:{target.value.strip().lstrip('@')}"
     return target.value.strip()
+
+
+def _yark_archive_name(value: str) -> str:
+    raw = value.strip()
+    parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+    parts: list[str] = []
+    host = (parsed.hostname or "archive").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    parts.append(host)
+    path_parts = [part for part in parsed.path.strip("/").split("/") if part]
+    parts.extend(path_parts[-2:])
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", "-".join(parts)).strip("-._").lower()
+    return (normalized or "yark-archive")[:80]
 
 
 def _blackbird_python_value() -> str:
