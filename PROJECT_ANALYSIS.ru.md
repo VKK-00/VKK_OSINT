@@ -60,7 +60,8 @@ CLI работает в пяти режимах:
 - adapter profiles: готовые группы upstream adapters для типовых расследований;
 - adapter doctor: проверка фактической доступности upstream CLI в `PATH`;
 - profile tools workflow: `tools doctor/install-plan/env --profile ...` показывает readiness, install/config actions и env variable names без значений;
-- unified search planner/executor: `search` классифицирует один seed, выбирает default/full profile, строит план native/adapters/local-tools, показывает readiness/missing/config/restricted/excluded статусы, запускает ready non-restricted adapters и выполняет local image tools при `--execute-adapters`;
+- custom search profiles: `--profile-file` загружает JSON profiles с валидацией target kinds, adapter profiles, repositories и local tools;
+- unified search planner/executor: `search` классифицирует один seed, выбирает default/full или custom profile, строит план native/adapters/local-tools, показывает readiness/missing/config/restricted/excluded статусы, запускает ready non-restricted adapters и выполняет local image tools при `--execute-adapters`;
 - investigation runner: один кейс, несколько seed-типов, entity summary, graph edges, единый Markdown/JSON отчёт;
 - executed adapter ingestion inside investigation: явный `--execute-adapters` добавляет parsed upstream CLI findings в entities, graph edges и case store;
 - SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges и findings;
@@ -222,6 +223,7 @@ CLI работает в пяти режимах:
   - форматирование таблиц, Markdown, CSV и JSON.
 - `osint_toolkit/search.py`
   - `SearchProfile`, `LocalToolSpec`, `PlannedStep`, `SearchPlan` — модели unified plan.
+  - `load_search_profiles()` — загрузка custom search profiles из JSON-файла с валидацией имён, target kinds, adapter profiles, repositories и local tools.
   - `classify_target()` — auto-kind для phone/email/domain/url/social/image/person/username.
   - `build_search_plan()` — строит deterministic fan-out plan по target/profile/region.
 - `osint_toolkit/toolbox.py`
@@ -404,15 +406,16 @@ External adapters должны подключать upstream CLI/API без ко
 - `toolbox --open` — открыть созданный HTML в браузере через стандартный `webbrowser`.
 - `toolbox --serve` — поднять локальный backend для запуска unified `search` jobs из toolbox.
 - `toolbox --host` и `toolbox --port` — адрес локального backend в served mode.
-- `search --profile` — built-in profile для fan-out планирования: `auto`, `phone-full`, `email-full`, `username-full`, `person-full`, `passive-recon`, `web-full`, `image-full`, `social-full`, `ru-ua-full`, `all-safe`, `safe`.
+- `search --profile` — profile для fan-out планирования: `auto`, built-in `phone-full`, `email-full`, `username-full`, `person-full`, `passive-recon`, `web-full`, `image-full`, `social-full`, `ru-ua-full`, `all-safe`, `safe` или имя custom profile из `--profile-file`.
+- `search --profile-file` — JSON-файл custom search profiles; файл принимает top-level list или объект `{"profiles": [...]}` и валидируется перед планированием.
 - `search --plan-only` — вывести план без запуска tools.
 - `search --execute-adapters` — запустить только ready non-restricted adapters из SearchPlan и записать unified report/case.
 - `search image ... --execute-adapters` — запустить ready local image tools, извлечь derived seeds и записать unified report/case.
 - `search --include-restricted` — показать restricted tools в плане с явной маркировкой.
 - `search --format table|markdown|csv|json` — формат плана.
-- `tools doctor --profile` — readiness по adapters и local tools search-профиля.
-- `tools install-plan --profile` — install/config actions по missing/config tools без автоматической установки; excluded/restricted adapters не выдаются как обычные install actions.
-- `tools env --profile` — только имена required/optional env variables, без значений.
+- `tools doctor --profile [--profile-file]` — readiness по adapters и local tools search-профиля.
+- `tools install-plan --profile [--profile-file]` — install/config actions по missing/config tools без автоматической установки; excluded/restricted adapters не выдаются как обычные install actions.
+- `tools env --profile [--profile-file]` — только имена required/optional env variables, без значений.
 - `scan --live` — явное разрешение сетевых проверок.
 - `scan --timeout` — HTTP timeout.
 - `scan email --live` — дополнительно делает domain resolution, MX/TXT lookup, SPF classification и DMARC lookup/classification.
@@ -462,7 +465,9 @@ python -m osint_toolkit search email person@example.com --profile email-full --p
 python -m osint_toolkit search auto https://vk.com/example --profile auto --plan-only --format json
 python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --plan-only
 python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --execute-adapters --out reports/photo.md --case-db cases.sqlite --case-id photo-001
+python -m osint_toolkit search email person@example.com --profile case-email-safe --profile-file profiles\case_profiles.json --plan-only
 python -m osint_toolkit tools doctor --profile all-safe --format markdown
+python -m osint_toolkit tools doctor --profile case-email-safe --profile-file profiles\case_profiles.json --format markdown
 python -m osint_toolkit tools install-plan --profile image-full --format markdown
 python -m osint_toolkit tools env --profile email-full --format json
 python -m osint_toolkit catalog --kind people --direct-only --limit 10
@@ -592,7 +597,7 @@ osint-toolkit stats
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
 - Adapter manifest теперь включает generated CSV/TXT folder template для `sherlock-project/sherlock`, isolated workdir TXT ingestion для `thewhiteh4t/nexfil`, generated JSON-file templates для `alpkeskin/mosint`, `h8mail` и `laramies/theHarvester`, generated JSON-report folder template для `soxoj/maigret`, generated JSON/NDJSON output folder template для `blacklanternsecurity/bbot`, required-env Python script template для `smicallef/spiderfoot`, interactive stdin template для `jasonxtn/argus`, target-specific executable templates для `user-scanner`, region-aware template для `snooppr/snoop`, required-env Node template для `qeeqbox/social-analyzer`, checkout/results template для `p1ngul1n0/blackbird` и executable template для `sundowndev/phoneinfoga`; более сложные adapters могут потребовать richer per-mode config.
 - Adapter parser покрывает общие URL/email/phone/key-value patterns, Sherlock stdout/CSV/TXT reports, Nexfil stdout/TXT reports, Mosint JSON reports, h8mail JSON reports, Maigret JSON/CSV reports, `user-scanner` JSON/verbose output, Snoop stdout/CSV output, Social Analyzer JSON output, Blackbird JSON/stdout output, PhoneInfoga CLI/API output, domain-recon adapters Subfinder/httpx/passive Amass/theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output; сложные JSON/CSV/HTML exports остальных upstream ещё не разобраны.
-- Adapter profiles пока статические; нет пользовательских профилей и per-case persistent adapter policy.
+- Adapter profiles в `adapters.py` пока статические. Search-layer profiles можно расширять через `--profile-file`, но UI-редактора профилей, импорта/экспорта built-ins и per-case persistent adapter policy ещё нет.
 - Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> email`, `domain -> phone`, `domain -> discovered/social/sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois-server`, `domain -> ip|port|technology`, `url -> instagram`, `url -> social-profile`, `instagram -> platform/display name/account id/public URLs`, `social -> social-profile/platform/display name/account id/public URLs` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics, cross-case entity index и command toolbox, но нет weighted path finding, cross-case edge graph и интерактивной визуализации графа.
 - SQLite schema сейчас версии 2; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
@@ -686,3 +691,4 @@ osint-toolkit stats
 - 2026-06-25: добавлен local image execution: ready ExifTool/ImageMagick/Tesseract/zbarimg/PowerShell tools выполняются локально, extracted seeds превращаются в обычные search targets, отчёт и case-store получают provenance, entities и graph.
 - 2026-06-25: добавлен `tools doctor/install-plan/env --profile`: profile-level readiness, install/config actions и безопасный вывод env variable names без значений.
 - 2026-06-25: добавлен `toolbox --serve`: локальный token-protected backend для запуска queued unified `search` jobs из HTML-пульта, с logs/status/report endpoints и ограничением output paths рабочей папкой backend.
+- 2026-06-25: добавлен `--profile-file` для `search` и `tools doctor/install-plan/env`: custom search profiles загружаются из JSON, валидируются и участвуют в fan-out planning/readiness без изменения built-in profiles.

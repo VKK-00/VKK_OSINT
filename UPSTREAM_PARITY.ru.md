@@ -401,7 +401,7 @@ python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value p
 Gap:
 
 - graph edges пока базовые, без weighted path finding и full cross-case edge graph;
-- нет пользовательских adapter profiles и persistent per-case adapter policy;
+- есть custom search profiles через `search/tools --profile-file`; при этом adapter profiles в `adapters.py` остаются статическим manifest-layer, а persistent per-case adapter policy ещё не реализована;
 - нет backend web UI, просмотра кейса в браузере и интерактивного графа; `toolbox` пока только собирает команды/порталы для ручного запуска и не делает face-ID.
 
 ## Adapter doctor

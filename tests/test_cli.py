@@ -651,6 +651,47 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["target"]["kind"], "email")
         self.assertEqual(payload["profile"]["name"], "email-full")
 
+    def test_search_accepts_custom_profile_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "profiles.json"
+            profile_path.write_text(
+                json.dumps(
+                    {
+                        "profiles": [
+                            {
+                                "name": "case-email-safe",
+                                "target_kinds": ["email"],
+                                "native_kinds": ["email"],
+                                "adapter_profiles": ["email-safe"],
+                                "adapter_repositories": ["p1ngul1n0/blackbird"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_cli(
+                "search",
+                "email",
+                "person@example.com",
+                "--profile",
+                "case-email-safe",
+                "--profile-file",
+                str(profile_path),
+                "--plan-only",
+                "--format",
+                "json",
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        sources = {step["source"] for step in payload["steps"]}
+
+        self.assertEqual(payload["profile"]["name"], "case-email-safe")
+        self.assertIn("scan email", sources)
+        self.assertIn("p1ngul1n0/blackbird", sources)
+
     def test_search_image_plan_markdown(self):
         result = self.run_cli(
             "search",
@@ -807,6 +848,40 @@ class CliTests(unittest.TestCase):
 
         self.assertIn("powershell-file-baseline", names)
         self.assertIn("tesseract-ocr", names)
+
+    def test_tools_doctor_accepts_custom_profile_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "profiles.json"
+            profile_path.write_text(
+                json.dumps(
+                    {
+                        "profiles": [
+                            {
+                                "name": "case-image-local",
+                                "target_kinds": ["image"],
+                                "local_tools": ["powershell-file-baseline", "tesseract-ocr"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_cli(
+                "tools",
+                "doctor",
+                "--profile",
+                "case-image-local",
+                "--profile-file",
+                str(profile_path),
+                "--format",
+                "json",
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        names = {row["name"] for row in json.loads(result.stdout)}
+
+        self.assertEqual(names, {"powershell-file-baseline", "tesseract-ocr"})
 
     def test_tools_install_plan_profile_shows_actions(self):
         result = self.run_cli("tools", "install-plan", "--profile", "image-full", "--format", "markdown")

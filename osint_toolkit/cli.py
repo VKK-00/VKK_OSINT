@@ -41,7 +41,7 @@ from .search import (
     TARGET_KINDS,
     SearchPlan,
     build_search_plan,
-    list_search_profiles,
+    load_search_profiles,
     ready_adapter_repositories,
 )
 from .toolbox import write_toolbox
@@ -127,17 +127,20 @@ def build_parser() -> argparse.ArgumentParser:
     tools_subparsers = tools.add_subparsers(dest="tools_command", required=True)
 
     tools_doctor = tools_subparsers.add_parser("doctor", help="Check readiness for all tools in a search profile.")
-    tools_doctor.add_argument("--profile", choices=tuple(profile.name for profile in list_search_profiles()), required=True)
+    tools_doctor.add_argument("--profile", required=True)
+    tools_doctor.add_argument("--profile-file", help="JSON file with custom search profiles.")
     tools_doctor.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     tools_doctor.set_defaults(handler=handle_tools_doctor)
 
     tools_install = tools_subparsers.add_parser("install-plan", help="Show install/config actions for a search profile.")
-    tools_install.add_argument("--profile", choices=tuple(profile.name for profile in list_search_profiles()), required=True)
+    tools_install.add_argument("--profile", required=True)
+    tools_install.add_argument("--profile-file", help="JSON file with custom search profiles.")
     tools_install.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     tools_install.set_defaults(handler=handle_tools_install_plan)
 
     tools_env = tools_subparsers.add_parser("env", help="Show required and optional env variable names for a search profile.")
-    tools_env.add_argument("--profile", choices=tuple(profile.name for profile in list_search_profiles()), required=True)
+    tools_env.add_argument("--profile", required=True)
+    tools_env.add_argument("--profile-file", help="JSON file with custom search profiles.")
     tools_env.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     tools_env.set_defaults(handler=handle_tools_env)
 
@@ -185,7 +188,8 @@ def build_parser() -> argparse.ArgumentParser:
     search = subparsers.add_parser("search", help="Build a unified fan-out search plan for one OSINT seed.")
     search.add_argument("target_kind", choices=("auto", *TARGET_KINDS))
     search.add_argument("target_value")
-    search.add_argument("--profile", choices=("auto", *(profile.name for profile in list_search_profiles())), default="auto")
+    search.add_argument("--profile", default="auto")
+    search.add_argument("--profile-file", help="JSON file with custom search profiles.")
     search.add_argument("--plan-only", action="store_true", help="Only show the fan-out plan. No tools are executed.")
     search.add_argument("--execute-adapters", action="store_true", help="Execute ready non-restricted external adapters from the search plan.")
     search.add_argument("--include-restricted", action="store_true", help="Include restricted tools in the plan with explicit markings.")
@@ -329,19 +333,22 @@ def handle_doctor(args: argparse.Namespace) -> int:
 
 
 def handle_tools_doctor(args: argparse.Namespace) -> int:
-    rows = build_profile_tool_readiness(args.profile)
+    custom_profiles = load_search_profiles(args.profile_file)
+    rows = build_profile_tool_readiness(args.profile, custom_profiles=custom_profiles)
     print(format_tool_readiness(rows, output_format=args.format))
     return 0
 
 
 def handle_tools_install_plan(args: argparse.Namespace) -> int:
-    rows = build_profile_tool_readiness(args.profile)
+    custom_profiles = load_search_profiles(args.profile_file)
+    rows = build_profile_tool_readiness(args.profile, custom_profiles=custom_profiles)
     print(format_install_plan(rows, output_format=args.format))
     return 0
 
 
 def handle_tools_env(args: argparse.Namespace) -> int:
-    rows = build_profile_tool_readiness(args.profile)
+    custom_profiles = load_search_profiles(args.profile_file)
+    rows = build_profile_tool_readiness(args.profile, custom_profiles=custom_profiles)
     print(format_env_plan(rows, output_format=args.format))
     return 0
 
@@ -402,12 +409,14 @@ def handle_toolbox(args: argparse.Namespace) -> int:
 
 
 def handle_search(args: argparse.Namespace) -> int:
+    custom_profiles = load_search_profiles(args.profile_file)
     plan = build_search_plan(
         args.target_kind,
         args.target_value,
         profile_name=args.profile,
         region=args.region,
         include_restricted=args.include_restricted,
+        custom_profiles=custom_profiles,
     )
     if args.plan_only and args.execute_adapters:
         raise ValueError("--plan-only and --execute-adapters are mutually exclusive.")

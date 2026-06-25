@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import shutil
 from dataclasses import dataclass
@@ -7,7 +8,7 @@ from pathlib import Path
 
 from .adapter_runner import format_command
 from .adapter_setup import AdapterSetup, build_adapter_setup
-from .adapters import expand_adapter_repositories, filter_adapters, find_adapter
+from .adapters import expand_adapter_repositories, filter_adapters, find_adapter, find_adapter_profile
 from .engine import ScanTarget
 
 
@@ -295,16 +296,204 @@ SEARCH_PROFILES: tuple[SearchProfile, ...] = (
 )
 
 
-def list_search_profiles() -> tuple[SearchProfile, ...]:
-    return SEARCH_PROFILES
+def list_search_profiles(custom_profiles: tuple[SearchProfile, ...] = ()) -> tuple[SearchProfile, ...]:
+    return SEARCH_PROFILES + tuple(custom_profiles)
 
 
-def find_search_profile(name: str) -> SearchProfile:
+def find_search_profile(name: str, custom_profiles: tuple[SearchProfile, ...] = ()) -> SearchProfile:
     normalized = name.strip().lower()
-    for profile in SEARCH_PROFILES:
+    for profile in list_search_profiles(custom_profiles):
         if profile.name.lower() == normalized:
             return profile
     raise ValueError(f"Unknown search profile: {name}")
+
+
+def load_search_profiles(path: str | Path | None) -> tuple[SearchProfile, ...]:
+    if not path:
+        return ()
+    profile_path = Path(path)
+    try:
+        raw = json.loads(profile_path.read_text(encoding="utf-8-sig"))
+    except OSError as exc:
+        raise ValueError(f"Cannot read search profile file {profile_path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid search profile JSON in {profile_path}: {exc}") from exc
+
+    if isinstance(raw, dict):
+        profiles_raw = raw.get("profiles")
+    else:
+        profiles_raw = raw
+    if not isinstance(profiles_raw, list):
+        raise ValueError("Search profile file must contain a list or an object with a 'profiles' list.")
+
+    built_in_names = {profile.name.lower() for profile in SEARCH_PROFILES}
+    seen_names: set[str] = set()
+    profiles: list[SearchProfile] = []
+    for index, item in enumerate(profiles_raw):
+        if not isinstance(item, dict):
+            raise ValueError(f"Search profile #{index + 1} must be a JSON object.")
+        profile = _load_search_profile_item(item, index=index)
+        normalized_name = profile.name.lower()
+        if normalized_name in built_in_names:
+            raise ValueError(f"Custom search profile cannot override built-in profile: {profile.name}")
+        if normalized_name in seen_names:
+            raise ValueError(f"Duplicate custom search profile: {profile.name}")
+        seen_names.add(normalized_name)
+        profiles.append(profile)
+    return tuple(profiles)
+
+
+def _load_search_profile_item(item: dict[str, object], *, index: int) -> SearchProfile:
+    allowed_fields = {
+        "name",
+        "title",
+        "description",
+        "target_kinds",
+        "native_kinds",
+        "adapter_profiles",
+        "adapter_repositories",
+        "local_tools",
+        "excluded_repositories",
+        "include_restricted",
+        "note",
+    }
+    unknown_fields = sorted(set(item) - allowed_fields)
+    if unknown_fields:
+        raise ValueError(
+            f"Search profile #{index + 1} has unknown field(s): {', '.join(unknown_fields)}"
+        )
+
+    name = _required_string(item, "name", index=index)
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", name):
+        raise ValueError(
+            f"Search profile #{index + 1} name must use letters, numbers, dots, underscores or hyphens: {name}"
+        )
+    title = _optional_string(item, "title", default=name, index=index)
+    description = _optional_string(item, "description", default="", index=index)
+    target_kinds = _string_tuple(item, "target_kinds", index=index, required=True)
+    native_kinds = _string_tuple(item, "native_kinds", index=index)
+    adapter_profiles = _string_tuple(item, "adapter_profiles", index=index)
+    adapter_repositories = _string_tuple(item, "adapter_repositories", index=index)
+    local_tools = _string_tuple(item, "local_tools", index=index)
+    excluded_repositories = _string_tuple(item, "excluded_repositories", index=index)
+    include_restricted = item.get("include_restricted", False)
+    if not isinstance(include_restricted, bool):
+        raise ValueError(f"Search profile #{index + 1} field 'include_restricted' must be boolean.")
+    note = _optional_string(item, "note", default="", index=index)
+
+    _validate_target_kinds(target_kinds, field="target_kinds", index=index)
+    _validate_native_kinds(native_kinds, index=index)
+    _validate_adapter_profiles(adapter_profiles, index=index)
+    _validate_adapter_repositories(adapter_repositories, field="adapter_repositories", index=index)
+    _validate_local_tools(local_tools, index=index)
+    _validate_adapter_repositories(excluded_repositories, field="excluded_repositories", index=index)
+
+    return SearchProfile(
+        name=name,
+        title=title,
+        description=description,
+        target_kinds=target_kinds,
+        native_kinds=native_kinds,
+        adapter_profiles=adapter_profiles,
+        adapter_repositories=adapter_repositories,
+        local_tools=local_tools,
+        excluded_repositories=excluded_repositories,
+        include_restricted=include_restricted,
+        note=note,
+    )
+
+
+def _required_string(item: dict[str, object], field: str, *, index: int) -> str:
+    value = item.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Search profile #{index + 1} field '{field}' must be a non-empty string.")
+    return value.strip()
+
+
+def _optional_string(item: dict[str, object], field: str, *, default: str, index: int) -> str:
+    value = item.get(field, default)
+    if not isinstance(value, str):
+        raise ValueError(f"Search profile #{index + 1} field '{field}' must be a string.")
+    return value.strip()
+
+
+def _string_tuple(
+    item: dict[str, object],
+    field: str,
+    *,
+    index: int,
+    required: bool = False,
+) -> tuple[str, ...]:
+    if required and field not in item:
+        raise ValueError(f"Search profile #{index + 1} field '{field}' is required.")
+    if field not in item:
+        return ()
+    value = item[field]
+    if not isinstance(value, list):
+        raise ValueError(f"Search profile #{index + 1} field '{field}' must be a list of strings.")
+    values: list[str] = []
+    seen: set[str] = set()
+    for offset, raw in enumerate(value):
+        if not isinstance(raw, str) or not raw.strip():
+            raise ValueError(
+                f"Search profile #{index + 1} field '{field}' item #{offset + 1} must be a non-empty string."
+            )
+        normalized = raw.strip()
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        values.append(normalized)
+    if required and not values:
+        raise ValueError(f"Search profile #{index + 1} field '{field}' cannot be empty.")
+    return tuple(values)
+
+
+def _validate_target_kinds(values: tuple[str, ...], *, field: str, index: int) -> None:
+    supported = set(TARGET_KINDS)
+    unknown = sorted(value for value in values if value not in supported)
+    if unknown:
+        raise ValueError(
+            f"Search profile #{index + 1} field '{field}' has unsupported target kind(s): {', '.join(unknown)}"
+        )
+
+
+def _validate_native_kinds(values: tuple[str, ...], *, index: int) -> None:
+    supported = set(TARGET_KINDS) - {"image"}
+    unknown = sorted(value for value in values if value not in supported)
+    if unknown:
+        raise ValueError(
+            f"Search profile #{index + 1} field 'native_kinds' has unsupported native kind(s): {', '.join(unknown)}"
+        )
+
+
+def _validate_adapter_profiles(values: tuple[str, ...], *, index: int) -> None:
+    for value in values:
+        try:
+            find_adapter_profile(value)
+        except ValueError as exc:
+            raise ValueError(
+                f"Search profile #{index + 1} references unknown adapter profile: {value}"
+            ) from exc
+
+
+def _validate_adapter_repositories(values: tuple[str, ...], *, field: str, index: int) -> None:
+    for value in values:
+        try:
+            find_adapter(value)
+        except ValueError as exc:
+            raise ValueError(
+                f"Search profile #{index + 1} field '{field}' references unknown adapter repository: {value}"
+            ) from exc
+
+
+def _validate_local_tools(values: tuple[str, ...], *, index: int) -> None:
+    local_tool_names = {tool.name for tool in LOCAL_TOOLS}
+    unknown = sorted(value for value in values if value not in local_tool_names)
+    if unknown:
+        raise ValueError(
+            f"Search profile #{index + 1} field 'local_tools' references unknown local tool(s): {', '.join(unknown)}"
+        )
 
 
 def classify_target(value: str) -> str:
@@ -337,12 +526,13 @@ def build_search_plan(
     profile_name: str = "safe",
     region: str = "all",
     include_restricted: bool = False,
+    custom_profiles: tuple[SearchProfile, ...] = (),
 ) -> SearchPlan:
     if target_kind == "auto":
         target_kind = classify_target(target_value)
     if target_kind not in TARGET_KINDS:
         raise ValueError(f"Unsupported search target kind: {target_kind}")
-    profile = _profile_for_target(profile_name, target_kind)
+    profile = _profile_for_target(profile_name, target_kind, custom_profiles=custom_profiles)
     target = ScanTarget(kind=target_kind, value=target_value, region=region)
     warnings = _plan_warnings(target, profile, include_restricted)
     steps: list[PlannedStep] = []
@@ -373,10 +563,15 @@ def ready_adapter_repositories(plan: SearchPlan, *, limit: int | None = None) ->
     return tuple(repositories)
 
 
-def _profile_for_target(profile_name: str, target_kind: str) -> SearchProfile:
+def _profile_for_target(
+    profile_name: str,
+    target_kind: str,
+    *,
+    custom_profiles: tuple[SearchProfile, ...] = (),
+) -> SearchProfile:
     if profile_name == "auto":
         profile_name = _default_profile_for_target(target_kind)
-    profile = find_search_profile(profile_name)
+    profile = find_search_profile(profile_name, custom_profiles=custom_profiles)
     if target_kind not in profile.target_kinds:
         raise ValueError(f"Profile {profile.name} does not support target kind: {target_kind}")
     return profile

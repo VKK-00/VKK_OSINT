@@ -1,4 +1,7 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from osint_toolkit.engine import ScanTarget
 from osint_toolkit.search import (
@@ -7,6 +10,7 @@ from osint_toolkit.search import (
     build_search_plan,
     classify_target,
     find_search_profile,
+    load_search_profiles,
     ready_adapter_repositories,
 )
 
@@ -84,6 +88,98 @@ class SearchPlanTests(unittest.TestCase):
 
         self.assertEqual(plan.target.kind, "email")
         self.assertEqual(plan.profile.name, "email-full")
+
+    def test_custom_profile_file_can_extend_search_profiles(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "profiles.json"
+            profile_path.write_text(
+                json.dumps(
+                    {
+                        "profiles": [
+                            {
+                                "name": "case-email-safe",
+                                "title": "Case email safe",
+                                "description": "Case-specific safe email profile.",
+                                "target_kinds": ["email"],
+                                "native_kinds": ["email"],
+                                "adapter_profiles": ["email-safe"],
+                                "adapter_repositories": ["p1ngul1n0/blackbird"],
+                                "excluded_repositories": ["megadose/holehe"],
+                                "note": "Case scope reviewed.",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            custom_profiles = load_search_profiles(profile_path)
+            plan = build_search_plan(
+                "email",
+                "person@example.com",
+                profile_name="case-email-safe",
+                custom_profiles=custom_profiles,
+            )
+            sources = {step.source: step for step in plan.steps}
+
+            self.assertEqual(plan.profile.name, "case-email-safe")
+            self.assertIn("scan email", sources)
+            self.assertIn("alpkeskin/mosint", sources)
+            self.assertIn("p1ngul1n0/blackbird", sources)
+            self.assertEqual(sources["megadose/holehe"].status, "excluded")
+
+    def test_custom_profile_file_rejects_builtin_override(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "profiles.json"
+            profile_path.write_text(
+                json.dumps({"profiles": [{"name": "email-full", "target_kinds": ["email"]}]}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "cannot override built-in"):
+                load_search_profiles(profile_path)
+
+    def test_custom_profile_file_accepts_utf8_bom(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "profiles.json"
+            payload = {"profiles": [{"name": "bom-email", "target_kinds": ["email"]}]}
+            profile_path.write_bytes(b"\xef\xbb\xbf" + json.dumps(payload).encode("utf-8"))
+
+            custom_profiles = load_search_profiles(profile_path)
+
+        self.assertEqual(custom_profiles[0].name, "bom-email")
+
+    def test_custom_profile_file_rejects_unknown_repository(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "profiles.json"
+            profile_path.write_text(
+                json.dumps(
+                    {
+                        "profiles": [
+                            {
+                                "name": "bad-repo",
+                                "target_kinds": ["email"],
+                                "adapter_repositories": ["missing/repo"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "unknown adapter repository"):
+                load_search_profiles(profile_path)
+
+    def test_custom_profile_file_rejects_unknown_target_kind(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "profiles.json"
+            profile_path.write_text(
+                json.dumps({"profiles": [{"name": "bad-kind", "target_kinds": ["passport"]}]}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "unsupported target kind"):
+                load_search_profiles(profile_path)
 
     def test_person_full_plan_includes_derived_username_adapter_routes(self):
         plan = build_search_plan("person", "Ivan Petrenko", profile_name="person-full")

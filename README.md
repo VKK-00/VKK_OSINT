@@ -60,6 +60,7 @@ python -m osint_toolkit search email person@example.com --profile email-full --p
 python -m osint_toolkit search auto https://vk.com/example --profile auto --plan-only --format json
 python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --execute-adapters --out reports/photo.md --case-db cases.sqlite --case-id photo-001
 python -m osint_toolkit tools doctor --profile all-safe
+python -m osint_toolkit search email person@example.com --profile case-email-safe --profile-file profiles\case_profiles.json --plan-only
 python -m osint_toolkit catalog --kind people --direct-only --limit 10
 python -m osint_toolkit catalog --kind ru-ua --level direct_ru_ua
 python -m osint_toolkit scan person "Ivan Petrenko" --limit 8
@@ -139,6 +140,33 @@ python -m osint_toolkit tools env --profile email-full --format json
 ```
 
 Без `--execute-adapters` команда показывает план и ничего не запускает. `--execute-adapters` использует readiness из плана, запускает только `ready` adapters, не запускает `missing`/`config_missing`/`not_configured`/`excluded`/`restricted` entries и сохраняет результат через тот же investigation/case-store слой. Для `image` этот же execution mode запускает ready local tools: PowerShell hash/baseline, ExifTool, ImageMagick, Tesseract и zbarimg, извлекает URL/email/phone/username/domain clues и маршрутизирует derived seeds в обычный `search` fan-out. Face-ID не выполняется.
+
+Custom search profiles можно подключать через JSON-файл, чтобы сохранить свой набор native modules, adapter profiles, отдельных repositories и local image tools:
+
+```json
+{
+  "profiles": [
+    {
+      "name": "case-email-safe",
+      "title": "Case email safe",
+      "description": "Case-specific safe email profile.",
+      "target_kinds": ["email"],
+      "native_kinds": ["email"],
+      "adapter_profiles": ["email-safe"],
+      "adapter_repositories": ["p1ngul1n0/blackbird"],
+      "excluded_repositories": ["megadose/holehe"],
+      "note": "Case scope reviewed."
+    }
+  ]
+}
+```
+
+```powershell
+python -m osint_toolkit search email person@example.com --profile case-email-safe --profile-file profiles\case_profiles.json --plan-only
+python -m osint_toolkit tools doctor --profile case-email-safe --profile-file profiles\case_profiles.json --format markdown
+```
+
+Файл принимает либо объект с `profiles`, либо top-level JSON-list. Валидатор не даёт переопределять built-in profiles и отклоняет неизвестные `target_kinds`, `adapter_profiles`, repositories, local tools и лишние поля.
 
 ### `tools`
 

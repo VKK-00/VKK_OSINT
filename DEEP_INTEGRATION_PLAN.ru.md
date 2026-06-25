@@ -512,6 +512,8 @@ Deliverables:
 - JSON import/export for custom profiles;
 - profile validation.
 
+Status: JSON import for custom search profiles through `--profile-file` and validation are implemented. Export/list/show commands for profiles remain future work.
+
 Tests:
 
 - invalid repo/profile rejected;
@@ -555,6 +557,7 @@ Notes:
 5. Done: add image local tool execution and derived seed extraction.
 6. Done for stable routes: replace toolbox command cards with `search` plan/execution commands where high-level routing is stable.
 7. Done: add `toolbox --serve` local backend for queued unified search execution, logs and report access.
+8. Done: add `--profile-file` JSON import and validation for custom search profiles in `search` and `tools doctor/install-plan/env`.
 
 ## Definition of done
 

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from .adapter_setup import build_adapter_setup
 from .adapters import expand_adapter_repositories, find_adapter
-from .search import LOCAL_TOOLS, find_search_profile
+from .search import LOCAL_TOOLS, SearchProfile, find_search_profile
 
 
 @dataclass(frozen=True)
@@ -43,11 +43,15 @@ class ToolReadiness:
         }
 
 
-def build_profile_tool_readiness(profile_name: str) -> tuple[ToolReadiness, ...]:
-    profile = find_search_profile(profile_name)
+def build_profile_tool_readiness(
+    profile_name: str,
+    *,
+    custom_profiles: tuple[SearchProfile, ...] = (),
+) -> tuple[ToolReadiness, ...]:
+    profile = find_search_profile(profile_name, custom_profiles=custom_profiles)
     excluded_repositories = {repository.lower() for repository in profile.excluded_repositories}
     rows: list[ToolReadiness] = []
-    for repository in _profile_repositories(profile_name):
+    for repository in _profile_repositories(profile_name, custom_profiles=custom_profiles):
         setup = build_adapter_setup(find_adapter(repository))
         readiness = setup.readiness
         install_note = setup.install_note
@@ -239,8 +243,12 @@ def format_env_plan(rows: tuple[ToolReadiness, ...], *, output_format: str = "ta
     raise ValueError(f"Unsupported output format: {output_format}")
 
 
-def _profile_repositories(profile_name: str) -> tuple[str, ...]:
-    profile = find_search_profile(profile_name)
+def _profile_repositories(
+    profile_name: str,
+    *,
+    custom_profiles: tuple[SearchProfile, ...] = (),
+) -> tuple[str, ...]:
+    profile = find_search_profile(profile_name, custom_profiles=custom_profiles)
     repositories = list(expand_adapter_repositories(profile.adapter_profiles, profile.adapter_repositories))
     repositories.extend(profile.excluded_repositories)
     seen: set[str] = set()
