@@ -70,7 +70,7 @@ CLI работает в пяти режимах:
 - cross-case path analysis: weighted shortest path между двумя сущностями по объединённым graph edges saved cases;
 - cross-case network analysis: bounded общий graph по нескольким saved cases с aggregation, degree/case_count и фильтрами kind/relation;
 - local toolbox: один HTML-пульт с seed-полями и направлениями для фото-зацепок, OCR, EXIF/metadata, QR/barcodes, reverse image portals, person/username/social, email/phone, domain/url, RU/UA, cases/clickable SVG graph/index и adapter profiles;
-- toolbox backend: `toolbox --serve` поднимает локальный token-protected HTTP server, принимает только структурированные `/api/search` payloads включая `scope_note`, ведёт job queue, logs/status/report access и allowlisted case endpoints для saved SQLite cases/graph/index/update/delete;
+- toolbox backend: `toolbox --serve` поднимает локальный token-protected HTTP server, принимает только структурированные `/api/search` payloads включая `scope_note` и guarded `profile_file`, ведёт job queue, logs/status/report access, `/api/profiles` и allowlisted case endpoints для saved SQLite cases/graph/index/update/delete;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
 
@@ -234,8 +234,8 @@ CLI работает в пяти режимах:
   - `render_toolbox_html()` — HTML/CSS/JS для локального пульта; без backend остаётся static copy-ready режимом, с backend URL/token показывает unified search runner и Case Browser.
   - `write_toolbox()` — запись HTML-файла на диск.
 - `osint_toolkit/toolbox_server.py`
-  - `ToolboxJobRunner` — создаёт allowlisted `python -m osint_toolkit search ...` jobs, ограничивает output paths рабочей папкой backend и сохраняет stdout/stderr/status.
-  - `ToolboxRequestHandler` — HTTP endpoints `/api/search`, `/api/jobs`, `/api/jobs/<id>`, `/api/jobs/<id>/report`, `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph`, `/api/cases/<id>/update`, `/api/cases/<id>/delete`, `/api/case-index`, `/api/case-path`, `/api/case-network`, `/api/health`.
+  - `ToolboxJobRunner` — создаёт allowlisted `python -m osint_toolkit search ...` jobs, ограничивает output paths и profile-file inputs рабочей папкой backend, валидирует custom search profiles и сохраняет stdout/stderr/status.
+  - `ToolboxRequestHandler` — HTTP endpoints `/api/search`, `/api/profiles`, `/api/jobs`, `/api/jobs/<id>`, `/api/jobs/<id>/report`, `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph`, `/api/cases/<id>/update`, `/api/cases/<id>/delete`, `/api/case-index`, `/api/case-path`, `/api/case-network`, `/api/health`.
   - `run_toolbox_server()` — CLI entrypoint для `toolbox --serve`.
 - `osint_toolkit/case_store.py`
   - `CaseStore.save()` — сохраняет investigation result, graph и metadata в SQLite.
@@ -261,11 +261,12 @@ Toolbox-поток:
 1. Static mode: пользователь запускает `python -m osint_toolkit toolbox --out osint_toolbox.html`; CLI вызывает `write_toolbox()`, который берёт текущее описание направлений и adapter profiles.
 2. `render_toolbox_html()` создаёт самодостаточный HTML/CSS/JS без внешних assets; пользователь заполняет seed-поля один раз, а cards подставляют значения в шаблоны команд.
 3. Served mode: пользователь запускает `python -m osint_toolkit toolbox --serve --open`; CLI создаёт session token, пишет HTML с backend URL/token и поднимает локальный HTTP server.
-4. Browser отправляет только структурированный `/api/search` payload: target kind/value, profile, region, execute/plan mode, limits, report path, case DB и optional scope note.
-5. Backend собирает allowlisted `python -m osint_toolkit search ...`, запускает job в фоне, показывает queue/status/stdout/stderr и отдаёт report content по job id.
-6. Case Browser читает `/api/cases` с optional workflow/profile/scope filters, `/api/cases/<id>` и `/api/cases/<id>/graph`, рисует bounded SVG-граф из сохранённых `entities`/`edges` и показывает summary/focus analysis рядом с JSON; клик или Enter/Space на узле заполняет focus entity и перезапрашивает соседей.
-7. Case Browser меняет только allowlisted поля title/scope_note через `/api/cases/<id>/update`; delete идёт через `/api/cases/<id>/delete` только если typed confirmation точно совпадает с `case_id`.
-8. HTML не загружает фото сам; для фото served mode запускает только тот же `search image ... --execute-adapters`, а reverse image portals остаются ручной загрузкой.
+4. Browser отправляет только структурированный `/api/search` payload: target kind/value, profile/custom profile, optional profile file, region, execute/plan mode, limits, report path, case DB и optional scope note.
+5. Backend валидирует profile file только внутри рабочей папки backend, собирает allowlisted `python -m osint_toolkit search ...`, запускает job в фоне, показывает queue/status/stdout/stderr и отдаёт report content по job id.
+6. Browser может запросить `/api/profiles`, чтобы увидеть built-in и custom profiles из указанного JSON-файла до запуска search.
+7. Case Browser читает `/api/cases` с optional workflow/profile/scope filters, `/api/cases/<id>` и `/api/cases/<id>/graph`, рисует bounded SVG-граф из сохранённых `entities`/`edges` и показывает summary/focus analysis рядом с JSON; клик или Enter/Space на узле заполняет focus entity и перезапрашивает соседей.
+8. Case Browser меняет только allowlisted поля title/scope_note через `/api/cases/<id>/update`; delete идёт через `/api/cases/<id>/delete` только если typed confirmation точно совпадает с `case_id`.
+9. HTML не загружает фото сам; для фото served mode запускает только тот же `search image ... --execute-adapters`, а reverse image portals остаются ручной загрузкой.
 
 Search-поток:
 
@@ -348,7 +349,7 @@ Case-store поток:
 
 Toolbox:
 
-`ToolboxSection[] + AdapterProfile[] -> render_toolbox_html() -> local HTML -> operator fills image path/seeds -> copy-ready command OR /api/search -> ToolboxJobRunner -> python -m osint_toolkit search -> report/case -> Case Browser /api/cases|graph|update|delete|case-index|case-path|case-network`
+`ToolboxSection[] + AdapterProfile[] -> render_toolbox_html() -> local HTML -> operator fills image path/seeds/profile file -> copy-ready command OR /api/profiles|/api/search -> ToolboxJobRunner -> python -m osint_toolkit search -> report/case -> Case Browser /api/cases|graph|update|delete|case-index|case-path|case-network`
 
 Search:
 
@@ -460,6 +461,8 @@ External adapters должны подключать upstream CLI/API без ко
 - `case-update --title` — меняет title saved case без изменения findings/entities/edges.
 - `case-update --scope-note` — upsert metadata `scope_note` saved case.
 - `case-delete --yes` — обязательное CLI-подтверждение удаления одного saved case.
+- `toolbox /api/profiles?profile_file=...` — token-protected listing built-in/custom profiles; `profile_file` должен находиться внутри рабочей папки backend.
+- `toolbox /api/search` `profile_file` — optional profile JSON path внутри рабочей папки backend; backend валидирует custom profile перед добавлением `--profile-file`.
 - `case-graph --entity-kind` и `case-graph --entity-value` — focus-сущность для поиска соседей в сохранённом графе.
 - `case-graph --limit` — ограничение top nodes и списка соседей.
 - `case-index --kind` — фильтр типа сущности в cross-case индексе.
@@ -634,6 +637,7 @@ osint-toolkit stats
 - Instagram module пока является safe public metadata wrapper: нет login/session handling, private data access, follower/following scraping, comments/messages export, media archive ingestion или обхода platform rate limits.
 - Social module для VK/OK/Yandex/Mail.ru пока является safe public metadata wrapper: нет VK/OK/Yandex/Mail.ru API adapters, login/session handling, private profile access, follower scraping, comments/messages export или обхода platform rate limits.
 - Toolbox static mode не выполняет команды из браузера; served mode выполняет structured unified `search` jobs через локальный backend. Собственного OCR/EXIF engine нет: image execution использует локально установленные ExifTool, ImageMagick, Tesseract, zbarimg и PowerShell hash baseline. Reverse image search остаётся ручной загрузкой на внешние сайты. Face recognition и поиск человека по лицу не добавлены.
+- Served toolbox принимает custom `profile_file` только из рабочей папки backend; это осознанное ограничение против чтения произвольных локальных файлов из браузера.
 - Case management intentionally narrow: `case-update` и `/api/cases/<id>/update` меняют только title/scope_note, а `case-delete` и `/api/cases/<id>/delete` требуют явного подтверждения; нет bulk delete, raw SQL editor или редактирования saved findings/entities/edges из UI.
 - `search --execute-adapters` запускает только ready non-restricted external adapters. Для image targets он запускает ready local tools и маршрутизирует derived seeds; face recognition и identity-by-face matching не реализуются.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
@@ -641,7 +645,7 @@ osint-toolkit stats
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
 - Adapter manifest теперь включает generated CSV/TXT folder template для `sherlock-project/sherlock`, isolated workdir TXT ingestion для `thewhiteh4t/nexfil`, generated JSON-file templates для `alpkeskin/mosint`, `h8mail` и `laramies/theHarvester`, generated JSON-report folder template для `soxoj/maigret`, generated JSON/NDJSON output folder template для `blacklanternsecurity/bbot`, required-env Python script template для `smicallef/spiderfoot`, interactive stdin template для `jasonxtn/argus`, target-specific executable templates для `user-scanner`, region-aware template для `snooppr/snoop`, required-env Node template для `qeeqbox/social-analyzer`, checkout/results template для `p1ngul1n0/blackbird` и executable template для `sundowndev/phoneinfoga`; более сложные adapters могут потребовать richer per-mode config.
 - Adapter parser покрывает общие URL/email/phone/key-value patterns, Sherlock stdout/CSV/TXT reports, Nexfil stdout/TXT reports, Mosint JSON reports, h8mail JSON reports, Maigret JSON/CSV reports, `user-scanner` JSON/verbose output, Snoop stdout/CSV output, Social Analyzer JSON output, Blackbird JSON/stdout output, PhoneInfoga CLI/API output, domain-recon adapters Subfinder/httpx/passive Amass/theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output; сложные JSON/CSV/HTML exports остальных upstream ещё не разобраны.
-- Adapter profiles в `adapters.py` пока статические. Search-layer profiles можно расширять через `--profile-file` и управлять через `profiles list/show/export`; saved cases хранят workflow/profile/adapter/scope policy metadata, но UI-редактора профилей и enforcement per-case policy ещё нет.
+- Adapter profiles в `adapters.py` пока статические. Search-layer profiles можно расширять через `--profile-file`, управлять через `profiles list/show/export` и использовать в served toolbox через guarded profile file; saved cases хранят workflow/profile/adapter/scope policy metadata, но browser UI-редактора профилей и enforcement per-case policy ещё нет.
 - Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> email`, `domain -> phone`, `domain -> discovered/social/sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois-server`, `domain -> ip|port|technology`, `url -> instagram`, `url -> social-profile`, `instagram -> platform/display name/account id/public URLs`, `social -> social-profile/platform/display name/account id/public URLs` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics, cross-case entity index, weighted shortest path, bounded cross-case network, command toolbox, served Case Browser и clickable bounded SVG graph, но нет advanced graph layout/filter UI.
 - SQLite schema сейчас версии 3; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
@@ -745,3 +749,4 @@ osint-toolkit stats
 - 2026-06-25: добавлен cross-case weighted path analysis: `case-path`, `/api/case-path`, toolbox Path-кнопка и Markdown/table/JSON форматирование path hops с `case_id`/relation/direction/confidence/source/weight.
 - 2026-06-25: добавлен bounded cross-case network analysis: `case-network`, `/api/case-network`, toolbox Network-кнопка, aggregation одинаковых edges, degree/case_count и фильтры kind/relation.
 - 2026-06-25: добавлен safe case management слой: `cases --workflow/--profile/--scope-query`, `case-update`, `case-delete --yes`, `/api/cases/<id>/update`, `/api/cases/<id>/delete` и toolbox controls для filtered list, title/scope update и typed-confirm delete.
+- 2026-06-25: `toolbox --serve` получил guarded custom profile integration: `/api/profiles`, поля `Profile file`/`Custom profile`, path guard внутри backend cwd и передачу `--profile-file` в allowlisted `/api/search` jobs после JSON validation.

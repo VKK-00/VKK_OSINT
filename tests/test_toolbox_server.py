@@ -246,6 +246,71 @@ class ToolboxServerTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_profiles_endpoint_and_search_accept_custom_profile_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_dir = Path(tmpdir) / "profiles"
+            profile_dir.mkdir()
+            profile_path = profile_dir / "case_profiles.json"
+            profile_path.write_text(
+                json.dumps(
+                    {
+                        "profiles": [
+                            {
+                                "name": "case-email-safe",
+                                "target_kinds": ["email"],
+                                "native_kinds": ["email"],
+                                "adapter_profiles": ["email-safe"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            runner = ToolboxJobRunner(cwd=tmpdir, auth="test-auth")
+            server = create_toolbox_server(host="127.0.0.1", port=0, runner=runner)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base_url = f"http://{server.server_address[0]}:{server.server_address[1]}"
+            try:
+                profiles = self._request_json(
+                    f"{base_url}/api/profiles?profile_file=profiles/case_profiles.json",
+                    auth="test-auth",
+                )
+                profile_names = {profile["name"] for profile in profiles["profiles"]}
+                self.assertEqual(profiles["custom_count"], 1)
+                self.assertIn("case-email-safe", profile_names)
+
+                data = self._request_json(
+                    f"{base_url}/api/search",
+                    method="POST",
+                    auth="test-auth",
+                    payload={
+                        "target_kind": "email",
+                        "target_value": "person@example.com",
+                        "profile": "case-email-safe",
+                        "profile_file": "profiles/case_profiles.json",
+                        "execute_adapters": False,
+                        "format": "json",
+                    },
+                )
+                job = self._wait_for_job(base_url, data["job"]["id"])
+
+                self.assertEqual(job["status"], "completed", job)
+                self.assertIn("--profile-file", job["command_preview"])
+                self.assertIn("case-email-safe", job["stdout"])
+
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    self._request_json(
+                        f"{base_url}/api/profiles?profile_file=../outside.json",
+                        auth="test-auth",
+                    )
+                self.assertEqual(raised.exception.code, 400)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_case_endpoints_reject_db_outside_working_directory(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = ToolboxJobRunner(cwd=tmpdir, auth="test-auth")

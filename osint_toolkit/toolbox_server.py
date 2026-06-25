@@ -16,12 +16,11 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from .case_store import CaseStore, CaseStoreError
 from .graph import analyze_case_graph, analyze_cross_case_network, analyze_cross_case_path
-from .search import TARGET_KINDS, list_search_profiles
+from .search import TARGET_KINDS, SearchProfile, find_search_profile, list_search_profiles, load_search_profiles
 from .toolbox import render_toolbox_html, write_toolbox
 
 
 VALID_TARGET_KINDS = ("auto", *TARGET_KINDS)
-VALID_PROFILES = ("auto", *(profile.name for profile in list_search_profiles()))
 VALID_REGIONS = ("all", "ru", "ua")
 VALID_FORMATS = ("markdown", "json")
 
@@ -110,6 +109,15 @@ class ToolboxJobRunner:
         if not job.report_path.exists():
             raise ValueError("Report is not available yet.")
         return job.report_path.read_text(encoding="utf-8", errors="replace")
+
+    def list_profiles(self, profile_file: str = "") -> dict[str, object]:
+        custom_profiles, profile_file_path = self._custom_profiles(profile_file)
+        profiles = list_search_profiles(custom_profiles)
+        return {
+            "profile_file": str(profile_file_path) if profile_file_path else "",
+            "custom_count": len(custom_profiles),
+            "profiles": [profile.to_dict() for profile in profiles],
+        }
 
     def list_cases(
         self,
@@ -288,7 +296,10 @@ class ToolboxJobRunner:
         target_value = str(payload.get("target_value", "")).strip()
         if not target_value:
             raise ValueError("target_value is required.")
-        profile = _choice(payload, "profile", VALID_PROFILES, default="auto")
+        profile = str(payload.get("profile", "auto") or "auto").strip() or "auto"
+        custom_profiles, profile_file_path = self._custom_profiles(str(payload.get("profile_file", "")))
+        if profile != "auto":
+            find_search_profile(profile, custom_profiles=custom_profiles)
         region = _choice(payload, "region", VALID_REGIONS, default="all")
         output_format = _choice(payload, "format", VALID_FORMATS, default="markdown")
         execute_adapters = bool(payload.get("execute_adapters", False))
@@ -327,6 +338,8 @@ class ToolboxJobRunner:
             "--derived-limit",
             str(derived_limit),
         ]
+        if profile_file_path:
+            command.extend(["--profile-file", str(profile_file_path)])
         if include_restricted:
             command.append("--include-restricted")
 
@@ -354,6 +367,24 @@ class ToolboxJobRunner:
         if not resolved.is_relative_to(self.cwd):
             raise ValueError(f"Backend output path must stay inside {self.cwd}: {value or default}")
         resolved.parent.mkdir(parents=True, exist_ok=True)
+        return resolved
+
+    def _custom_profiles(self, value: str) -> tuple[tuple[SearchProfile, ...], Path | None]:
+        normalized = value.strip()
+        if not normalized:
+            return (), None
+        profile_file_path = self._input_file_path(normalized, label="Profile file")
+        return load_search_profiles(profile_file_path), profile_file_path
+
+    def _input_file_path(self, value: str, *, label: str) -> Path:
+        path = Path(value)
+        if not path.is_absolute():
+            path = self.cwd / path
+        resolved = path.resolve()
+        if not resolved.is_relative_to(self.cwd):
+            raise ValueError(f"{label} path must stay inside {self.cwd}: {value}")
+        if not resolved.is_file():
+            raise ValueError(f"{label} not found: {value}")
         return resolved
 
     def _case_db_path(self, value: str) -> Path:
@@ -436,6 +467,15 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
                 self._require_token()
                 jobs = [job.to_dict() for job in self._runner().list_jobs()]
                 self._send_json(200, {"jobs": jobs})
+                return
+            if path == "/api/profiles":
+                self._require_token()
+                self._send_json(
+                    200,
+                    self._runner().list_profiles(
+                        _query_string(query, "profile_file", default=""),
+                    ),
+                )
                 return
             if path == "/api/cases":
                 self._require_token()

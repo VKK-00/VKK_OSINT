@@ -49,6 +49,8 @@ TOOLBOX_INPUTS: tuple[ToolboxInput, ...] = (
     ToolboxInput("social", "Соцсеть RU/UA", "vk:exampleuser или https://ok.ru/profile/..."),
     ToolboxInput("ruua", "RU/UA seed", "all"),
     ToolboxInput("region", "Регион", "ua"),
+    ToolboxInput("profile_file", "Profile file", r"profiles\case_profiles.json"),
+    ToolboxInput("custom_profile", "Custom profile", "case-email-safe"),
     ToolboxInput("adapter_limit", "Лимит adapters", "3", "number"),
     ToolboxInput("case_db", "SQLite case DB", "cases.sqlite"),
     ToolboxInput("case_id", "Case ID", "case-001"),
@@ -610,6 +612,13 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     badges=("profiles", "adapters"),
                 ),
                 ToolboxCommand(
+                    "Search profiles from file",
+                    "Показывает built-in и custom unified search profiles из JSON-файла.",
+                    "python -m osint_toolkit profiles list --profile-file {profile_file} --format markdown",
+                    required_inputs=("profile_file",),
+                    badges=("profiles", "custom"),
+                ),
+                ToolboxCommand(
                     "Adapter doctor",
                     "Проверяет, какие upstream CLI реально доступны локально.",
                     "python -m osint_toolkit doctor --format markdown",
@@ -1076,6 +1085,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
           </div>
           <div class="copy-row">
             <button type="button" id="runUnifiedSearch">Запустить search</button>
+            <button type="button" class="secondary" id="listProfiles">Профили</button>
             <button type="button" class="secondary" id="refreshJobs">Обновить jobs</button>
           </div>
           <div id="backendJobs" class="backend-jobs"></div>
@@ -1204,7 +1214,8 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       return {{
         target_kind: document.getElementById("backendTargetKind").value,
         target_value: document.getElementById("backendTargetValue").value.trim(),
-        profile: document.getElementById("backendProfile").value,
+        profile: readValue("custom_profile") || document.getElementById("backendProfile").value,
+        profile_file: readValue("profile_file"),
         region: document.getElementById("backendRegion").value,
         execute_adapters: execute,
         format: execute ? "markdown" : "markdown",
@@ -1286,6 +1297,14 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
         headers: {{"X-OSINT-Token": backendConfig.auth}}
       }});
       setBackendLog(await response.text());
+    }}
+
+    async function loadBackendProfiles() {{
+      const params = {{}};
+      const profileFile = readValue("profile_file");
+      if (profileFile) params.profile_file = profileFile;
+      const data = await fetchCaseJson("/api/profiles", params);
+      setBackendLog(JSON.stringify(data, null, 2));
     }}
 
     function caseUrl(path, params) {{
@@ -1790,6 +1809,10 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       refreshJobs().catch((error) => setBackendLog(String(error)));
     }});
 
+    document.getElementById("listProfiles").addEventListener("click", () => {{
+      loadBackendProfiles().catch((error) => setBackendLog(String(error)));
+    }});
+
     document.addEventListener("click", (event) => {{
       const button = event.target.closest("[data-report-job]");
       if (!button) return;
@@ -1854,6 +1877,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       refreshJobs().catch(() => {{}});
     }} else {{
       document.getElementById("runUnifiedSearch").disabled = true;
+      document.getElementById("listProfiles").disabled = true;
       document.getElementById("refreshJobs").disabled = true;
       document.getElementById("loadCases").disabled = true;
       document.getElementById("showCase").disabled = true;
