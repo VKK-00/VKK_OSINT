@@ -276,6 +276,8 @@ def _subdomain_finding(
     metadata = {
         "repository": repository,
         "parser": parser,
+        "target_kind": target.kind,
+        "target_value": target.value,
         "subdomain": normalized,
     }
     if root_domain:
@@ -1525,7 +1527,7 @@ def _argus_url_finding(
     if key in seen:
         return None
     seen.add(key)
-    metadata = _argus_metadata(repository, module)
+    metadata = _argus_metadata(repository, target, module)
     domain = (urlparse(value).hostname or "").lower()
     if domain:
         metadata["domain"] = domain
@@ -1566,7 +1568,7 @@ def _argus_observed_finding(
     if key in seen:
         return None
     seen.add(key)
-    metadata = _argus_metadata(repository, module)
+    metadata = _argus_metadata(repository, target, module)
     metadata[metadata_key] = normalized
     if metadata_key == "email":
         metadata["domain"] = normalized.rsplit("@", 1)[1].lower()
@@ -1581,10 +1583,12 @@ def _argus_observed_finding(
     )
 
 
-def _argus_metadata(repository: str, module: str) -> dict[str, str]:
+def _argus_metadata(repository: str, target: ScanTarget, module: str) -> dict[str, str]:
     metadata = {
         "repository": repository,
         "parser": "argus",
+        "target_kind": target.kind,
+        "target_value": target.value,
     }
     if module:
         metadata["argus_module"] = module

@@ -407,7 +407,7 @@ Profile fields:
 
 Приоритет 1:
 
-- Argus per-target parser fixtures.
+- Закрыт для текущего parser scope Stage 1.
 
 Приоритет 2:
 
@@ -580,6 +580,7 @@ Notes:
 33. Done: add ExifTool JSON local image parser, structured metadata findings and derived seed extraction for GPS/camera/date/contact clues.
 34. Done: add Tesseract OCR text parser with structured OCR metadata and derived seed extraction.
 35. Done: add zbarimg raw payload parser for QR/barcode clues and derived seed extraction.
+36. Done: add Argus per-target parser fixtures and target provenance metadata for parsed Argus URL/email/phone/subdomain/IP/port/technology signals.
 
 ## Definition of done
 

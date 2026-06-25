@@ -296,7 +296,7 @@ Gap:
 - executable adapter target для `smicallef/spiderfoot`: `<SPIDERFOOT_PYTHON|python> <SPIDERFOOT_SF_PATH> -s <target> -u passive -o json -q`;
 - parser для SpiderFoot JSON/stdout events: `INTERNET_NAME`, `DOMAIN_NAME`, `EMAILADDR`, `WEBLINK`, `IP_ADDRESS`, `TCP_PORT_OPEN`, `PHONE_NUMBER`, `HUMAN_NAME`, `TECHNOLOGY`, ASN и vulnerability/finding events нормализуются в `Finding`/entities/graph signals; покрыты examples для domain, email, phone и username target modes с `target_kind`/`target_value` provenance metadata;
 - executable interactive adapter target для `jasonxtn/argus`: `argus` со stdin-сценарием `set target <target>`, `runall infra`, `viewout`, `exit`;
-- parser для Argus stdout/cache-like output: URL, email, phone, host/subdomain, IP, port и technology signals нормализуются в `Finding`/entities/graph signals;
+- parser для Argus stdout/cache-like output: URL, email, phone, host/subdomain, IP, port и technology signals нормализуются в `Finding`/entities/graph signals; покрыты examples для domain, email, phone и username target modes с `target_kind`/`target_value` provenance metadata;
 - adapter profile `domain-recon` для Subfinder/httpx/passive Amass/theHarvester/BBOT/SpiderFoot.
 - adapter profile `broad-recon` для BBOT/SpiderFoot/Argus как более широких recon suites.
 

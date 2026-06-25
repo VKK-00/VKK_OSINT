@@ -1001,6 +1001,62 @@ class AdapterParserTests(unittest.TestCase):
         self.assertIn(("technology", "nginx"), entities)
         self.assertIn(("phone", "+380441234567"), entities)
 
+    def test_parse_argus_per_target_examples(self):
+        cases = (
+            (
+                ScanTarget(kind="email", value="person@example.com"),
+                """
+                {"module":"Email Intel","email":"person@example.com","host":"mail.example.com","ip":"93.184.216.34"}
+                Linked Profile: https://social.example/person
+                Open Ports Scan: 443/tcp open
+                Technology Stack: nginx
+                """,
+                {("email", "person@example.com"), ("subdomain", "mail.example.com"), ("ip", "93.184.216.34"), ("url", "https://social.example/person"), ("port", "443"), ("technology", "nginx")},
+            ),
+            (
+                ScanTarget(kind="phone", value="+380441234567"),
+                """
+                Contact: +380441234567
+                Owner Email: owner@example.com
+                Portal: https://phone.example/profile
+                IP Info: 93.184.216.35
+                """,
+                {("phone", "+380441234567"), ("email", "owner@example.com"), ("url", "https://phone.example/profile"), ("ip", "93.184.216.35")},
+            ),
+            (
+                ScanTarget(kind="username", value="example_user"),
+                """
+                Associated Hosts: profile.example.com
+                Profile URL: https://profiles.example/example_user
+                Email Harvesting: example_user@example.com
+                Server Info: Apache
+                """,
+                {("subdomain", "profile.example.com"), ("url", "https://profiles.example/example_user"), ("email", "example_user@example.com"), ("technology", "Apache")},
+            ),
+            (
+                ScanTarget(kind="domain", value="example.com"),
+                """
+                [{"module":"Infra","url":"https://api.example.com/login","subdomain":"api.example.com","port":8443,"technology":["nginx","waf"]}]
+                """,
+                {("url", "https://api.example.com/login"), ("subdomain", "api.example.com"), ("port", "8443"), ("technology", "nginx, waf")},
+            ),
+        )
+
+        for target, output, expected_entities in cases:
+            with self.subTest(target=target):
+                findings = parse_adapter_output("jasonxtn/argus", target, output)
+                metadata = [finding.metadata for finding in findings]
+                self.assertTrue(
+                    any(
+                        item.get("parser") == "argus"
+                        and item.get("target_kind") == target.kind
+                        and item.get("target_value") == target.value
+                        for item in metadata
+                    )
+                )
+                entities = {(entity.kind, entity.value) for entity in entities_from_findings(findings)}
+                self.assertTrue(expected_entities.issubset(entities))
+
     def test_parse_social_analyzer_json_profiles(self):
         findings = parse_adapter_output(
             "qeeqbox/social-analyzer",
