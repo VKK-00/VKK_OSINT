@@ -6,7 +6,7 @@ from osint_toolkit.adapter_parsers import parse_adapter_output
 from osint_toolkit.case_store import CaseStore
 from osint_toolkit.entities import entities_from_findings, entities_from_targets, merge_entities
 from osint_toolkit.engine import Finding, ScanTarget
-from osint_toolkit.graph import analyze_case_graph, graph_edges_from_case
+from osint_toolkit.graph import analyze_case_graph, analyze_cross_case_path, graph_edges_from_case
 from osint_toolkit.investigation import run_investigation
 
 
@@ -52,6 +52,67 @@ class GraphAnalysisTests(unittest.TestCase):
             analyze_case_graph(payload, focus_kind="email")
         with self.assertRaises(ValueError):
             analyze_case_graph(payload, limit=0)
+
+    def test_analyze_cross_case_path_finds_weighted_path_across_cases(self):
+        first = run_investigation(
+            (ScanTarget(kind="email", value="person@example.com"),),
+            title="first case",
+        )
+        second = run_investigation(
+            (
+                ScanTarget(kind="domain", value="example.com"),
+                ScanTarget(kind="url", value="https://example.com/profile"),
+            ),
+            title="second case",
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = CaseStore(Path(tmpdir) / "cases.sqlite")
+            store.save(first, case_id="case-1")
+            store.save(second, case_id="case-2")
+            payloads = store.load_cases()
+
+        analysis = analyze_cross_case_path(
+            payloads,
+            source_kind="email",
+            source_value="person@example.com",
+            target_kind="url",
+            target_value="https://example.com/profile",
+        )
+
+        self.assertTrue(analysis.found)
+        self.assertEqual(analysis.hop_count, 2)
+        self.assertEqual([step.case_id for step in analysis.steps], ["case-1", "case-2"])
+        self.assertEqual([step.direction for step in analysis.steps], ["out", "in"])
+        self.assertEqual(analysis.steps[0].relation, "email_domain")
+        self.assertEqual(analysis.steps[1].relation, "url_host")
+
+    def test_analyze_cross_case_path_reports_missing_path_and_rejects_invalid_args(self):
+        payload = {
+            "case": {"case_id": "case-1"},
+            "entities": [{"kind": "email", "value": "person@example.com"}],
+            "edges": [],
+        }
+        analysis = analyze_cross_case_path(
+            (payload,),
+            source_kind="email",
+            source_value="person@example.com",
+            target_kind="domain",
+            target_value="example.com",
+        )
+
+        self.assertFalse(analysis.found)
+        self.assertEqual(analysis.hop_count, 0)
+        self.assertEqual(analysis.steps, ())
+        with self.assertRaises(ValueError):
+            analyze_cross_case_path(
+                (payload,),
+                source_kind="email",
+                source_value="person@example.com",
+                target_kind="domain",
+                target_value="example.com",
+                max_depth=0,
+            )
 
     def test_phoneinfoga_metadata_edges(self):
         target = ScanTarget(kind="phone", value="+380441234567")

@@ -26,9 +26,12 @@ class CaseStoreTests(unittest.TestCase):
             )
             records = store.list_cases()
             payload = store.load_case(case_id)
+            payloads = store.load_cases()
 
         self.assertEqual(case_id, "case-1")
         self.assertEqual(records[0].case_id, "case-1")
+        self.assertEqual(len(payloads), 1)
+        self.assertEqual(payloads[0]["case"]["case_id"], "case-1")
         self.assertEqual(records[0].title, "stored case")
         self.assertEqual(records[0].target_count, 2)
         self.assertGreater(records[0].entity_count, 0)

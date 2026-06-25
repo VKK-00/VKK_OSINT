@@ -55,6 +55,8 @@ TOOLBOX_INPUTS: tuple[ToolboxInput, ...] = (
     ToolboxInput("scope_note", "Scope note", "internal validation scope"),
     ToolboxInput("entity_kind", "Entity kind", "domain"),
     ToolboxInput("entity_value", "Entity value", "example.com"),
+    ToolboxInput("target_entity_kind", "Target entity kind", "url"),
+    ToolboxInput("target_entity_value", "Target entity value", "https://example.com/profile"),
     ToolboxInput("out", "Файл отчета", "reports/case.md"),
 )
 
@@ -538,6 +540,18 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     ),
                     required_inputs=("case_db",),
                     badges=("index", "entities"),
+                ),
+                ToolboxCommand(
+                    "Cross-case path",
+                    "Ищет weighted shortest path между двумя сущностями по сохранённым case graphs.",
+                    (
+                        "python -m osint_toolkit case-path --case-db {case_db} "
+                        "--from-kind {entity_kind} --from-value {entity_value} "
+                        "--to-kind {target_entity_kind} --to-value {target_entity_value} "
+                        "--format markdown"
+                    ),
+                    required_inputs=("case_db", "entity_kind", "entity_value", "target_entity_kind", "target_entity_value"),
+                    badges=("path", "weighted"),
                 ),
             ),
         ),
@@ -1038,6 +1052,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
             <button type="button" class="secondary" id="showCase">Case detail</button>
             <button type="button" class="secondary" id="showCaseGraph">Graph</button>
             <button type="button" class="secondary" id="showCaseIndex">Index</button>
+            <button type="button" class="secondary" id="showCasePath">Path</button>
           </div>
           <div id="caseList" class="case-list"></div>
           <div id="caseGraphSummary" class="case-graph-summary"></div>
@@ -1511,6 +1526,39 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       }}
     }}
 
+    function renderCasePath(path) {{
+      const summary = document.getElementById("caseGraphSummary");
+      const legend = document.getElementById("caseGraphLegend");
+      summary.innerHTML = "";
+      legend.innerHTML = "";
+      const pills = [
+        "path " + (path.found ? "found" : "not found"),
+        "hops " + (path.hop_count || 0),
+        "weight " + (path.total_weight ?? "n/a"),
+        "cases " + (path.case_count || 0)
+      ];
+      for (const text of pills) {{
+        const item = document.createElement("span");
+        item.className = "graph-pill";
+        item.textContent = text;
+        summary.appendChild(item);
+      }}
+      const steps = Array.isArray(path.steps) ? path.steps : [];
+      if (!steps.length) {{
+        const row = document.createElement("div");
+        row.textContent = "No path steps.";
+        legend.appendChild(row);
+        return;
+      }}
+      for (const step of steps) {{
+        const row = document.createElement("div");
+        const from = `${{step.from?.kind || ""}}:${{step.from?.value || ""}}`;
+        const to = `${{step.to?.kind || ""}}:${{step.to?.value || ""}}`;
+        row.textContent = `${{step.case_id}} · ${{from}} --${{step.relation}}/${{step.direction}}--> ${{to}}`;
+        legend.appendChild(row);
+      }}
+    }}
+
     async function loadCases() {{
       const data = await fetchCaseJson("/api/cases", {{
         case_db: caseDbValue(),
@@ -1570,6 +1618,27 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       setCaseLog(JSON.stringify(data, null, 2));
     }}
 
+    async function showCasePath() {{
+      const sourceKind = readValue("entity_kind");
+      const sourceValue = readValue("entity_value");
+      const targetKind = readValue("target_entity_kind");
+      const targetValue = readValue("target_entity_value");
+      if (!sourceKind || !sourceValue || !targetKind || !targetValue) {{
+        throw new Error("Укажи source Entity kind/value и target Entity kind/value.");
+      }}
+      const data = await fetchCaseJson("/api/case-path", {{
+        case_db: caseDbValue(),
+        from_kind: sourceKind,
+        from_value: sourceValue,
+        to_kind: targetKind,
+        to_value: targetValue,
+        case_limit: "100",
+        max_depth: "6"
+      }});
+      renderCasePath(data);
+      setCaseLog(JSON.stringify(data, null, 2));
+    }}
+
     document.getElementById("runUnifiedSearch").addEventListener("click", () => {{
       runUnifiedSearch().catch((error) => setBackendLog(String(error)));
     }});
@@ -1598,6 +1667,10 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
 
     document.getElementById("showCaseIndex").addEventListener("click", () => {{
       showCaseIndex().catch((error) => setCaseLog(String(error)));
+    }});
+
+    document.getElementById("showCasePath").addEventListener("click", () => {{
+      showCasePath().catch((error) => setCaseLog(String(error)));
     }});
 
     document.addEventListener("click", (event) => {{
@@ -1631,6 +1704,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       document.getElementById("showCase").disabled = true;
       document.getElementById("showCaseGraph").disabled = true;
       document.getElementById("showCaseIndex").disabled = true;
+      document.getElementById("showCasePath").disabled = true;
     }}
   </script>
 </body>

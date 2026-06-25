@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from heapq import heappop, heappush
 import re
 from typing import Iterable, Mapping
 from urllib.parse import urlparse
@@ -89,6 +90,62 @@ class GraphAnalysis:
 
 
 @dataclass(frozen=True)
+class CrossCasePathStep:
+    case_id: str
+    from_kind: str
+    from_value: str
+    relation: str
+    to_kind: str
+    to_value: str
+    direction: str
+    confidence: str
+    source: str
+    weight: float
+    note: str = ""
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "case_id": self.case_id,
+            "from": {"kind": self.from_kind, "value": self.from_value},
+            "relation": self.relation,
+            "to": {"kind": self.to_kind, "value": self.to_value},
+            "direction": self.direction,
+            "confidence": self.confidence,
+            "source": self.source,
+            "weight": self.weight,
+            "note": self.note,
+        }
+
+
+@dataclass(frozen=True)
+class CrossCasePathAnalysis:
+    source: GraphNode
+    target: GraphNode
+    found: bool
+    total_weight: float | None
+    hop_count: int
+    case_count: int
+    node_count: int
+    edge_count: int
+    max_depth: int
+    steps: tuple[CrossCasePathStep, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "source": self.source.to_dict(),
+            "target": self.target.to_dict(),
+            "found": self.found,
+            "total_weight": self.total_weight,
+            "hop_count": self.hop_count,
+            "case_count": self.case_count,
+            "node_count": self.node_count,
+            "edge_count": self.edge_count,
+            "max_depth": self.max_depth,
+            "steps": [step.to_dict() for step in self.steps],
+        }
+
+
+@dataclass(frozen=True)
 class GraphEdge:
     source_kind: str
     source_value: str
@@ -119,6 +176,16 @@ class GraphEdge:
             "confidence": self.confidence,
             "note": self.note,
         }
+
+
+@dataclass(frozen=True)
+class _TraversalEdge:
+    from_key: tuple[str, str]
+    to_key: tuple[str, str]
+    edge: GraphEdge
+    case_id: str
+    direction: str
+    weight: float
 
 
 def analyze_case_graph(
@@ -168,6 +235,150 @@ def analyze_case_graph(
         top_nodes=top_nodes,
         focus=focus,
         neighbors=neighbors,
+    )
+
+
+def analyze_cross_case_path(
+    payloads: Iterable[Mapping[str, object]],
+    *,
+    source_kind: str,
+    source_value: str,
+    target_kind: str,
+    target_value: str,
+    max_depth: int = 6,
+) -> CrossCasePathAnalysis:
+    if max_depth < 1:
+        raise ValueError("max_depth must be greater than zero.")
+    normalized_source_kind = source_kind.strip()
+    normalized_source_value = source_value.strip()
+    normalized_target_kind = target_kind.strip()
+    normalized_target_value = target_value.strip()
+    if not normalized_source_kind or not normalized_source_value:
+        raise ValueError("source_kind and source_value are required.")
+    if not normalized_target_kind or not normalized_target_value:
+        raise ValueError("target_kind and target_value are required.")
+
+    source_key = _node_key(normalized_source_kind, normalized_source_value)
+    target_key = _node_key(normalized_target_kind, normalized_target_value)
+    nodes: dict[tuple[str, str], GraphNode] = {}
+    adjacency: dict[tuple[str, str], list[_TraversalEdge]] = {}
+    case_count = 0
+    edge_count = 0
+
+    for payload in payloads:
+        case_count += 1
+        case_id = _case_id(payload)
+        edges = tuple(_edge_from_mapping(row) for row in _payload_rows(payload, "edges"))
+        for node in _nodes_from_payload(payload, edges):
+            nodes.setdefault(node.key(), node)
+        for edge in edges:
+            edge_count += 1
+            source = _node_key(edge.source_kind, edge.source_value)
+            target = _node_key(edge.target_kind, edge.target_value)
+            nodes.setdefault(source, GraphNode(edge.source_kind, edge.source_value))
+            nodes.setdefault(target, GraphNode(edge.target_kind, edge.target_value))
+            weight = _path_edge_weight(edge.confidence)
+            adjacency.setdefault(source, []).append(
+                _TraversalEdge(source, target, edge, case_id, "out", weight)
+            )
+            adjacency.setdefault(target, []).append(
+                _TraversalEdge(target, source, edge, case_id, "in", weight)
+            )
+
+    source_node = nodes.get(source_key, GraphNode(normalized_source_kind, normalized_source_value))
+    target_node = nodes.get(target_key, GraphNode(normalized_target_kind, normalized_target_value))
+    if source_key == target_key:
+        return CrossCasePathAnalysis(
+            source=source_node,
+            target=target_node,
+            found=True,
+            total_weight=0.0,
+            hop_count=0,
+            case_count=case_count,
+            node_count=len(nodes),
+            edge_count=edge_count,
+            max_depth=max_depth,
+        )
+
+    distances: dict[tuple[str, str], float] = {source_key: 0.0}
+    depths: dict[tuple[str, str], int] = {source_key: 0}
+    previous: dict[tuple[str, str], tuple[tuple[str, str], _TraversalEdge]] = {}
+    heap: list[tuple[float, int, str, str, tuple[str, str]]] = [
+        (0.0, 0, source_key[0], source_key[1], source_key)
+    ]
+
+    while heap:
+        distance, depth, _, _, current = heappop(heap)
+        if distance != distances.get(current) or depth != depths.get(current):
+            continue
+        if current == target_key:
+            break
+        if depth >= max_depth:
+            continue
+        for traversal in sorted(
+            adjacency.get(current, ()),
+            key=lambda item: (
+                item.weight,
+                item.to_key[0],
+                item.to_key[1],
+                item.case_id,
+                item.edge.relation,
+            ),
+        ):
+            next_depth = depth + 1
+            next_distance = distance + traversal.weight
+            best_distance = distances.get(traversal.to_key)
+            best_depth = depths.get(traversal.to_key)
+            if (
+                best_distance is None
+                or next_distance < best_distance
+                or (next_distance == best_distance and (best_depth is None or next_depth < best_depth))
+            ):
+                distances[traversal.to_key] = next_distance
+                depths[traversal.to_key] = next_depth
+                previous[traversal.to_key] = (current, traversal)
+                heappush(
+                    heap,
+                    (
+                        next_distance,
+                        next_depth,
+                        traversal.to_key[0],
+                        traversal.to_key[1],
+                        traversal.to_key,
+                    ),
+                )
+
+    if target_key not in distances:
+        return CrossCasePathAnalysis(
+            source=source_node,
+            target=target_node,
+            found=False,
+            total_weight=None,
+            hop_count=0,
+            case_count=case_count,
+            node_count=len(nodes),
+            edge_count=edge_count,
+            max_depth=max_depth,
+        )
+
+    steps: list[CrossCasePathStep] = []
+    current = target_key
+    while current != source_key:
+        prior, traversal = previous[current]
+        steps.append(_path_step_from_traversal(traversal, prior, current, nodes))
+        current = prior
+    steps.reverse()
+    return CrossCasePathAnalysis(
+        source=source_node,
+        target=target_node,
+        found=True,
+        total_weight=distances[target_key],
+        hop_count=len(steps),
+        case_count=case_count,
+        node_count=len(nodes),
+        edge_count=edge_count,
+        max_depth=max_depth,
+        steps=tuple(steps),
     )
 
 
@@ -462,6 +673,46 @@ def _confidence_rank(confidence: str) -> int:
         "unknown": 0,
     }
     return ranks.get(confidence, 0)
+
+
+def _node_key(kind: str, value: str) -> tuple[str, str]:
+    return kind.strip(), value.strip().lower()
+
+
+def _path_edge_weight(confidence: str) -> float:
+    weights = {
+        "provided": 1.0,
+        "high": 1.0,
+        "curated": 1.5,
+        "medium": 2.0,
+        "low": 3.0,
+        "not_checked": 4.0,
+        "unknown": 4.0,
+    }
+    return weights.get(confidence, 4.0)
+
+
+def _path_step_from_traversal(
+    traversal: _TraversalEdge,
+    from_key: tuple[str, str],
+    to_key: tuple[str, str],
+    nodes: Mapping[tuple[str, str], GraphNode],
+) -> CrossCasePathStep:
+    from_node = nodes.get(from_key, GraphNode(from_key[0], from_key[1]))
+    to_node = nodes.get(to_key, GraphNode(to_key[0], to_key[1]))
+    return CrossCasePathStep(
+        case_id=traversal.case_id,
+        from_kind=from_node.kind,
+        from_value=from_node.value,
+        relation=traversal.edge.relation,
+        to_kind=to_node.kind,
+        to_value=to_node.value,
+        direction=traversal.direction,
+        confidence=traversal.edge.confidence,
+        source=traversal.edge.source,
+        weight=traversal.weight,
+        note=traversal.edge.note,
+    )
 
 
 def _case_id(payload: Mapping[str, object]) -> str:

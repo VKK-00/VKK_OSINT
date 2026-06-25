@@ -565,6 +565,7 @@ Notes:
 12. Done: add `--scope-note` for `search` and `investigate` so saved case metadata records the operator's scope/context note.
 13. Done: add bounded SVG case graph visualization in served toolbox Case Browser and pass `scope_note` from the structured backend payload.
 14. Done: make served toolbox graph nodes clickable/keyboard-focusable so one entity can drive focus-neighbor analysis from the same window.
+15. Done: add cross-case weighted path analysis through `case-path`, `/api/case-path` and toolbox Path view.
 
 ## Definition of done
 

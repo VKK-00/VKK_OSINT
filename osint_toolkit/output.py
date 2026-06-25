@@ -9,7 +9,7 @@ from .adapter_setup import AdapterSetup
 from .adapters import AdapterProfile, AdapterSpec
 from .case_store import CaseEntityHit, CaseEntityRecord, CaseRecord
 from .engine import Finding
-from .graph import GraphAnalysis
+from .graph import CrossCasePathAnalysis, GraphAnalysis
 from .models import OsintProject
 from .search import SearchPlan, SearchProfile
 
@@ -656,6 +656,89 @@ def format_case_graph_analysis(analysis: GraphAnalysis, *, output_format: str = 
                 ]
             )
         return "\n".join(sections)
+
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
+def format_cross_case_path_analysis(
+    analysis: CrossCasePathAnalysis,
+    *,
+    output_format: str = "table",
+) -> str:
+    if output_format == "json":
+        return json.dumps(analysis.to_dict(), ensure_ascii=False, indent=2)
+
+    source = f"{analysis.source.kind}:{analysis.source.value}"
+    target = f"{analysis.target.kind}:{analysis.target.value}"
+    if output_format == "markdown":
+        lines = [
+            f"# Cross-Case Path: `{_escape_md(source)}` -> `{_escape_md(target)}`",
+            "",
+            f"- Found: {str(analysis.found).lower()}",
+            f"- Total weight: {analysis.total_weight if analysis.total_weight is not None else 'n/a'}",
+            f"- Hops: {analysis.hop_count}",
+            f"- Cases loaded: {analysis.case_count}",
+            f"- Nodes: {analysis.node_count}",
+            f"- Edges: {analysis.edge_count}",
+            f"- Max depth: {analysis.max_depth}",
+            "",
+            "## Steps",
+            "",
+        ]
+        if not analysis.steps:
+            lines.append("(none)")
+            return "\n".join(lines)
+        lines.extend(
+            [
+                "| Case ID | From | Relation | To | Direction | Confidence | Weight | Source |",
+                "|---|---|---|---|---|---|---:|---|",
+            ]
+        )
+        for step in analysis.steps:
+            lines.append(
+                f"| {_escape_md(step.case_id)} | {_escape_md(step.from_kind + ':' + step.from_value)} | "
+                f"{_escape_md(step.relation)} | {_escape_md(step.to_kind + ':' + step.to_value)} | "
+                f"{step.direction} | {step.confidence} | {step.weight:g} | {_escape_md(step.source)} |"
+            )
+        return "\n".join(lines)
+
+    if output_format == "table":
+        header = [
+            f"Source:       {source}",
+            f"Target:       {target}",
+            f"Found:        {str(analysis.found).lower()}",
+            f"Total weight: {analysis.total_weight if analysis.total_weight is not None else 'n/a'}",
+            f"Hops:         {analysis.hop_count}",
+            f"Cases loaded: {analysis.case_count}",
+            f"Nodes:        {analysis.node_count}",
+            f"Edges:        {analysis.edge_count}",
+            f"Max depth:    {analysis.max_depth}",
+        ]
+        if not analysis.steps:
+            return "\n".join((*header, "", "Steps:", "(none)"))
+        rows = [
+            (
+                step.case_id,
+                _short(f"{step.from_kind}:{step.from_value}", 36),
+                step.relation,
+                _short(f"{step.to_kind}:{step.to_value}", 36),
+                step.direction,
+                step.confidence,
+                f"{step.weight:g}",
+            )
+            for step in analysis.steps
+        ]
+        return "\n".join(
+            (
+                *header,
+                "",
+                "Steps:",
+                _format_table(
+                    ("Case ID", "From", "Relation", "To", "Dir", "Confidence", "Weight"),
+                    rows,
+                ),
+            )
+        )
 
     raise ValueError(f"Unsupported output format: {output_format}")
 

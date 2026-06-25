@@ -51,6 +51,9 @@ class ToolboxTests(unittest.TestCase):
         self.assertIn("/api/search", html)
         self.assertIn("/api/cases", html)
         self.assertIn("/api/case-index", html)
+        self.assertIn("/api/case-path", html)
+        self.assertIn("case-path", html)
+        self.assertIn("showCasePath", html)
         self.assertIn("toolbox --serve --open", html)
 
     def test_rendered_html_can_embed_backend_connection(self):

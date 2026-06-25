@@ -623,6 +623,8 @@ class CliTests(unittest.TestCase):
                 "second case",
                 "--domain",
                 "example.com",
+                "--url",
+                "https://example.com/profile",
                 "--case-db",
                 str(db_path),
                 "--case-id",
@@ -663,6 +665,27 @@ class CliTests(unittest.TestCase):
             self.assertEqual(search_result.returncode, 0, search_result.stderr)
             hits = json.loads(search_result.stdout)
             self.assertEqual({hit["case_id"] for hit in hits}, {"case-1", "case-2"})
+
+            path_result = self.run_cli(
+                "case-path",
+                "--case-db",
+                str(db_path),
+                "--from-kind",
+                "email",
+                "--from-value",
+                "person@example.com",
+                "--to-kind",
+                "url",
+                "--to-value",
+                "https://example.com/profile",
+                "--format",
+                "json",
+            )
+            self.assertEqual(path_result.returncode, 0, path_result.stderr)
+            path_payload = json.loads(path_result.stdout)
+            self.assertTrue(path_payload["found"])
+            self.assertEqual(path_payload["hop_count"], 2)
+            self.assertEqual([step["case_id"] for step in path_payload["steps"]], ["case-1", "case-2"])
 
     def test_brief_command_writes_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:

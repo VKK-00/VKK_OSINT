@@ -98,12 +98,29 @@ class ToolboxServerTests(unittest.TestCase):
                     payload=payload,
                 )
                 self._wait_for_job(base_url, data["job"]["id"])
+                second_payload = {
+                    "target_kind": "url",
+                    "target_value": "https://example.com/profile",
+                    "profile": "web-full",
+                    "execute_adapters": True,
+                    "adapter_limit": 0,
+                    "case_db": "cases.sqlite",
+                    "case_id": "url-1",
+                    "format": "json",
+                }
+                second = self._request_json(
+                    f"{base_url}/api/search",
+                    method="POST",
+                    auth="test-auth",
+                    payload=second_payload,
+                )
+                self._wait_for_job(base_url, second["job"]["id"])
 
                 cases = self._request_json(
                     f"{base_url}/api/cases?case_db=cases.sqlite",
                     auth="test-auth",
                 )
-                self.assertEqual(cases["cases"][0]["case_id"], "email-1")
+                self.assertIn("email-1", {record["case_id"] for record in cases["cases"]})
 
                 case = self._request_json(
                     f"{base_url}/api/cases/email-1?case_db=cases.sqlite",
@@ -126,6 +143,18 @@ class ToolboxServerTests(unittest.TestCase):
                 )
                 values = {record["value"] for record in index["entities"]}
                 self.assertIn("example.com", values)
+
+                path = self._request_json(
+                    (
+                        f"{base_url}/api/case-path?case_db=cases.sqlite"
+                        "&from_kind=email&from_value=person%40example.com"
+                        "&to_kind=url&to_value=https%3A%2F%2Fexample.com%2Fprofile"
+                    ),
+                    auth="test-auth",
+                )
+                self.assertTrue(path["found"])
+                self.assertEqual(path["hop_count"], 2)
+                self.assertEqual([step["case_id"] for step in path["steps"]], ["email-1", "url-1"])
             finally:
                 server.shutdown()
                 server.server_close()

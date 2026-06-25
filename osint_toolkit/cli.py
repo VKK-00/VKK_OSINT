@@ -13,7 +13,7 @@ from .case_store import CaseStore, CaseStoreError
 from .catalog import Catalog, CatalogError
 from .doctor import inspect_adapters
 from .engine import RunConfig, ScanTarget
-from .graph import analyze_case_graph
+from .graph import analyze_case_graph, analyze_cross_case_path
 from .image_runner import render_image_search_execution, run_image_search
 from .investigation import (
     render_investigation_json,
@@ -28,6 +28,7 @@ from .output import (
     format_case_entity_hits,
     format_case_entity_index,
     format_case_graph_analysis,
+    format_cross_case_path_analysis,
     format_case_detail,
     format_cases,
     format_findings,
@@ -294,6 +295,17 @@ def build_parser() -> argparse.ArgumentParser:
     case_index.add_argument("--limit", type=int, default=50)
     case_index.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     case_index.set_defaults(handler=handle_case_index)
+
+    case_path = subparsers.add_parser("case-path", help="Find a weighted path across saved case graphs.")
+    case_path.add_argument("--case-db", required=True, help="SQLite database path.")
+    case_path.add_argument("--from-kind", required=True, help="Source entity kind, for example email.")
+    case_path.add_argument("--from-value", required=True, help="Source entity value, for example person@example.com.")
+    case_path.add_argument("--to-kind", required=True, help="Target entity kind, for example url.")
+    case_path.add_argument("--to-value", required=True, help="Target entity value.")
+    case_path.add_argument("--case-limit", type=int, default=100)
+    case_path.add_argument("--max-depth", type=int, default=6)
+    case_path.add_argument("--format", choices=("table", "markdown", "json"), default="table")
+    case_path.set_defaults(handler=handle_case_path)
 
     return parser
 
@@ -735,6 +747,20 @@ def handle_case_index(args: argparse.Namespace) -> int:
         return 0
     records = store.list_entity_index(kind=args.kind, min_cases=args.min_cases, limit=args.limit)
     print(format_case_entity_index(records, output_format=args.format))
+    return 0
+
+
+def handle_case_path(args: argparse.Namespace) -> int:
+    store = CaseStore(args.case_db)
+    analysis = analyze_cross_case_path(
+        store.load_cases(limit=args.case_limit),
+        source_kind=args.from_kind,
+        source_value=args.from_value,
+        target_kind=args.to_kind,
+        target_value=args.to_value,
+        max_depth=args.max_depth,
+    )
+    print(format_cross_case_path_analysis(analysis, output_format=args.format))
     return 0
 
 

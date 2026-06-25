@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .case_store import CaseStore
-from .graph import analyze_case_graph
+from .graph import analyze_case_graph, analyze_cross_case_path
 from .search import TARGET_KINDS, list_search_profiles
 from .toolbox import render_toolbox_html, write_toolbox
 
@@ -155,6 +155,27 @@ class ToolboxJobRunner:
             return {"hits": [hit.to_dict() for hit in hits]}
         records = store.list_entity_index(kind=kind, min_cases=min_cases, limit=limit)
         return {"entities": [record.to_dict() for record in records]}
+
+    def case_path(
+        self,
+        case_db: str,
+        *,
+        source_kind: str,
+        source_value: str,
+        target_kind: str,
+        target_value: str,
+        case_limit: int = 100,
+        max_depth: int = 6,
+    ) -> dict[str, object]:
+        store = CaseStore(self._case_db_path(case_db))
+        return analyze_cross_case_path(
+            store.load_cases(limit=case_limit),
+            source_kind=source_kind,
+            source_value=source_value,
+            target_kind=target_kind,
+            target_value=target_value,
+            max_depth=max_depth,
+        ).to_dict()
 
     def _run_job(self, job: ToolboxJob) -> None:
         self._set_job(job.id, status="running", started_at=time.time())
@@ -378,6 +399,21 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
                         value=_query_string(query, "value", default=""),
                         min_cases=_query_int(query, "min_cases", default=1, minimum=1, maximum=500),
                         limit=_query_int(query, "limit", default=50, minimum=1, maximum=500),
+                    ),
+                )
+                return
+            if path == "/api/case-path":
+                self._require_token()
+                self._send_json(
+                    200,
+                    self._runner().case_path(
+                        _query_string(query, "case_db", default="cases.sqlite"),
+                        source_kind=_query_string(query, "from_kind", default=""),
+                        source_value=_query_string(query, "from_value", default=""),
+                        target_kind=_query_string(query, "to_kind", default=""),
+                        target_value=_query_string(query, "to_value", default=""),
+                        case_limit=_query_int(query, "case_limit", default=100, minimum=1, maximum=1000),
+                        max_depth=_query_int(query, "max_depth", default=6, minimum=1, maximum=20),
                     ),
                 )
                 return

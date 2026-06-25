@@ -315,6 +315,12 @@ class CaseStore:
             },
         }
 
+    def load_cases(self, *, limit: int = 100) -> tuple[dict[str, object], ...]:
+        if limit < 1:
+            raise CaseStoreError("limit must be greater than zero.")
+        records = self.list_cases(limit=limit)
+        return tuple(self.load_case(record.case_id) for record in records)
+
     def list_entity_index(
         self,
         *,
