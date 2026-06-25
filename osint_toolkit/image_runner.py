@@ -15,6 +15,7 @@ from .engine import Finding, ScanTarget
 from .entities import entities_from_findings, entities_from_targets, merge_entities
 from .graph import graph_edges_from_case
 from .investigation import InvestigationResult, render_investigation_markdown, run_investigation
+from .output import finding_source_summary, format_finding_source_summary
 from .search import LOCAL_TOOLS, SearchPlan, build_search_plan, classify_target, ready_adapter_repositories
 
 
@@ -116,6 +117,7 @@ def render_image_search_execution(
         return json.dumps(
             {
                 "search_plan": plan.to_dict(),
+                "source_summary": list(finding_source_summary(execution.investigation.all_findings())),
                 **execution.to_dict(),
             },
             ensure_ascii=False,
@@ -128,6 +130,10 @@ def render_image_search_execution(
         or "- none"
     )
     adapter_lines = "\n".join(f"- `{repository}`" for repository in execution.executed_adapters) or "- none"
+    source_summary = format_finding_source_summary(
+        execution.investigation.all_findings(),
+        title="Image Sources",
+    )
     return "\n".join(
         [
             "# Search Execution Report: image",
@@ -147,6 +153,8 @@ def render_image_search_execution(
             "## Executed Adapters For Derived Seeds",
             "",
             adapter_lines,
+            "",
+            source_summary,
             "",
             "## Investigation Report",
             "",

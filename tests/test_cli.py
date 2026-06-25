@@ -951,6 +951,9 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(payload["search_plan"]["target"]["kind"], "email")
         self.assertEqual(payload["executed_adapters"], [])
+        self.assertTrue(payload["source_summary"])
+        self.assertIn("source", payload["source_summary"][0])
+        self.assertIn("finding_count", payload["source_summary"][0])
         self.assertEqual(payload["investigation"]["targets"][0]["value"], "person@example.com")
         targets = {(target["kind"], target["value"]) for target in payload["investigation"]["targets"]}
         self.assertIn(("domain", "example.com"), targets)
@@ -1053,6 +1056,8 @@ class CliTests(unittest.TestCase):
 
             content = report_path.read_text(encoding="utf-8")
             self.assertIn("# Search Execution Report: phone", content)
+            self.assertIn("## Phone Sources", content)
+            self.assertIn("phone-baseline", content)
             self.assertIn("## Fan-out Plan", content)
             self.assertIn("## Investigation Report", content)
             show_result = self.run_cli(
@@ -1101,6 +1106,7 @@ class CliTests(unittest.TestCase):
             content = report_path.read_text(encoding="utf-8")
             self.assertIn("# Search Execution Report: image", content)
             self.assertIn("Executed Local Tools", content)
+            self.assertIn("## Image Sources", content)
             self.assertIn("Face recognition: disabled", content)
 
     def test_search_execute_adapters_rejects_plan_only_conflict(self):

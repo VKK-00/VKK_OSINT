@@ -23,6 +23,7 @@ from .investigation import (
     write_investigation,
 )
 from .output import (
+    finding_source_summary,
     format_adapters,
     format_adapter_profiles,
     format_adapter_setups,
@@ -35,6 +36,7 @@ from .output import (
     format_case_detail,
     format_cases,
     format_findings,
+    format_finding_source_summary,
     format_project_detail,
     format_projects,
     format_search_profile_detail,
@@ -655,6 +657,7 @@ def _render_search_execution(
                     for target in derived_targets
                 ],
                 "executed_adapters": list(executable_adapters),
+                "source_summary": list(finding_source_summary(result.all_findings())),
                 "investigation": result.to_dict(),
             },
             ensure_ascii=False,
@@ -664,6 +667,10 @@ def _render_search_execution(
     investigation_markdown = render_investigation_markdown(result)
     adapter_lines = "\n".join(f"- `{repository}`" for repository in executable_adapters) or "- none"
     derived_lines = "\n".join(f"- `{target.kind}:{target.value}`" for target in derived_targets) or "- none"
+    source_summary = format_finding_source_summary(
+        result.all_findings(),
+        title=_source_summary_title(plan.target.kind),
+    )
     return "\n".join(
         [
             f"# Search Execution Report: {plan.target.kind}",
@@ -680,6 +687,8 @@ def _render_search_execution(
             "",
             adapter_lines,
             "",
+            source_summary,
+            "",
             "## Fan-out Plan",
             "",
             plan_markdown,
@@ -690,6 +699,18 @@ def _render_search_execution(
             "",
         ]
     )
+
+
+def _source_summary_title(target_kind: str) -> str:
+    if target_kind == "phone":
+        return "Phone Sources"
+    if target_kind == "email":
+        return "Email Sources"
+    if target_kind == "image":
+        return "Image Sources"
+    if target_kind in {"domain", "url"}:
+        return "Web Sources"
+    return "Source Summary"
 
 
 def _search_case_metadata(

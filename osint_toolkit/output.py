@@ -101,6 +101,95 @@ def format_findings(findings: Iterable[Finding], *, output_format: str = "table"
     raise ValueError(f"Unsupported output format: {output_format}")
 
 
+def finding_source_summary(findings: Iterable[Finding]) -> tuple[dict[str, object], ...]:
+    grouped: dict[str, list[Finding]] = {}
+    for finding in findings:
+        source = finding.source or finding.module or "unknown"
+        grouped.setdefault(source, []).append(finding)
+
+    rows: list[dict[str, object]] = []
+    for source in sorted(grouped):
+        source_findings = grouped[source]
+        rows.append(
+            {
+                "source": source,
+                "finding_count": len(source_findings),
+                "statuses": _count_values(finding.status for finding in source_findings),
+                "confidence": _count_values(finding.confidence for finding in source_findings),
+                "signals": _source_signal_kinds(source_findings),
+                "modules": tuple(sorted({finding.module for finding in source_findings if finding.module})),
+            }
+        )
+    return tuple(rows)
+
+
+def format_finding_source_summary(
+    findings: Iterable[Finding],
+    *,
+    output_format: str = "markdown",
+    title: str = "Source Summary",
+) -> str:
+    rows = finding_source_summary(findings)
+    if output_format == "json":
+        return json.dumps(rows, ensure_ascii=False, indent=2)
+    if output_format == "csv":
+        buffer = io.StringIO()
+        writer = csv.DictWriter(
+            buffer,
+            fieldnames=("source", "finding_count", "statuses", "confidence", "signals", "modules"),
+            lineterminator="\n",
+        )
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    "source": row["source"],
+                    "finding_count": row["finding_count"],
+                    "statuses": _summary_map_text(row["statuses"]),
+                    "confidence": _summary_map_text(row["confidence"]),
+                    "signals": ", ".join(row["signals"]),
+                    "modules": ", ".join(row["modules"]),
+                }
+            )
+        return buffer.getvalue().strip()
+    if output_format == "markdown":
+        lines = [
+            f"## {title}",
+            "",
+            "| Source | Findings | Statuses | Confidence | Signals |",
+            "|---|---:|---|---|---|",
+        ]
+        if not rows:
+            lines.append("| none | 0 |  |  |  |")
+            return "\n".join(lines)
+        for row in rows:
+            lines.append(
+                f"| {_escape_md(str(row['source']))} | {row['finding_count']} | "
+                f"{_escape_md(_summary_map_text(row['statuses']))} | "
+                f"{_escape_md(_summary_map_text(row['confidence']))} | "
+                f"{_escape_md(', '.join(row['signals']))} |"
+            )
+        return "\n".join(lines)
+    if output_format == "table":
+        table_rows = [
+            (
+                str(row["source"]),
+                str(row["finding_count"]),
+                _summary_map_text(row["statuses"]),
+                _summary_map_text(row["confidence"]),
+                _short(", ".join(row["signals"]), 60),
+            )
+            for row in rows
+        ]
+        return "\n".join(
+            [
+                title,
+                _format_table(("Source", "Findings", "Statuses", "Confidence", "Signals"), table_rows),
+            ]
+        )
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
 def format_adapters(adapters: Iterable[AdapterSpec], *, output_format: str = "table") -> str:
     adapter_list = tuple(adapters)
     if output_format == "json":
@@ -1023,6 +1112,80 @@ def _findings_csv(findings: tuple[Finding, ...]) -> str:
             }
         )
     return buffer.getvalue().strip()
+
+
+_SIGNAL_METADATA_KEYS = {
+    "asn",
+    "camera_make",
+    "camera_model",
+    "carrier",
+    "country",
+    "domain",
+    "email",
+    "emails",
+    "ip",
+    "line_type",
+    "location",
+    "name",
+    "normalized",
+    "phone",
+    "phone_number",
+    "phones",
+    "port",
+    "profile_url",
+    "subdomain",
+    "technology",
+    "url",
+    "username",
+    "usernames",
+}
+
+
+def _count_values(values: Iterable[str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = value or "unknown"
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _summary_map_text(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    return ", ".join(
+        f"{key}:{count}"
+        for key, count in sorted(value.items(), key=lambda item: (-int(item[1]), str(item[0])))
+    )
+
+
+def _source_signal_kinds(findings: Iterable[Finding]) -> tuple[str, ...]:
+    signals: set[str] = set()
+    for finding in findings:
+        if finding.module == "external-adapter":
+            signals.add("execution")
+        if finding.url:
+            signals.add("url")
+        if finding.http_status is not None:
+            signals.add("http")
+        for key, value in finding.metadata.items():
+            if not value:
+                continue
+            normalized_key = key.lower()
+            if normalized_key in _SIGNAL_METADATA_KEYS:
+                signals.add(_singular_signal_kind(normalized_key))
+            elif normalized_key.endswith("_url"):
+                signals.add("url")
+    return tuple(sorted(signals)) or ("none",)
+
+
+def _singular_signal_kind(value: str) -> str:
+    if value in {"emails", "phones", "usernames"}:
+        return value[:-1]
+    if value == "phone_number":
+        return "phone"
+    if value == "profile_url":
+        return "url"
+    return value
 
 
 def _case_entity_index_csv(records: tuple[CaseEntityRecord, ...]) -> str:

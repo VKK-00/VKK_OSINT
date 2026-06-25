@@ -18,7 +18,7 @@ CLI работает в пяти режимах:
 
 - catalog/recommend/brief — работа с curated-каталогом;
 - scan/adapters — единое ядро выполнения и карта функциональной совместимости upstream-проектов;
-- search — high-level fan-out планировщик и executor: один seed -> native checks, compatible adapters, readiness/install hints, local image tools; при `--execute-adapters` запускаются ready non-restricted adapters или ready local image tools с derived-seed fan-out в единый report/case; при `--install-missing` показывается/запускается installer view для resolved profile без запуска расследования;
+- search — high-level fan-out планировщик и executor: один seed -> native checks, compatible adapters, readiness/install hints, local image tools; при `--execute-adapters` запускаются ready non-restricted adapters или ready local image tools с derived-seed fan-out в единый report/case и source-by-source summary; при `--install-missing` показывается/запускается installer view для resolved profile без запуска расследования;
 - investigate — объединение нескольких seed values, native findings, adapter dry-runs и нормализованных сущностей в один отчёт;
 - toolbox — локальное HTML-окно для ручного выбора OSINT-направления, сборки copy-ready CLI-команд и, в `--serve` режиме, запуска unified `search` jobs через локальный backend.
 
@@ -297,7 +297,7 @@ Search-поток:
 7. В plan-only режиме результат выводится как table/Markdown/CSV/JSON через `format_search_plan()`. Missing/config/restricted tools остаются строками плана, а не ошибками.
 8. В `--install-missing` режиме resolved profile передаётся в `build_profile_tool_readiness()`/`build_tool_install_results()`: dry-run показывает install actions, а реальный запуск разрешён только через отдельный `--execute-install`; режим взаимоисключён с plan/execution modes.
 9. В adapter execution режиме `ready_adapter_repositories()` выбирает только `stage=adapter,status=ready,readiness=ready` и отсекает restricted entries даже при `--include-restricted`.
-10. `run_investigation()` получает исходный target, derived targets из `SearchPlan`, native target kinds из planned native steps и allowlist ready repositories, запускает только planned native target kinds и внешние adapters через существующий `run_adapter_findings()`, затем сохраняет Markdown/JSON report и SQLite case при `--out`/`--case-db`; `--scope-note` попадает в case metadata как текстовый контекст/рамки проверки.
+10. `run_investigation()` получает исходный target, derived targets из `SearchPlan`, native target kinds из planned native steps и allowlist ready repositories, запускает только planned native target kinds и внешние adapters через существующий `run_adapter_findings()`, затем сохраняет Markdown/JSON report и SQLite case при `--out`/`--case-db`; execution report добавляет source summary (`Phone Sources`, `Email Sources`, `Web Sources`, `Image Sources` или общий `Source Summary`) с подсчётом findings/status/confidence/signals по источникам, а JSON отдаёт это как `source_summary`; `--scope-note` попадает в case metadata как текстовый контекст/рамки проверки.
 11. Для `image` target `run_image_search()` запускает ready local tools, добавляет missing/error/timeout findings по остальным local tools, извлекает URL/email/phone/username/domain clues и маршрутизирует derived targets через обычный `search`/`run_investigation()` flow.
 
 Scan-поток:
@@ -706,6 +706,7 @@ osint-toolkit stats
 - При изменении toolbox-направлений или шаблонов команд обновлять `toolbox.py`, CLI-тесты, README и этот анализ.
 - При изменении целевой модели unified search/fan-out обновлять `DEEP_INTEGRATION_PLAN.ru.md`, README и этот анализ.
 - При изменении search profiles или planner обновлять `search.py`, `output.py`, CLI-тесты, README, `DEEP_INTEGRATION_PLAN.ru.md` и этот анализ.
+- При изменении execution report/source-summary формата обновлять `output.py`, `cli.py`, `image_runner.py`, CLI/image tests, README и этот анализ.
 - При добавлении команд обновлять `README.md` и этот анализ.
 - При изменении safety-границ обновлять `README.md`, `workflows.py` и тесты brief/recommend.
 - При новом snapshot обновлять дату в `catalog.py` или добавить явный выбор snapshot.

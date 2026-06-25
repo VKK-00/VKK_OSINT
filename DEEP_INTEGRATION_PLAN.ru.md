@@ -590,6 +590,7 @@ Notes:
 40. Done: wire `search --install-missing` to the resolved profile installer view, with `--execute-install` required for real package-manager execution and mutual exclusion from plan/execution modes.
 41. Done: add Socialscan username/email adapter, generated JSON parser and safe availability-signal mapping for `candidate`/`not_found`/`skipped`/`error` results.
 42. Done: add BBOT Docker fallback route for Windows/POSIX startup failures so `all-safe` can use `docker run --rm -v <output_dir>:/root/.bbot/scans -v <config_dir>:/root/.config/bbot blacklanternsecurity/bbot:stable ...` when native BBOT fails its runtime probe.
+43. Done: add source-by-source execution summaries to unified search reports: `Phone Sources`, `Email Sources`, `Web Sources`, `Image Sources` or generic `Source Summary`, plus JSON `source_summary`.
 
 ## Definition of done
 
