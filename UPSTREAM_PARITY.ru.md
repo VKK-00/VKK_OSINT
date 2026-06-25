@@ -395,6 +395,7 @@ python -m osint_toolkit case-delete --case-db cases.sqlite case-001 --yes
 - derived email-domain fan-out for `search email ... --profile email-full|safe|all-safe`;
 - derived email-local-part username fan-out for `search email ... --profile email-full|safe|all-safe`;
 - derived URL-host domain fan-out for `search url ... --profile web-full|passive-recon|safe|all-safe`;
+- hostname-based `search auto` routing for Instagram, Telegram and supported RU social URLs;
 - Markdown/JSON report;
 - Entity Summary from targets, finding URLs, evidence and metadata;
 - Graph Edges for base entity relations;

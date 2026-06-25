@@ -227,7 +227,7 @@ CLI работает в пяти режимах:
 - `osint_toolkit/search.py`
   - `SearchProfile`, `LocalToolSpec`, `PlannedStep`, `SearchPlan` — модели unified plan; `derived_target_kinds` описывает дополнительные targets, выводимые из исходного seed.
   - `load_search_profiles()` — загрузка custom search profiles из JSON-файла с валидацией имён, target kinds, adapter profiles, repositories и local tools.
-  - `classify_target()` — auto-kind для phone/email/domain/url/social/image/person/username.
+  - `classify_target()` — auto-kind для phone/email/domain/url/social/image/person/username; platform URLs распознаются по hostname, чтобы `instagram.com`, `t.me`/`telegram.me`/`telegram.dog` и поддерживаемые VK/OK/Mail.ru/Yandex hosts уходили в `instagram`/`telegram`/`social`, а не в общий `url`.
   - `build_search_plan()` — строит deterministic fan-out plan по target/profile/region.
 - `osint_toolkit/toolbox.py`
   - `toolbox_sections()` — машинно-читаемое описание направлений, cards и шаблонов команд.
@@ -758,3 +758,4 @@ osint-toolkit stats
 - 2026-06-25: `search --execute-adapters` теперь передаёт `profile.native_kinds` в `run_investigation()`, поэтому custom adapter-only profiles не запускают скрытые native-модули вне выбранного профиля.
 - 2026-06-25: `toolbox --serve` получил `/api/tools` и кнопки Tools/Install/Env, чтобы profile readiness/install/env views были доступны из того же окна без shell и без вывода значений env variables.
 - 2026-06-25: `SearchProfile.derived_target_kinds` добавлен в planner/custom profile schema; `email-full`/`safe`/`all-safe` теперь выводят domain и username targets из email seed, а `web-full`/`passive-recon`/`safe`/`all-safe` выводят URL host как domain target и включают derived fan-out в plan/execution/report/case metadata.
+- 2026-06-25: `classify_target()` переведён на hostname-based social URL routing для Instagram, Telegram и поддерживаемых RU social hosts, чтобы `search auto <social-url>` выбирал platform modules и не ловил ложные substring-совпадения.

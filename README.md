@@ -58,6 +58,8 @@ python -m osint_toolkit search phone +380441234567 --profile phone-full --plan-o
 python -m osint_toolkit search phone +380441234567 --profile phone-full --execute-adapters --adapter-limit 3 --out reports/phone.md --case-db cases.sqlite --case-id phone-001 --scope-note "internal validation scope"
 python -m osint_toolkit search email person@example.com --profile email-full --plan-only --format markdown
 python -m osint_toolkit search auto https://vk.com/example --profile auto --plan-only --format json
+python -m osint_toolkit search auto https://t.me/durov --profile auto --plan-only --format json
+python -m osint_toolkit search auto https://instagram.com/example --profile auto --plan-only --format json
 python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --execute-adapters --out reports/photo.md --case-db cases.sqlite --case-id photo-001 --scope-note "image source context review"
 python -m osint_toolkit tools doctor --profile all-safe
 python -m osint_toolkit search email person@example.com --profile case-email-safe --profile-file profiles\case_profiles.json --plan-only

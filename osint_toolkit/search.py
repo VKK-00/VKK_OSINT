@@ -936,10 +936,31 @@ def _restricted_adapter_matches(repository: str, target_kind: str) -> bool:
 
 
 def _url_kind(lower_url: str) -> str:
-    if "instagram.com/" in lower_url:
+    parsed = urlparse(lower_url)
+    host = (parsed.hostname or "").lower()
+    if host in {"instagram.com", "www.instagram.com"}:
         return "instagram"
-    if "t.me/" in lower_url or "telegram.me/" in lower_url:
+    if host in {"t.me", "telegram.me", "telegram.dog"}:
         return "telegram"
-    if any(domain in lower_url for domain in ("vk.com/", "ok.ru/", "mail.ru/", "yandex.")):
+    if host in {
+        "vk.com",
+        "www.vk.com",
+        "m.vk.com",
+        "vkontakte.ru",
+        "www.vkontakte.ru",
+        "ok.ru",
+        "www.ok.ru",
+        "m.ok.ru",
+        "odnoklassniki.ru",
+        "www.odnoklassniki.ru",
+        "my.mail.ru",
+        "m.my.mail.ru",
+        "yandex.ru",
+        "www.yandex.ru",
+        "market.yandex.ru",
+        "reviews.yandex.ru",
+        "zen.yandex.ru",
+        "www.zen.yandex.ru",
+    }:
         return "social"
     return "url"
