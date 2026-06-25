@@ -69,6 +69,14 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
             ),
             commands=(
                 ToolboxCommand(
+                    "Image full search plan",
+                    "Единый fan-out план для локальных image tools: hash, EXIF, OCR, QR/barcodes.",
+                    'python -m osint_toolkit search image "{image_path}" --profile image-full --plan-only --format markdown',
+                    required_inputs=("image_path",),
+                    badges=("search", "image-full"),
+                    note="Этот route не делает face-ID; он планирует metadata/OCR/QR/hash checks.",
+                ),
+                ToolboxCommand(
                     "Локальный baseline файла",
                     "Размер, timestamps и SHA256 без внешних зависимостей.",
                     (
@@ -124,7 +132,7 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                 ),
                 ToolboxCommand(
                     "Кейс из всех зацепок с фото",
-                    "Собирает один investigation report из заполненных seed-полей.",
+                    "Собирает один investigation report из уже извлечённых seed-полей.",
                     (
                         'python -m osint_toolkit investigate --title "{title}" '
                         '[[--username {username}]] [[--email {email}]] '
@@ -183,8 +191,25 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
             description="Username expansion, public profile checks и social adapters.",
             commands=(
                 ToolboxCommand(
+                    "Person full search plan",
+                    "Планирует person expansion и все username-compatible tools.",
+                    'python -m osint_toolkit search person "{person}" --profile person-full --region {region} --plan-only --format markdown',
+                    required_inputs=("person", "region"),
+                    badges=("search", "person-full"),
+                ),
+                ToolboxCommand(
+                    "Username full search plan",
+                    "Планирует native username checks, global adapters и broad compatible routes.",
+                    (
+                        "python -m osint_toolkit search username {username} "
+                        "--profile username-full --region {region} --plan-only --format markdown"
+                    ),
+                    required_inputs=("username", "region"),
+                    badges=("search", "username-full"),
+                ),
+                ToolboxCommand(
                     "Имя -> username-кандидаты",
-                    "Генерирует bounded список username-кандидатов из имени.",
+                    "Точечный native-only route для быстрого просмотра кандидатов.",
                     'python -m osint_toolkit scan person "{person}" --limit 24 --format markdown',
                     required_inputs=("person",),
                     badges=("person", "dry-run"),
@@ -223,40 +248,24 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
             description="Email domain/auth signals, safe breach/reputation adapters и PhoneInfoga route.",
             commands=(
                 ToolboxCommand(
-                    "Email baseline",
-                    "MX/NS/TXT, SPF, DMARC, MTA-STS, TLS-RPT, BIMI и public service signals.",
-                    "python -m osint_toolkit scan email {email} --live --format markdown",
+                    "Email full search plan",
+                    "Планирует native email checks и все compatible safe email adapters.",
+                    (
+                        "python -m osint_toolkit search email {email} "
+                        "--profile email-full --plan-only --format markdown"
+                    ),
                     required_inputs=("email",),
-                    badges=("email", "live"),
+                    badges=("search", "email-full"),
                 ),
                 ToolboxCommand(
-                    "Email safe adapters",
-                    "Mosint, h8mail, pwnedOrNot, user-scanner, Blackbird через safe profile.",
+                    "Phone full search plan",
+                    "Планирует native phone, PhoneInfoga, broad compatible tools и restricted exclusions.",
                     (
-                        "python -m osint_toolkit investigate --email {email} "
-                        "--include-adapters --adapter-profile email-safe "
-                        "--adapter-limit {adapter_limit} --out {out}"
+                        "python -m osint_toolkit search phone {phone} "
+                        "--profile phone-full --plan-only --format markdown"
                     ),
-                    required_inputs=("email", "adapter_limit", "out"),
-                    badges=("email-safe", "report"),
-                ),
-                ToolboxCommand(
-                    "Телефон baseline",
-                    "Локальная нормализация и безопасный phone route.",
-                    "python -m osint_toolkit scan phone {phone} --format markdown",
                     required_inputs=("phone",),
-                    badges=("phone", "dry-run"),
-                ),
-                ToolboxCommand(
-                    "PhoneInfoga route",
-                    "Phone safe adapter profile, dry-run до явного execute.",
-                    (
-                        "python -m osint_toolkit investigate --phone {phone} "
-                        "--include-adapters --adapter-profile phone-safe "
-                        "--adapter-limit {adapter_limit} --out {out}"
-                    ),
-                    required_inputs=("phone", "adapter_limit", "out"),
-                    badges=("phone-safe", "report"),
+                    badges=("search", "phone-full"),
                 ),
             ),
         ),
@@ -266,24 +275,24 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
             description="DNS, HTTP metadata, bounded crawler, passive recon adapters и broad recon suites.",
             commands=(
                 ToolboxCommand(
-                    "Домен baseline",
-                    "DNS, HTTP metadata, emails/phones/social URLs, robots/sitemap, CT, RDAP/WHOIS.",
+                    "Passive domain search plan",
+                    "Планирует native domain recon и passive upstream adapters.",
                     (
-                        "python -m osint_toolkit scan domain {domain} --live "
-                        "--crawl-pages 5 --crawl-depth 1 --format markdown"
+                        "python -m osint_toolkit search domain {domain} "
+                        "--profile passive-recon --plan-only --format markdown"
                     ),
                     required_inputs=("domain",),
-                    badges=("domain", "live"),
+                    badges=("search", "passive-recon"),
                 ),
                 ToolboxCommand(
-                    "URL baseline",
-                    "Bounded same-site crawl стартовой страницы.",
+                    "Web full URL search plan",
+                    "Планирует native URL recon, archive route и broad compatible adapters.",
                     (
-                        "python -m osint_toolkit scan url {url} --live "
-                        "--crawl-pages 5 --crawl-depth 1 --format json"
+                        "python -m osint_toolkit search url {url} "
+                        "--profile web-full --plan-only --format markdown"
                     ),
                     required_inputs=("url",),
-                    badges=("url", "crawl"),
+                    badges=("search", "web-full"),
                 ),
                 ToolboxCommand(
                     "Domain recon adapters",
@@ -324,16 +333,14 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     badges=("catalog", "ru/ua"),
                 ),
                 ToolboxCommand(
-                    "RU/UA username profile",
-                    "Snoop, Maigret, Social Analyzer и Sherlock с region hints.",
+                    "RU/UA username search plan",
+                    "Планирует RU/UA-aware username/social routes с region hints.",
                     (
-                        "python -m osint_toolkit investigate --username {username} "
-                        "--region {region} --include-adapters "
-                        "--adapter-profile username-ru-ua --adapter-limit {adapter_limit} "
-                        "--out {out}"
+                        "python -m osint_toolkit search username {username} "
+                        "--profile ru-ua-full --region {region} --plan-only --format markdown"
                     ),
-                    required_inputs=("username", "region", "adapter_limit", "out"),
-                    badges=("username-ru-ua", "report"),
+                    required_inputs=("username", "region"),
+                    badges=("search", "ru-ua-full"),
                 ),
                 ToolboxCommand(
                     "RU/UA source scan",
@@ -344,10 +351,10 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                 ),
                 ToolboxCommand(
                     "RU social public metadata",
-                    "VK/OK/Yandex/Mail.ru public metadata wrapper.",
-                    "python -m osint_toolkit scan social {social} --live --format json",
-                    required_inputs=("social",),
-                    badges=("vk/ok/yandex/mail.ru", "public"),
+                    "Планирует social public metadata и compatible username adapters.",
+                    "python -m osint_toolkit search social {social} --profile social-full --region {region} --plan-only --format markdown",
+                    required_inputs=("social", "region"),
+                    badges=("search", "social-full"),
                 ),
             ),
         ),

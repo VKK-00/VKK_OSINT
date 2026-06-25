@@ -614,6 +614,90 @@ class CliTests(unittest.TestCase):
             self.assertIn("Фото / изображение", content)
             self.assertIn("username-full", content)
 
+    def test_search_phone_plan_json(self):
+        result = self.run_cli(
+            "search",
+            "phone",
+            "+380441234567",
+            "--profile",
+            "phone-full",
+            "--plan-only",
+            "--format",
+            "json",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        sources = {step["source"]: step for step in payload["steps"]}
+
+        self.assertEqual(payload["target"]["kind"], "phone")
+        self.assertEqual(payload["profile"]["name"], "phone-full")
+        self.assertIn("sundowndev/phoneinfoga", sources)
+        self.assertEqual(sources["megadose/ignorant"]["status"], "excluded")
+
+    def test_search_auto_email_plan_json(self):
+        result = self.run_cli(
+            "search",
+            "auto",
+            "person@example.com",
+            "--profile",
+            "auto",
+            "--plan-only",
+            "--format",
+            "json",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(payload["target"]["kind"], "email")
+        self.assertEqual(payload["profile"]["name"], "email-full")
+
+    def test_search_image_plan_markdown(self):
+        result = self.run_cli(
+            "search",
+            "image",
+            r"C:\x\photo.jpg",
+            "--profile",
+            "image-full",
+            "--plan-only",
+            "--format",
+            "markdown",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("# Search Plan: image", result.stdout)
+        self.assertIn("tesseract-ocr", result.stdout)
+        self.assertIn("face recognition", result.stdout)
+
+    def test_search_include_restricted_marks_restricted(self):
+        result = self.run_cli(
+            "search",
+            "phone",
+            "+380441234567",
+            "--profile",
+            "phone-full",
+            "--include-restricted",
+            "--plan-only",
+            "--format",
+            "json",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        sources = {step["source"]: step for step in payload["steps"]}
+
+        self.assertEqual(sources["megadose/ignorant"]["status"], "restricted")
+
+    def test_search_execute_adapters_is_not_enabled_in_v1(self):
+        result = self.run_cli(
+            "search",
+            "phone",
+            "+380441234567",
+            "--profile",
+            "phone-full",
+            "--execute-adapters",
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("search --execute-adapters is planned", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

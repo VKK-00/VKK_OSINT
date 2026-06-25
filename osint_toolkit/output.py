@@ -11,6 +11,7 @@ from .case_store import CaseEntityHit, CaseEntityRecord, CaseRecord
 from .engine import Finding
 from .graph import GraphAnalysis
 from .models import OsintProject
+from .search import SearchPlan
 
 
 def format_projects(projects: Iterable[OsintProject], *, output_format: str, kind: str = "all") -> str:
@@ -263,6 +264,66 @@ def format_adapter_setups(setups: Iterable[AdapterSetup], *, output_format: str 
             for setup in setup_list
         ]
         return _format_table(headers, rows)
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
+def format_search_plan(plan: SearchPlan, *, output_format: str = "table") -> str:
+    if output_format == "json":
+        return json.dumps(plan.to_dict(), ensure_ascii=False, indent=2)
+    if output_format == "csv":
+        return _search_plan_csv(plan)
+    if output_format == "markdown":
+        lines = [
+            f"# Search Plan: {plan.target.kind}",
+            "",
+            f"- Target: `{_escape_md(plan.target.value)}`",
+            f"- Region: `{plan.target.region}`",
+            f"- Profile: `{plan.profile.name}` - {_escape_md(plan.profile.title)}",
+            "",
+            "## Warnings",
+            "",
+        ]
+        if plan.warnings:
+            lines.extend(f"- {_escape_md(warning)}" for warning in plan.warnings)
+        else:
+            lines.append("- none")
+        lines.extend(
+            [
+                "",
+                "## Steps",
+                "",
+                "| Stage | Source | Target | Status | Readiness | Command / install hint | Reason |",
+                "|---|---|---|---|---|---|---|",
+            ]
+        )
+        for step in plan.steps:
+            target = f"{step.target_kind}:{step.target_value}"
+            command = step.command or step.install_note or "-"
+            lines.append(
+                f"| {step.stage} | {_escape_md(step.source)} | {_escape_md(target)} | "
+                f"{step.status} | {step.readiness or '-'} | {_escape_md(command)} | {_escape_md(step.reason)} |"
+            )
+        return "\n".join(lines)
+    if output_format == "table":
+        header = [
+            f"Target:  {plan.target.kind}:{plan.target.value}",
+            f"Profile: {plan.profile.name} ({plan.profile.title})",
+        ]
+        if plan.warnings:
+            header.append("Warnings:")
+            header.extend(f"- {warning}" for warning in plan.warnings)
+        rows = [
+            (
+                step.stage,
+                _short(step.source, 38),
+                _short(f"{step.target_kind}:{step.target_value}", 34),
+                step.status,
+                step.readiness or "-",
+                _short(step.command or step.install_note or "-", 72),
+            )
+            for step in plan.steps
+        ]
+        return "\n".join([*header, "", _format_table(("Stage", "Source", "Target", "Status", "Ready", "Command / install"), rows)])
     raise ValueError(f"Unsupported output format: {output_format}")
 
 
@@ -694,6 +755,45 @@ def _case_entity_hits_csv(hits: tuple[CaseEntityHit, ...]) -> str:
     writer.writeheader()
     for hit in hits:
         writer.writerow(hit.to_dict())
+    return buffer.getvalue().strip()
+
+
+def _search_plan_csv(plan: SearchPlan) -> str:
+    buffer = io.StringIO()
+    writer = csv.DictWriter(
+        buffer,
+        fieldnames=(
+            "stage",
+            "source",
+            "title",
+            "target_kind",
+            "target_value",
+            "status",
+            "readiness",
+            "command",
+            "reason",
+            "install_note",
+            "docs_url",
+        ),
+        lineterminator="\n",
+    )
+    writer.writeheader()
+    for step in plan.steps:
+        writer.writerow(
+            {
+                "stage": step.stage,
+                "source": step.source,
+                "title": step.title,
+                "target_kind": step.target_kind,
+                "target_value": step.target_value,
+                "status": step.status,
+                "readiness": step.readiness,
+                "command": step.command,
+                "reason": step.reason,
+                "install_note": step.install_note,
+                "docs_url": step.docs_url,
+            }
+        )
     return buffer.getvalue().strip()
 
 

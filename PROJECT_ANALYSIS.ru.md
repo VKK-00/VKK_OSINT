@@ -14,10 +14,11 @@
 
 Проект хранит датированные CSV/Markdown/JSON-срезы GitHub OSINT-проектов и предоставляет Python CLI/engine поверх этих данных.
 
-CLI работает в четырёх режимах:
+CLI работает в пяти режимах:
 
 - catalog/recommend/brief — работа с curated-каталогом;
 - scan/adapters — единое ядро выполнения и карта функциональной совместимости upstream-проектов;
+- search — high-level fan-out планировщик: один seed -> native checks, compatible adapters, readiness/install hints и local image tools;
 - investigate — объединение нескольких seed values, native findings, adapter dry-runs и нормализованных сущностей в один отчёт;
 - toolbox — локальное HTML-окно для ручного выбора OSINT-направления и сборки copy-ready CLI-команд.
 
@@ -58,6 +59,7 @@ CLI работает в четырёх режимах:
 - adapter setup/readiness layer: install hints, docs URLs, PATH/env readiness;
 - adapter profiles: готовые группы upstream adapters для типовых расследований;
 - adapter doctor: проверка фактической доступности upstream CLI в `PATH`;
+- unified search planner: `search --plan-only` классифицирует один seed, выбирает default/full profile, строит план native/adapters/local-tools и показывает readiness/missing/config/restricted/excluded статусы;
 - investigation runner: один кейс, несколько seed-типов, entity summary, graph edges, единый Markdown/JSON отчёт;
 - executed adapter ingestion inside investigation: явный `--execute-adapters` добавляет parsed upstream CLI findings в entities, graph edges и case store;
 - SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges и findings;
@@ -75,6 +77,7 @@ CLI работает в четырёх режимах:
 - `osint_people_ru_ua_2026-06-24.csv` — объединённая разметка people + ru/ua.
 - `osint_toolkit/` — Python-пакет CLI.
 - `osint_toolkit/modules/` — native scan-модули.
+- `osint_toolkit/search.py` — unified search profiles, target classifier и fan-out planner.
 - `osint_toolkit/toolbox.py` — генератор локального HTML-пульта с направлениями и шаблонами команд.
 - `osint_toolkit/resources/sherlock_data.json` — встроенный snapshot Sherlock `sherlock_project/resources/data.json`, commit `206068d`, MIT license.
 - `osint_toolkit/resources/whatsmyname_wmn_data.json` — встроенный snapshot WhatsMyName `wmn-data.json`, commit `7c44595`, CC BY-SA 4.0 license.
@@ -214,12 +217,16 @@ CLI работает в четырёх режимах:
   - `render_brief()` — генерация Markdown-brief.
 - `osint_toolkit/output.py`
   - форматирование таблиц, Markdown, CSV и JSON.
+- `osint_toolkit/search.py`
+  - `SearchProfile`, `LocalToolSpec`, `PlannedStep`, `SearchPlan` — модели unified plan.
+  - `classify_target()` — auto-kind для phone/email/domain/url/social/image/person/username.
+  - `build_search_plan()` — строит deterministic fan-out plan по target/profile/region.
 - `osint_toolkit/toolbox.py`
   - `toolbox_sections()` — машинно-читаемое описание направлений, cards и шаблонов команд.
   - `render_toolbox_html()` — static HTML/CSS/JS для локального пульта.
   - `write_toolbox()` — запись HTML-файла на диск.
 - `osint_toolkit/cli.py`
-  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `adapters`, `adapter-profiles`, `adapter-setup`, `doctor`, `run-adapter`, `toolbox`, `investigate`, `cases`, `case-show`, `case-graph`, `case-index`, `recommend`, `brief`.
+  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `search`, `adapters`, `adapter-profiles`, `adapter-setup`, `doctor`, `run-adapter`, `toolbox`, `investigate`, `cases`, `case-show`, `case-graph`, `case-index`, `recommend`, `brief`.
 
 ## Как система работает end-to-end
 
@@ -239,6 +246,16 @@ Toolbox-поток:
 4. В браузере оператор заполняет seed-поля, выбирает направление и копирует готовую команду.
 5. HTML не запускает процессы и не загружает фото сам; для фото он собирает команды для локальных утилит ExifTool, ImageMagick, Tesseract, zbarimg, PowerShell hash baseline и открывает reverse image portals для ручной загрузки.
 6. Найденные через metadata/OCR/QR/reverse-search public clues оператор переносит в seed-поля и запускает существующие CLI-маршруты.
+
+Search-поток:
+
+1. Пользователь запускает `python -m osint_toolkit search <kind|auto> <value> --profile <profile> --plan-only`.
+2. `classify_target()` определяет target kind для `auto`.
+3. `build_search_plan()` выбирает profile: например phone -> `phone-full`, email -> `email-full`, image -> `image-full`.
+4. Planner добавляет built-in native steps, разворачивает adapter profiles через `expand_adapter_repositories()` и проверяет readiness через `build_adapter_setup()`.
+5. Для image target planner добавляет local-tool routes: PowerShell baseline/hash, ExifTool, ImageMagick, Tesseract и zbarimg.
+6. Результат выводится как table/Markdown/CSV/JSON через `format_search_plan()`. Missing/config/restricted tools остаются строками плана, а не ошибками.
+7. В текущем слое `search` требует `--plan-only`; автоматический execution fan-out будет следующим этапом поверх этого плана.
 
 Scan-поток:
 
@@ -302,6 +319,10 @@ Case-store поток:
 Toolbox:
 
 `ToolboxSection[] + AdapterProfile[] -> render_toolbox_html() -> local HTML -> operator fills image path/seeds -> copy-ready local image-tool or OSINT CLI command`
+
+Search:
+
+`seed -> classify_target() -> SearchProfile -> native steps + AdapterSpec readiness + LocalToolSpec readiness -> SearchPlan -> table/Markdown/CSV/JSON`
 
 Сканирование:
 
@@ -372,6 +393,10 @@ External adapters должны подключать upstream CLI/API без ко
 - `--out` — путь Markdown-файла для `brief`.
 - `toolbox --out` — путь HTML-файла локального пульта.
 - `toolbox --open` — открыть созданный HTML в браузере через стандартный `webbrowser`.
+- `search --profile` — built-in profile для fan-out планирования: `auto`, `phone-full`, `email-full`, `username-full`, `person-full`, `passive-recon`, `web-full`, `image-full`, `social-full`, `ru-ua-full`, `all-safe`, `safe`.
+- `search --plan-only` — текущий обязательный режим: вывести план без запуска tools.
+- `search --include-restricted` — показать restricted tools в плане с явной маркировкой.
+- `search --format table|markdown|csv|json` — формат плана.
 - `scan --live` — явное разрешение сетевых проверок.
 - `scan --timeout` — HTTP timeout.
 - `scan email --live` — дополнительно делает domain resolution, MX/TXT lookup, SPF classification и DMARC lookup/classification.
@@ -413,6 +438,10 @@ External adapters должны подключать upstream CLI/API без ко
 python -m osint_toolkit stats
 python -m osint_toolkit toolbox --out osint_toolbox.html
 python -m osint_toolkit toolbox --out osint_toolbox.html --open
+python -m osint_toolkit search phone +380441234567 --profile phone-full --plan-only
+python -m osint_toolkit search email person@example.com --profile email-full --plan-only --format markdown
+python -m osint_toolkit search auto https://vk.com/example --profile auto --plan-only --format json
+python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --plan-only
 python -m osint_toolkit catalog --kind people --direct-only --limit 10
 python -m osint_toolkit scan person "Ivan Petrenko" --limit 10
 python -m osint_toolkit scan username exampleuser --limit 10
@@ -503,6 +532,7 @@ osint-toolkit stats
 - Cross-case entity index использует уже сохранённую таблицу `entities`; новая таблица не добавлена, потому что индекс пока вычисляется read-only запросами и не требует миграции.
 - Toolbox сделан как статический локальный HTML, а не как сервер: он не требует новых зависимостей, не открывает порт и не может сам запустить внешний CLI из браузера.
 - В photo-направлении toolbox добавляет только небиометрические маршруты: file hash/baseline, EXIF/metadata, OCR, QR/barcodes и reverse image source/context search. Идентификация личности по лицу не реализуется.
+- Unified `search` сначала реализован как planner, а не executor: это даёт оператору один seed -> полный fan-out план и readiness всех tools без ручного перечисления adapters. Автоматическое выполнение всех ready tools будет строиться поверх этого плана отдельной execution queue.
 - Dry-run используется по умолчанию для scan-команд. Live-сетевые проверки требуют явного `--live`.
 - Лицензионно сложные или большие проекты подключаются adapters вместо прямого копирования кода.
 - Password recovery flows, email-to-account и phone-to-account механики не переносятся в native-код без restricted-режима.
@@ -533,6 +563,7 @@ osint-toolkit stats
 - Instagram module пока является safe public metadata wrapper: нет login/session handling, private data access, follower/following scraping, comments/messages export, media archive ingestion или обхода platform rate limits.
 - Social module для VK/OK/Yandex/Mail.ru пока является safe public metadata wrapper: нет VK/OK/Yandex/Mail.ru API adapters, login/session handling, private profile access, follower scraping, comments/messages export или обхода platform rate limits.
 - Toolbox не выполняет команды из браузера и не содержит собственного OCR/EXIF engine: он собирает copy-ready команды для локально установленных ExifTool, ImageMagick, Tesseract, zbarimg и PowerShell hash baseline. Reverse image search остаётся ручной загрузкой на внешние сайты. Face recognition и поиск человека по лицу не добавлены.
+- `search --execute-adapters` пока намеренно возвращает ошибку: Stage 1 покрывает deterministic fan-out planning, а автоматическое выполнение всех ready adapters требует отдельного execution queue, логирования, redaction и case persistence.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
@@ -566,6 +597,7 @@ osint-toolkit stats
 - При изменении cross-case индекса обновлять `case_store.py`, `output.py`, CLI-тесты и README.
 - При изменении toolbox-направлений или шаблонов команд обновлять `toolbox.py`, CLI-тесты, README и этот анализ.
 - При изменении целевой модели unified search/fan-out обновлять `DEEP_INTEGRATION_PLAN.ru.md`, README и этот анализ.
+- При изменении search profiles или planner обновлять `search.py`, `output.py`, CLI-тесты, README, `DEEP_INTEGRATION_PLAN.ru.md` и этот анализ.
 - При добавлении команд обновлять `README.md` и этот анализ.
 - При изменении safety-границ обновлять `README.md`, `workflows.py` и тесты brief/recommend.
 - При новом snapshot обновлять дату в `catalog.py` или добавить явный выбор snapshot.
@@ -626,3 +658,4 @@ osint-toolkit stats
 - 2026-06-25: добавлен `toolbox` HTML-пульт: одно локальное окно для seed-полей, направлений OSINT, фото-зацепок без face-ID, cases/graph/index и adapter profiles с copy-ready CLI-командами.
 - 2026-06-25: photo-раздел `toolbox` расширен локальными image routes: PowerShell baseline/hash, ExifTool metadata, ImageMagick identify, Tesseract OCR, zbarimg QR/barcodes и reverse image search portals для source/context search.
 - 2026-06-25: добавлен `DEEP_INTEGRATION_PLAN.ru.md` — план перехода от отдельных `scan`/`run-adapter` маршрутов к unified `search`, где один phone/email/username/person/domain/url/image/social seed запускает все совместимые native-модули и adapters в единый отчёт.
+- 2026-06-25: реализован Stage 1 unified search planner: команда `search --plan-only`, profiles `phone-full`/`email-full`/`username-full`/`person-full`/`passive-recon`/`web-full`/`image-full`/`social-full`/`ru-ua-full`, readiness статусы adapters/local tools и форматирование плана.

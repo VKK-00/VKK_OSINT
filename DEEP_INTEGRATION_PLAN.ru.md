@@ -9,10 +9,10 @@
 Пример целевого поведения:
 
 ```powershell
-python -m osint_toolkit search phone +380441234567 --profile full --case-db cases.sqlite --out reports/phone_case.md
-python -m osint_toolkit search email person@example.com --profile full --execute-adapters --case-db cases.sqlite
-python -m osint_toolkit search username example_user --profile ru-ua-full --out reports/user.md
-python -m osint_toolkit search domain example.com --profile passive-recon --case-db cases.sqlite
+python -m osint_toolkit search phone +380441234567 --profile phone-full --plan-only
+python -m osint_toolkit search email person@example.com --profile email-full --plan-only
+python -m osint_toolkit search username example_user --profile username-full --plan-only
+python -m osint_toolkit search domain example.com --profile passive-recon --plan-only
 ```
 
 Здесь оператор вводит один seed, а система сама:
@@ -54,7 +54,7 @@ python -m osint_toolkit search domain example.com --profile passive-recon --case
 - graph edges and cross-case entity index;
 - static `toolbox` window.
 
-Главный gap: нет единого high-level command/router, который по одному seed строит полный fan-out plan, сам выбирает profiles и ведёт весь запуск до отчёта.
+Главный оставшийся gap: `search --plan-only` уже строит единый high-level fan-out plan, но execution queue, которая автоматически запускает все ready tools и ведёт весь запуск до отчёта, ещё не реализована.
 
 ## Целевая архитектура
 
@@ -98,8 +98,8 @@ flowchart LR
 Основная команда “один seed -> все сервисы”.
 
 ```powershell
-python -m osint_toolkit search phone +380441234567 --profile full
-python -m osint_toolkit search email person@example.com --profile full --region ua
+python -m osint_toolkit search phone +380441234567 --profile phone-full --plan-only
+python -m osint_toolkit search email person@example.com --profile email-full --region ua --plan-only
 python -m osint_toolkit search username example_user --profile username-full --execute-adapters
 python -m osint_toolkit search domain example.com --profile passive-recon --case-db cases.sqlite
 ```
@@ -123,7 +123,7 @@ python -m osint_toolkit search domain example.com --profile passive-recon --case
 python -m osint_toolkit tools install phone-safe
 python -m osint_toolkit tools install username-full
 python -m osint_toolkit tools install domain-recon
-python -m osint_toolkit tools doctor --profile full
+python -m osint_toolkit tools doctor --profile all-safe
 ```
 
 Первый вариант должен быть осторожным:
@@ -459,10 +459,12 @@ Deliverables:
 
 - `osint_toolkit/search.py`;
 - CLI `search`;
-- `SearchRequest`, `SearchPlan`, `PlannedTool`;
+- `SearchProfile`, `LocalToolSpec`, `PlannedStep`, `SearchPlan`;
 - auto target classifier;
-- mapping target kind -> native modules + adapter profiles;
+- mapping target kind -> native modules + adapter profiles + local image tools;
 - `--plan-only`.
+
+Status: implemented in the current codebase.
 
 Tests:
 
@@ -543,12 +545,12 @@ Notes:
 
 ## First implementation order
 
-1. Add `search --plan-only` for phone/email/username/domain/url/image.
-2. Add built-in `phone-full`, `email-full`, `image-full`, `all-safe` profiles.
-3. Add `tools doctor --profile`.
-4. Add fan-out execution for ready adapters.
-5. Add image local tool runners and derived seed extraction.
-6. Replace toolbox command cards with `search` commands once stable.
+1. Done: add `search --plan-only` for phone/email/username/person/domain/url/image/social/ru-ua.
+2. Done: add built-in `phone-full`, `email-full`, `image-full`, `all-safe` and related profiles.
+3. Next: add `tools doctor --profile`.
+4. Next: add fan-out execution for ready adapters.
+5. Next: add image local tool execution and derived seed extraction.
+6. In progress: replace toolbox command cards with `search` commands where high-level routing is stable.
 
 ## Definition of done
 

@@ -31,9 +31,11 @@ from .output import (
     format_findings,
     format_project_detail,
     format_projects,
+    format_search_plan,
     format_stats,
 )
 from .runtime import build_default_engine
+from .search import TARGET_KINDS, build_search_plan, list_search_profiles
 from .toolbox import write_toolbox
 from .workflows import TASK_PROFILES, recommend_projects, render_brief, render_recommendation, write_brief
 
@@ -144,6 +146,23 @@ def build_parser() -> argparse.ArgumentParser:
     toolbox.add_argument("--out", default="osint_toolbox.html", help="Output HTML path.")
     toolbox.add_argument("--open", action="store_true", help="Open the generated HTML file in the default browser.")
     toolbox.set_defaults(handler=handle_toolbox)
+
+    search = subparsers.add_parser("search", help="Build a unified fan-out search plan for one OSINT seed.")
+    search.add_argument("target_kind", choices=("auto", *TARGET_KINDS))
+    search.add_argument("target_value")
+    search.add_argument("--profile", choices=("auto", *(profile.name for profile in list_search_profiles())), default="auto")
+    search.add_argument("--plan-only", action="store_true", help="Only show the fan-out plan. No tools are executed.")
+    search.add_argument("--execute-adapters", action="store_true", help="Execute ready external adapters. Not available in v1 planner.")
+    search.add_argument("--include-restricted", action="store_true", help="Include restricted tools in the plan with explicit markings.")
+    search.add_argument("--region", choices=("all", "ru", "ua"), default="all")
+    search.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
+    search.add_argument("--out", help="Future report output path for execution mode.")
+    search.add_argument("--case-db", help="Future SQLite case database for execution mode.")
+    search.add_argument("--case-id", help="Future stable case id for execution mode.")
+    search.add_argument("--timeout", type=float, default=10.0)
+    search.add_argument("--adapter-timeout", type=float, default=60.0)
+    search.add_argument("--adapter-limit", type=int, default=20)
+    search.set_defaults(handler=handle_search)
 
     investigate = subparsers.add_parser("investigate", help="Run a multi-target OSINT case through native modules.")
     investigate.add_argument("--title", default="OSINT investigation")
@@ -316,6 +335,22 @@ def handle_toolbox(args: argparse.Namespace) -> int:
     print(f"Wrote toolbox {path}")
     if args.open:
         webbrowser.open(path.as_uri())
+    return 0
+
+
+def handle_search(args: argparse.Namespace) -> int:
+    if args.execute_adapters:
+        raise ValueError("search --execute-adapters is planned for the execution stage; use --plan-only in this version.")
+    if not args.plan_only:
+        raise ValueError("search currently requires --plan-only. Execution fan-out is the next integration stage.")
+    plan = build_search_plan(
+        args.target_kind,
+        args.target_value,
+        profile_name=args.profile,
+        region=args.region,
+        include_restricted=args.include_restricted,
+    )
+    print(format_search_plan(plan, output_format=args.format))
     return 0
 
 
