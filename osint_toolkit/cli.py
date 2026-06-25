@@ -222,6 +222,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--out", help="Write execution report to this path.")
     search.add_argument("--case-db", help="SQLite database path for saving execution results.")
     search.add_argument("--case-id", help="Optional stable case id when --case-db is used.")
+    search.add_argument("--scope-note", default="", help="Scope/context note saved in case metadata when --case-db is used.")
     search.add_argument("--timeout", type=float, default=10.0)
     search.add_argument("--adapter-timeout", type=float, default=60.0)
     search.add_argument("--adapter-limit", type=int, default=20)
@@ -261,6 +262,7 @@ def build_parser() -> argparse.ArgumentParser:
     investigate.add_argument("--out", help="Write investigation report to this path.")
     investigate.add_argument("--case-db", help="SQLite database path for saving the case.")
     investigate.add_argument("--case-id", help="Optional stable case id when --case-db is used.")
+    investigate.add_argument("--scope-note", default="", help="Scope/context note saved in case metadata when --case-db is used.")
     investigate.set_defaults(handler=handle_investigate)
 
     cases = subparsers.add_parser("cases", help="List saved investigation cases.")
@@ -601,6 +603,7 @@ def _search_case_metadata(
         "target_region": plan.target.region,
         "requested_profile": args.profile,
         "profile_file": args.profile_file or "",
+        "scope_note": args.scope_note,
         "search_profile": plan.profile.to_dict(),
         "include_restricted": bool(args.include_restricted),
         "execute_adapters": bool(args.execute_adapters),
@@ -688,6 +691,7 @@ def _investigation_case_metadata(
         "include_adapters": bool(args.include_adapters),
         "execute_adapters": bool(args.execute_adapters),
         "allow_restricted_adapters": bool(args.allow_restricted_adapters),
+        "scope_note": args.scope_note,
         "adapter_profiles": list(args.adapter_profile),
         "adapter_repositories": list(args.adapter),
         "expanded_adapter_repositories": list(adapter_repositories),

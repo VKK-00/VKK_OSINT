@@ -562,6 +562,7 @@ Notes:
 9. Done: add `profiles list/show/export` for built-in and custom search profiles.
 10. Done: persist workflow/profile/adapter policy metadata in saved SQLite cases for `search --case-db` and `investigate --case-db`.
 11. Done: add served toolbox Case Browser for saved cases, case detail, graph summary/focus and cross-case index.
+12. Done: add `--scope-note` for `search` and `investigate` so saved case metadata records the operator's scope/context note.
 
 ## Definition of done
 

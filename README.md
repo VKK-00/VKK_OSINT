@@ -55,10 +55,10 @@ python -m osint_toolkit stats
 python -m osint_toolkit toolbox --out osint_toolbox.html
 python -m osint_toolkit toolbox --serve --open
 python -m osint_toolkit search phone +380441234567 --profile phone-full --plan-only
-python -m osint_toolkit search phone +380441234567 --profile phone-full --execute-adapters --adapter-limit 3 --out reports/phone.md --case-db cases.sqlite --case-id phone-001
+python -m osint_toolkit search phone +380441234567 --profile phone-full --execute-adapters --adapter-limit 3 --out reports/phone.md --case-db cases.sqlite --case-id phone-001 --scope-note "internal validation scope"
 python -m osint_toolkit search email person@example.com --profile email-full --plan-only --format markdown
 python -m osint_toolkit search auto https://vk.com/example --profile auto --plan-only --format json
-python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --execute-adapters --out reports/photo.md --case-db cases.sqlite --case-id photo-001
+python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --execute-adapters --out reports/photo.md --case-db cases.sqlite --case-id photo-001 --scope-note "image source context review"
 python -m osint_toolkit tools doctor --profile all-safe
 python -m osint_toolkit search email person@example.com --profile case-email-safe --profile-file profiles\case_profiles.json --plan-only
 python -m osint_toolkit profiles list --format markdown
@@ -101,7 +101,7 @@ python -m osint_toolkit investigate --username example_user --domain example.com
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter soxoj/maigret
 python -m osint_toolkit investigate --username example_user --include-adapters --execute-adapters --adapter-limit 1
-python -m osint_toolkit investigate --title "case one" --email person@example.com --case-db cases.sqlite --case-id case-one
+python -m osint_toolkit investigate --title "case one" --email person@example.com --case-db cases.sqlite --case-id case-one --scope-note "internal validation scope"
 python -m osint_toolkit cases --case-db cases.sqlite
 python -m osint_toolkit case-show --case-db cases.sqlite case-one --format markdown
 python -m osint_toolkit case-graph --case-db cases.sqlite case-one
@@ -127,21 +127,21 @@ osint-toolkit stats
 
 ```powershell
 python -m osint_toolkit search phone +380441234567 --profile phone-full --plan-only
-python -m osint_toolkit search phone +380441234567 --profile phone-full --execute-adapters --adapter-limit 3 --out reports/phone.md --case-db cases.sqlite --case-id phone-001
+python -m osint_toolkit search phone +380441234567 --profile phone-full --execute-adapters --adapter-limit 3 --out reports/phone.md --case-db cases.sqlite --case-id phone-001 --scope-note "internal validation scope"
 python -m osint_toolkit search email person@example.com --profile email-full --plan-only --format markdown
 python -m osint_toolkit search email person@example.com --profile email-full --execute-adapters --adapter-limit 3 --format json
 python -m osint_toolkit search username example_user --profile username-full --region ua --plan-only
 python -m osint_toolkit search domain example.com --profile passive-recon --plan-only
 python -m osint_toolkit search url https://example.com --profile web-full --plan-only
 python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --plan-only
-python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --execute-adapters --out reports/photo.md --case-db cases.sqlite --case-id photo-001
+python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --execute-adapters --out reports/photo.md --case-db cases.sqlite --case-id photo-001 --scope-note "image source context review"
 python -m osint_toolkit search phone +380441234567 --profile phone-full --include-restricted --plan-only --format json
 python -m osint_toolkit tools doctor --profile all-safe --format markdown
 python -m osint_toolkit tools install-plan --profile image-full --format markdown
 python -m osint_toolkit tools env --profile email-full --format json
 ```
 
-Без `--execute-adapters` команда показывает план и ничего не запускает. `--execute-adapters` использует readiness из плана, запускает только `ready` adapters, не запускает `missing`/`config_missing`/`not_configured`/`excluded`/`restricted` entries и сохраняет результат через тот же investigation/case-store слой. Для `image` этот же execution mode запускает ready local tools: PowerShell hash/baseline, ExifTool, ImageMagick, Tesseract и zbarimg, извлекает URL/email/phone/username/domain clues и маршрутизирует derived seeds в обычный `search` fan-out. Face-ID не выполняется.
+Без `--execute-adapters` команда показывает план и ничего не запускает. `--execute-adapters` использует readiness из плана, запускает только `ready` adapters, не запускает `missing`/`config_missing`/`not_configured`/`excluded`/`restricted` entries и сохраняет результат через тот же investigation/case-store слой. Если указан `--case-db`, `--scope-note` сохраняет в metadata текстовый контекст/рамки проверки без отдельной таблицы. Для `image` этот же execution mode запускает ready local tools: PowerShell hash/baseline, ExifTool, ImageMagick, Tesseract и zbarimg, извлекает URL/email/phone/username/domain clues и маршрутизирует derived seeds в обычный `search` fan-out. Face-ID не выполняется.
 
 Custom search profiles можно подключать через JSON-файл, чтобы сохранить свой набор native modules, adapter profiles, отдельных repositories и local image tools:
 
@@ -372,7 +372,7 @@ python -m osint_toolkit investigate --username example_user --include-adapters -
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter sherlock-project/sherlock --adapter soxoj/maigret
 python -m osint_toolkit investigate --username example_user --include-adapters --execute-adapters --adapter-limit 1 --out reports/example_user.md
 python -m osint_toolkit investigate --domain example.com --live --format json
-python -m osint_toolkit investigate --title "saved case" --email person@example.com --case-db cases.sqlite --case-id case-001
+python -m osint_toolkit investigate --title "saved case" --email person@example.com --case-db cases.sqlite --case-id case-001 --scope-note "internal validation scope"
 ```
 
 Отчёт содержит `Entity Summary` и `Graph Edges`: нормализованные сущности и связи между ними, например `email -> domain`, `email -> related_email`, `domain -> email`, `domain -> phone`, `domain -> discovered URL`, `domain -> social URL`, `domain -> sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois server`, `url -> domain`, `telegram -> url`, `instagram -> url`, `instagram -> display name/account id/platform`, `social -> social-profile/platform/display name/account id/public URL`, `phone -> country`.
@@ -381,7 +381,7 @@ python -m osint_toolkit investigate --title "saved case" --email person@example.
 
 `--include-adapters` по умолчанию добавляет только dry-run команды. `--adapter-profile <name>` добавляет готовую группу adapters, а `--adapter <repository>` можно повторять, чтобы ограничить кейс конкретными upstream adapters. `--execute-adapters` явно запускает настроенные upstream CLI из `PATH`, прогоняет поддерживаемый stdout/stderr через parser и добавляет найденные URL/email/phone/key-value сигналы в тот же `Entity Summary`, `Graph Edges` и SQLite case store. Restricted adapters требуют `--allow-restricted-adapters`.
 
-Если указан `--case-db`, кейс сохраняется в SQLite: targets, findings, entities, graph edges и case metadata можно открыть позже через `cases`, `case-show`, `case-graph` и `case-index`. Для `search` metadata фиксирует requested/search profile, profile file, execute flags и реально запущенные adapters/local tools; для `investigate` — adapter profiles, allowlist и execute flags.
+Если указан `--case-db`, кейс сохраняется в SQLite: targets, findings, entities, graph edges и case metadata можно открыть позже через `cases`, `case-show`, `case-graph` и `case-index`. `--scope-note` добавляет в metadata текстовый контекст/рамки проверки. Для `search` metadata фиксирует requested/search profile, profile file, execute flags и реально запущенные adapters/local tools; для `investigate` — adapter profiles, allowlist и execute flags.
 
 ### `cases`, `case-show`, `case-graph` и `case-index`
 
@@ -399,7 +399,7 @@ python -m osint_toolkit case-index --case-db cases.sqlite --kind domain --min-ca
 python -m osint_toolkit case-index --case-db cases.sqlite --kind telegram --value "@durov" --format json
 ```
 
-`case-show` в JSON/Markdown показывает `metadata`: workflow, profile/policy и execution flags, если кейс был сохранён через `search --case-db` или `investigate --case-db`.
+`case-show` в JSON/Markdown показывает `metadata`: workflow, profile/policy, `scope_note` и execution flags, если кейс был сохранён через `search --case-db` или `investigate --case-db`.
 
 `case-graph` строит summary по сохранённым `entities` и `edges`: число узлов и связей, счётчики типов отношений, счётчики типов сущностей и самые связанные узлы. Если указать `--entity-kind` и `--entity-value`, команда покажет соседей выбранной сущности.
 

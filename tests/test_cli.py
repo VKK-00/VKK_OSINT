@@ -541,6 +541,8 @@ class CliTests(unittest.TestCase):
                 str(db_path),
                 "--case-id",
                 "case-1",
+                "--scope-note",
+                "internal validation scope",
                 "--out",
                 str(report_path),
             )
@@ -560,6 +562,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(payload["metadata"]["workflow"], "investigate")
             self.assertFalse(payload["metadata"]["include_adapters"])
             self.assertEqual(payload["metadata"]["expanded_adapter_repositories"], [])
+            self.assertEqual(payload["metadata"]["scope_note"], "internal validation scope")
             entities = {(entity["kind"], entity["value"].lower()) for entity in payload["entities"]}
             self.assertIn(("email", "person@example.com"), entities)
             self.assertIn(("domain", "example.com"), entities)
@@ -844,6 +847,8 @@ class CliTests(unittest.TestCase):
                 str(db_path),
                 "--case-id",
                 "phone-search-1",
+                "--scope-note",
+                "phone validation scope",
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(report_path.exists())
@@ -869,6 +874,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(payload["metadata"]["requested_profile"], "phone-full")
             self.assertEqual(payload["metadata"]["search_profile"]["name"], "phone-full")
             self.assertEqual(payload["metadata"]["executed_adapters"], [])
+            self.assertEqual(payload["metadata"]["scope_note"], "phone validation scope")
 
     def test_search_execute_adapters_runs_image_local_tools_and_saves_case(self):
         with tempfile.TemporaryDirectory() as tmpdir:

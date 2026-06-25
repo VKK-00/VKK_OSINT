@@ -64,7 +64,7 @@ CLI работает в пяти режимах:
 - unified search planner/executor: `search` классифицирует один seed, выбирает default/full или custom profile, строит план native/adapters/local-tools, показывает readiness/missing/config/restricted/excluded статусы, запускает ready non-restricted adapters и выполняет local image tools при `--execute-adapters`;
 - investigation runner: один кейс, несколько seed-типов, entity summary, graph edges, единый Markdown/JSON отчёт;
 - executed adapter ingestion inside investigation: явный `--execute-adapters` добавляет parsed upstream CLI findings в entities, graph edges и case store;
-- SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges, findings и workflow/profile policy metadata;
+- SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges, findings и workflow/profile/scope policy metadata;
 - saved case graph analysis: счётчики связей/типов сущностей, top connected nodes и focus-запрос соседей сущности;
 - cross-case entity index: поиск повторяющихся email/domain/telegram/instagram/url и других сущностей между сохранёнными кейсами;
 - local toolbox: один HTML-пульт с seed-полями и направлениями для фото-зацепок, OCR, EXIF/metadata, QR/barcodes, reverse image portals, person/username/social, email/phone, domain/url, RU/UA, cases/graph/index и adapter profiles;
@@ -266,7 +266,7 @@ Search-поток:
 5. Для image target planner добавляет local-tool routes: PowerShell baseline/hash, ExifTool, ImageMagick, Tesseract и zbarimg.
 6. В plan-only режиме результат выводится как table/Markdown/CSV/JSON через `format_search_plan()`. Missing/config/restricted tools остаются строками плана, а не ошибками.
 7. В adapter execution режиме `ready_adapter_repositories()` выбирает только `stage=adapter,status=ready,readiness=ready` и отсекает restricted entries даже при `--include-restricted`.
-8. `run_investigation()` получает исходный target и allowlist ready repositories, запускает внешние adapters через существующий `run_adapter_findings()` и сохраняет Markdown/JSON report и SQLite case при `--out`/`--case-db`.
+8. `run_investigation()` получает исходный target и allowlist ready repositories, запускает внешние adapters через существующий `run_adapter_findings()` и сохраняет Markdown/JSON report и SQLite case при `--out`/`--case-db`; `--scope-note` попадает в case metadata как текстовый контекст/рамки проверки.
 9. Для `image` target `run_image_search()` запускает ready local tools, добавляет missing/error/timeout findings по остальным local tools, извлекает URL/email/phone/username/domain clues и маршрутизирует derived targets через обычный `search`/`run_investigation()` flow.
 
 Scan-поток:
@@ -304,7 +304,7 @@ Investigation-поток:
 5. При `--execute-adapters` совместимые adapters запускаются через `run_adapter_findings()`; stdout/stderr parser добавляет дополнительные adapter findings. Для domain seeds профиль `domain-recon` может добавить Subfinder/httpx/passive Amass/theHarvester/BBOT/SpiderFoot, а профиль `broad-recon` может добавить BBOT/SpiderFoot/Argus; их parsed findings входят в тот же graph.
 6. `entities.py` извлекает и объединяет сущности из входных целей, `Finding.url`, `Finding.evidence` и `Finding.metadata`.
 7. `graph.py` строит связи между сущностями, включая `person -> username -> url`, `domain|url -> page_contact_email`, `domain|url -> page_contact_phone`, `domain|url -> sitemap_url`, `domain|url -> robots_disallow_path`, `domain|url -> discovered/social URL`, `domain -> ip|port|technology`, `instagram -> public profile metadata` и `social -> VK/OK public profile metadata`.
-8. Если указан `--case-db`, `CaseStore` сохраняет кейс в SQLite до вывода отчёта.
+8. Если указан `--case-db`, `CaseStore` сохраняет кейс в SQLite до вывода отчёта; `--scope-note` сохраняется в metadata без изменения таблиц findings/entities/edges.
 9. Отчёт выводится как Markdown или JSON; Markdown содержит `Entity Summary`, `Graph Edges`, native findings, adapter dry-runs или executed adapter findings и review checklist.
 
 Case-store поток:
@@ -374,7 +374,7 @@ Investigation:
 
 Сохранённые кейсы:
 
-`InvestigationResult + workflow/profile policy metadata -> CaseStore(SQLite) -> cases/case-show/case-graph/case-index -> table/Markdown/CSV/JSON`
+`InvestigationResult + workflow/profile/scope policy metadata -> CaseStore(SQLite) -> cases/case-show/case-graph/case-index -> table/Markdown/CSV/JSON`
 
 ## Внешние интеграции
 
@@ -403,6 +403,7 @@ External adapters должны подключать upstream CLI/API без ко
 - `--data-dir` — путь к папке с CSV.
 - `--format` — формат вывода для команд `catalog` и `show`.
 - `--out` — путь Markdown-файла для `brief`.
+- `search --scope-note` — текстовый контекст/рамки проверки, который сохраняется в case metadata при `--case-db`.
 - `toolbox --out` — путь HTML-файла локального пульта.
 - `toolbox --open` — открыть созданный HTML в браузере через стандартный `webbrowser`.
 - `toolbox --serve` — поднять локальный backend для запуска unified `search` jobs из toolbox.
@@ -434,6 +435,7 @@ External adapters должны подключать upstream CLI/API без ко
 - `investigate --format markdown|json` — формат отчёта по кейсу.
 - `investigate --case-db` — SQLite-файл для сохранения кейса.
 - `investigate --case-id` — стабильный ID кейса, если нужен повторяемый ключ.
+- `investigate --scope-note` — текстовый контекст/рамки проверки, который сохраняется в case metadata при `--case-db`.
 - `case-graph --entity-kind` и `case-graph --entity-value` — focus-сущность для поиска соседей в сохранённом графе.
 - `case-graph --limit` — ограничение top nodes и списка соседей.
 - `case-index --kind` — фильтр типа сущности в cross-case индексе.
@@ -464,11 +466,11 @@ python -m osint_toolkit toolbox --out osint_toolbox.html --open
 python -m osint_toolkit toolbox --serve --open
 python -m osint_toolkit toolbox --serve --port 8766 --out osint_toolbox.html
 python -m osint_toolkit search phone +380441234567 --profile phone-full --plan-only
-python -m osint_toolkit search phone +380441234567 --profile phone-full --execute-adapters --adapter-limit 3 --out reports/phone.md --case-db cases.sqlite --case-id phone-001
+python -m osint_toolkit search phone +380441234567 --profile phone-full --execute-adapters --adapter-limit 3 --out reports/phone.md --case-db cases.sqlite --case-id phone-001 --scope-note "internal validation scope"
 python -m osint_toolkit search email person@example.com --profile email-full --plan-only --format markdown
 python -m osint_toolkit search auto https://vk.com/example --profile auto --plan-only --format json
 python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --plan-only
-python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --execute-adapters --out reports/photo.md --case-db cases.sqlite --case-id photo-001
+python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --execute-adapters --out reports/photo.md --case-db cases.sqlite --case-id photo-001 --scope-note "image source context review"
 python -m osint_toolkit search email person@example.com --profile case-email-safe --profile-file profiles\case_profiles.json --plan-only
 python -m osint_toolkit profiles list --format markdown
 python -m osint_toolkit profiles export email-full --out profiles\email-full.json
@@ -516,7 +518,7 @@ python -m osint_toolkit investigate --username example_user --domain example.com
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter-profile username-full --adapter-limit 2
 python -m osint_toolkit investigate --username example_user --include-adapters --adapter soxoj/maigret
 python -m osint_toolkit investigate --username example_user --include-adapters --execute-adapters --adapter-limit 1
-python -m osint_toolkit investigate --email person@example.com --case-db cases.sqlite --case-id case-001
+python -m osint_toolkit investigate --email person@example.com --case-db cases.sqlite --case-id case-001 --scope-note "internal validation scope"
 python -m osint_toolkit cases --case-db cases.sqlite
 python -m osint_toolkit case-show --case-db cases.sqlite case-001 --format json
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001
@@ -603,7 +605,7 @@ osint-toolkit stats
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
 - Adapter manifest теперь включает generated CSV/TXT folder template для `sherlock-project/sherlock`, isolated workdir TXT ingestion для `thewhiteh4t/nexfil`, generated JSON-file templates для `alpkeskin/mosint`, `h8mail` и `laramies/theHarvester`, generated JSON-report folder template для `soxoj/maigret`, generated JSON/NDJSON output folder template для `blacklanternsecurity/bbot`, required-env Python script template для `smicallef/spiderfoot`, interactive stdin template для `jasonxtn/argus`, target-specific executable templates для `user-scanner`, region-aware template для `snooppr/snoop`, required-env Node template для `qeeqbox/social-analyzer`, checkout/results template для `p1ngul1n0/blackbird` и executable template для `sundowndev/phoneinfoga`; более сложные adapters могут потребовать richer per-mode config.
 - Adapter parser покрывает общие URL/email/phone/key-value patterns, Sherlock stdout/CSV/TXT reports, Nexfil stdout/TXT reports, Mosint JSON reports, h8mail JSON reports, Maigret JSON/CSV reports, `user-scanner` JSON/verbose output, Snoop stdout/CSV output, Social Analyzer JSON output, Blackbird JSON/stdout output, PhoneInfoga CLI/API output, domain-recon adapters Subfinder/httpx/passive Amass/theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output; сложные JSON/CSV/HTML exports остальных upstream ещё не разобраны.
-- Adapter profiles в `adapters.py` пока статические. Search-layer profiles можно расширять через `--profile-file` и управлять через `profiles list/show/export`; saved cases хранят workflow/profile/adapter policy metadata, но UI-редактора профилей и enforcement per-case policy ещё нет.
+- Adapter profiles в `adapters.py` пока статические. Search-layer profiles можно расширять через `--profile-file` и управлять через `profiles list/show/export`; saved cases хранят workflow/profile/adapter/scope policy metadata, но UI-редактора профилей и enforcement per-case policy ещё нет.
 - Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> email`, `domain -> phone`, `domain -> discovered/social/sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois-server`, `domain -> ip|port|technology`, `url -> instagram`, `url -> social-profile`, `instagram -> platform/display name/account id/public URLs`, `social -> social-profile/platform/display name/account id/public URLs` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics, cross-case entity index, command toolbox и served Case Browser, но нет weighted path finding, cross-case edge graph и интерактивной визуализации графа.
 - SQLite schema сейчас версии 3; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
@@ -701,3 +703,4 @@ osint-toolkit stats
 - 2026-06-25: добавлена команда `profiles list/show/export`: built-in и custom search profiles можно просматривать и экспортировать в reusable JSON без чтения кода.
 - 2026-06-25: SQLite case store расширен таблицей `case_metadata`: `search --case-db` и `investigate --case-db` сохраняют workflow/profile/adapter policy metadata, а `case-show` выводит её в JSON/Markdown/table.
 - 2026-06-25: `toolbox --serve` расширен Case Browser: HTML-пульт читает `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph` и `/api/case-index` через token-protected backend без произвольного shell.
+- 2026-06-25: `search --scope-note` и `investigate --scope-note` сохраняют текстовый scope/context в `case_metadata`, чтобы saved cases фиксировали рамки проверки рядом с profile/execution policy.
