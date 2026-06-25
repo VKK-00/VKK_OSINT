@@ -907,6 +907,14 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       text-anchor: middle;
       pointer-events: none;
     }}
+    .graph-node[data-graph-kind] {{
+      cursor: pointer;
+    }}
+    .graph-node[data-graph-kind]:focus circle,
+    .graph-node[data-graph-kind]:hover circle {{
+      stroke: #111827;
+      stroke-width: 3;
+    }}
     .hidden {{ display: none; }}
     section {{
       margin: 0 0 18px;
@@ -1391,6 +1399,16 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
         row.textContent = "focus neighbors: " + analysis.neighbors.length;
         legend.appendChild(row);
       }}
+      const hint = document.createElement("div");
+      hint.textContent = "Click a graph node to focus neighbors.";
+      legend.appendChild(hint);
+    }}
+
+    function focusGraphNode(kind, value) {{
+      if (!kind || !value) return;
+      setFieldValue("entity_kind", kind);
+      setFieldValue("entity_value", value);
+      showCaseGraph().catch((error) => setCaseLog(String(error)));
     }}
 
     function renderCaseGraph(casePayload, analysis) {{
@@ -1465,7 +1483,13 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       }}
 
       for (const node of graph.nodes) {{
-        const group = svgElement("g", {{class: "graph-node"}});
+        const group = svgElement("g", {{
+          class: "graph-node",
+          "data-graph-kind": node.kind,
+          "data-graph-value": node.value,
+          role: "button",
+          tabindex: "0"
+        }});
         group.appendChild(svgElement("circle", {{
           cx: node.x,
           cy: node.y,
@@ -1581,6 +1605,20 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       if (!button) return;
       setFieldValue("case_id", button.getAttribute("data-open-case"));
       showCase().catch((error) => setCaseLog(String(error)));
+    }});
+
+    document.addEventListener("click", (event) => {{
+      const node = event.target.closest("[data-graph-kind]");
+      if (!node) return;
+      focusGraphNode(node.getAttribute("data-graph-kind"), node.getAttribute("data-graph-value"));
+    }});
+
+    document.addEventListener("keydown", (event) => {{
+      if (!["Enter", " "].includes(event.key)) return;
+      const node = event.target.closest("[data-graph-kind]");
+      if (!node) return;
+      event.preventDefault();
+      focusGraphNode(node.getAttribute("data-graph-kind"), node.getAttribute("data-graph-value"));
     }});
 
     if (backendAvailable()) {{

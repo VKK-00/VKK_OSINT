@@ -196,7 +196,7 @@ python -m osint_toolkit tools env --profile email-full --format json
 
 ### `toolbox`
 
-Генерирует одно локальное HTML-окно для ручной работы оператора: слева seed-поля, справа направления OSINT и кнопки, которые собирают copy-ready команды текущего CLI. В served mode окно также запускает unified `search` jobs, передаёт `scope_note`, читает saved cases/graph/index и рисует SVG-граф связей через локальный backend.
+Генерирует одно локальное HTML-окно для ручной работы оператора: слева seed-поля, справа направления OSINT и кнопки, которые собирают copy-ready команды текущего CLI. В served mode окно также запускает unified `search` jobs, передаёт `scope_note`, читает saved cases/graph/index и рисует кликабельный SVG-граф связей через локальный backend.
 
 ```powershell
 python -m osint_toolkit toolbox --out osint_toolbox.html
@@ -216,7 +216,7 @@ python -m osint_toolkit toolbox --serve --port 8766 --out osint_toolbox.html
 - SQLite cases, SVG graph и cross-case index;
 - каталог, adapter readiness/setup и reusable adapter profiles.
 
-Static `toolbox --out` не загружает фото автоматически и не запускает команды из браузера: он собирает команды для ручного запуска. `toolbox --serve` поднимает локальный `127.0.0.1` backend с per-session token и принимает только структурированные payloads: `/api/search` для запуска unified jobs и read-only `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph`, `/api/case-index` для saved SQLite cases внутри рабочей папки backend. Case Browser строит bounded SVG-визуализацию из сохранённых `entities`/`edges`, показывает graph summary/focus analysis и не исполняет произвольный shell из браузера. Для фото served mode запускает тот же `search image ... --execute-adapters`: ready local tools, derived seeds, report/case. Reverse image search остаётся ручной загрузкой на внешние сайты для источника, дублей и контекста изображения, а не для face-ID.
+Static `toolbox --out` не загружает фото автоматически и не запускает команды из браузера: он собирает команды для ручного запуска. `toolbox --serve` поднимает локальный `127.0.0.1` backend с per-session token и принимает только структурированные payloads: `/api/search` для запуска unified jobs и read-only `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph`, `/api/case-index` для saved SQLite cases внутри рабочей папки backend. Case Browser строит bounded SVG-визуализацию из сохранённых `entities`/`edges`; клик по узлу заполняет focus entity и вызывает graph summary/focus-neighbor analysis. Произвольный shell из браузера не исполняется. Для фото served mode запускает тот же `search image ... --execute-adapters`: ready local tools, derived seeds, report/case. Reverse image search остаётся ручной загрузкой на внешние сайты для источника, дублей и контекста изображения, а не для face-ID.
 
 ### `stats`
 

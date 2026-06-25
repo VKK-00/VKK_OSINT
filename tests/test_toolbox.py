@@ -44,6 +44,8 @@ class ToolboxTests(unittest.TestCase):
         self.assertIn("Case Browser", html)
         self.assertIn("caseGraphSvg", html)
         self.assertIn("renderCaseGraph", html)
+        self.assertIn("focusGraphNode", html)
+        self.assertIn("data-graph-kind", html)
         self.assertIn("scope_note", html)
         self.assertIn("--scope-note", html)
         self.assertIn("/api/search", html)
