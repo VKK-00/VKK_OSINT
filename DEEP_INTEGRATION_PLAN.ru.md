@@ -411,12 +411,13 @@ Profile fields:
 
 Приоритет 2:
 
-- theHarvester API-source attribution.
+- Закрыт для текущего parser scope Stage 1.
 
 Done:
 
 - Maigret richer dossier fields: site metadata, probe URL, rank/similarity flags, extracted contact/profile fields, activity counters, external/profile image URLs and related usernames now normalize into unified metadata/entities/graph signals.
 - BBOT broader passive preset: added explicit `bbot-passive-web` profile and `blacklanternsecurity/bbot-passive-web` adapter variant for `subdomain-enum web-basic` constrained by `-rf passive` and `-ef active aggressive deadly portscan web-screenshots`.
+- theHarvester API/source attribution: parser preserves `source_label` for record-level `resource/type/source` rows, source maps such as `emails_by_source`/`hosts_by_source`, and nested `source_results` provider payloads.
 
 ## Unified output model
 
@@ -583,6 +584,7 @@ Notes:
 35. Done: add zbarimg raw payload parser for QR/barcode clues and derived seed extraction.
 36. Done: add Argus per-target parser fixtures and target provenance metadata for parsed Argus URL/email/phone/subdomain/IP/port/technology signals.
 37. Done: add Yark archive JSON parser, safe temporary archive execution route and generated `yark.json` ingestion for YouTube channel/video archive clues.
+38. Done: preserve theHarvester API/source attribution from stash/API-style rows and source maps into `source_label` metadata and evidence.
 38. Done: add Socialscan username/email adapter, generated JSON parser and safe availability-signal mapping for `candidate`/`not_found`/`skipped`/`error` results.
 
 ## Definition of done

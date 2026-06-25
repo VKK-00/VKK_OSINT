@@ -502,7 +502,7 @@ def _theharvester_json_findings(
     target: ScanTarget,
     payload: object | None,
 ) -> tuple[Finding, ...]:
-    if not isinstance(payload, dict):
+    if not isinstance(payload, (dict, list)):
         return ()
 
     root_domain = _target_domain(target)
@@ -512,12 +512,33 @@ def _theharvester_json_findings(
     seen_urls: set[str] = set()
     seen_observed: set[tuple[str, str]] = set()
 
-    for email in _string_list(payload.get("emails")):
-        finding = _theharvester_email_finding(repository, target, email, "email", seen_emails)
+    for record in _theharvester_result_records(payload):
+        finding = _theharvester_record_finding(
+            repository=repository,
+            target=target,
+            root_domain=root_domain,
+            record=record,
+            seen_subdomains=seen_subdomains,
+            seen_emails=seen_emails,
+            seen_urls=seen_urls,
+            seen_observed=seen_observed,
+        )
         if finding:
             findings.append(finding)
 
-    for raw_host in _string_list(payload.get("hosts")) + _string_list(payload.get("vhosts")):
+    if not isinstance(payload, dict):
+        return tuple(findings)
+
+    for email, source_label in _theharvester_items(payload, ("emails",), ("email", "emails", "resource", "value", "data")):
+        finding = _theharvester_email_finding(repository, target, email, "email", seen_emails, source_label)
+        if finding:
+            findings.append(finding)
+
+    for raw_host, source_label in _theharvester_items(
+        payload,
+        ("hosts", "vhosts"),
+        ("host", "hostname", "subdomain", "fqdn", "domain", "name", "resource", "value", "data"),
+    ):
         hostname, ip = _theharvester_host_ip(raw_host)
         finding = _subdomain_finding(
             repository=repository,
@@ -525,7 +546,7 @@ def _theharvester_json_findings(
             target=target,
             root_domain=root_domain,
             subdomain=hostname,
-            source_label="host",
+            source_label=source_label,
             ip=ip,
             raw_line="",
             seen=seen_subdomains,
@@ -537,33 +558,50 @@ def _theharvester_json_findings(
         ("interesting_urls", "interesting-url"),
         ("trello_urls", "trello-url"),
         ("linkedin_links", "linkedin-link"),
+        ("api_endpoints", "api-endpoint"),
     ):
-        for url in _string_list(payload.get(key)):
-            finding = _theharvester_url_finding(repository, target, url, category, seen_urls)
+        for url, source_label in _theharvester_items(
+            payload,
+            (key,),
+            ("url", "link", "endpoint", "resource", "value", "data"),
+        ):
+            finding = _theharvester_url_finding(repository, target, url, category, seen_urls, source_label)
             if finding:
                 findings.append(finding)
 
-    for ip in _string_list(payload.get("ips")):
-        finding = _theharvester_observed_finding(repository, target, "ip", ip, "ip", seen_observed)
+    for ip, source_label in _theharvester_items(payload, ("ips",), ("ip", "address", "resource", "value", "data")):
+        finding = _theharvester_observed_finding(repository, target, "ip", ip, "ip", seen_observed, source_label)
         if finding:
             findings.append(finding)
 
-    for asn in _string_list(payload.get("asns")):
-        finding = _theharvester_observed_finding(repository, target, "asn", asn, "asn", seen_observed)
+    for asn, source_label in _theharvester_items(payload, ("asns",), ("asn", "as", "resource", "value", "data")):
+        finding = _theharvester_observed_finding(repository, target, "asn", asn, "asn", seen_observed, source_label)
         if finding:
             findings.append(finding)
 
-    for person in _theharvester_people(payload.get("people")):
-        finding = _theharvester_observed_finding(repository, target, "name", person, "person", seen_observed)
+    for person, source_label in _theharvester_items(
+        payload,
+        ("people",),
+        ("name", "full_name", "fullname", "person", "resource", "value", "data", "username"),
+    ):
+        finding = _theharvester_observed_finding(repository, target, "name", person, "person", seen_observed, source_label)
         if finding:
             findings.append(finding)
 
-    for person in _string_list(payload.get("twitter_people")):
-        finding = _theharvester_observed_finding(repository, target, "username", person, "twitter-person", seen_observed)
+    for person, source_label in _theharvester_items(
+        payload,
+        ("twitter_people",),
+        ("username", "name", "resource", "value", "data"),
+    ):
+        finding = _theharvester_observed_finding(repository, target, "username", person, "twitter-person", seen_observed, source_label)
         if finding:
             findings.append(finding)
-    for person in _string_list(payload.get("linkedin_people")):
-        finding = _theharvester_observed_finding(repository, target, "name", person, "linkedin-person", seen_observed)
+    for person, source_label in _theharvester_items(
+        payload,
+        ("linkedin_people",),
+        ("name", "full_name", "fullname", "person", "resource", "value", "data"),
+    ):
+        finding = _theharvester_observed_finding(repository, target, "name", person, "linkedin-person", seen_observed, source_label)
         if finding:
             findings.append(finding)
 
@@ -576,6 +614,7 @@ def _theharvester_email_finding(
     email: str,
     category: str,
     seen: set[str],
+    source_label: str = "",
 ) -> Finding | None:
     normalized = email.strip().lower()
     if not EMAIL_RE.fullmatch(normalized):
@@ -584,20 +623,26 @@ def _theharvester_email_finding(
         return None
     seen.add(normalized)
     domain = normalized.rsplit("@", 1)[1]
+    metadata = {
+        "repository": repository,
+        "parser": "theharvester",
+        "category": category,
+        "email": normalized,
+        "domain": domain,
+    }
+    if source_label:
+        metadata["source_label"] = source_label
+    evidence = f"theHarvester reported email: {normalized}"
+    if source_label:
+        evidence += f" (source: {source_label})"
     return Finding(
         module="external-adapter-parser",
         source=repository,
         target=target.value,
         status="candidate",
         confidence="medium",
-        evidence=f"theHarvester reported email: {normalized}",
-        metadata={
-            "repository": repository,
-            "parser": "theharvester",
-            "category": category,
-            "email": normalized,
-            "domain": domain,
-        },
+        evidence=evidence,
+        metadata=metadata,
     )
 
 
@@ -607,6 +652,7 @@ def _theharvester_url_finding(
     url: str,
     category: str,
     seen: set[str],
+    source_label: str = "",
 ) -> Finding | None:
     value = url.strip()
     if not value.startswith(("http://", "https://")):
@@ -623,6 +669,11 @@ def _theharvester_url_finding(
     }
     if domain:
         metadata["domain"] = domain
+    if source_label:
+        metadata["source_label"] = source_label
+    evidence = f"theHarvester reported URL: {value}"
+    if source_label:
+        evidence += f" (source: {source_label})"
     return Finding(
         module="external-adapter-parser",
         source=repository,
@@ -630,7 +681,7 @@ def _theharvester_url_finding(
         status="candidate",
         url=value,
         confidence="medium",
-        evidence=f"theHarvester reported URL: {value}",
+        evidence=evidence,
         metadata=metadata,
     )
 
@@ -642,6 +693,7 @@ def _theharvester_observed_finding(
     value: str,
     category: str,
     seen: set[tuple[str, str]],
+    source_label: str = "",
 ) -> Finding | None:
     normalized = " ".join(value.strip().split())
     if not normalized:
@@ -650,20 +702,221 @@ def _theharvester_observed_finding(
     if seen_key in seen:
         return None
     seen.add(seen_key)
+    metadata = {
+        "repository": repository,
+        "parser": "theharvester",
+        "category": category,
+        metadata_key: normalized,
+    }
+    if source_label:
+        metadata["source_label"] = source_label
+    evidence = f"theHarvester reported {category}: {normalized}"
+    if source_label:
+        evidence += f" (source: {source_label})"
     return Finding(
         module="external-adapter-parser",
         source=repository,
         target=target.value,
         status="observed",
         confidence="medium",
-        evidence=f"theHarvester reported {category}: {normalized}",
-        metadata={
-            "repository": repository,
-            "parser": "theharvester",
-            "category": category,
-            metadata_key: normalized,
-        },
+        evidence=evidence,
+        metadata=metadata,
     )
+
+
+def _theharvester_record_finding(
+    *,
+    repository: str,
+    target: ScanTarget,
+    root_domain: str,
+    record: dict[str, Any],
+    seen_subdomains: set[tuple[str, str]],
+    seen_emails: set[str],
+    seen_urls: set[str],
+    seen_observed: set[tuple[str, str]],
+) -> Finding | None:
+    result_type = _first_scalar(record.get("type") or record.get("res_type") or record.get("category")).lower()
+    value = _first_scalar(
+        record.get("resource")
+        or record.get("value")
+        or record.get("data")
+        or record.get("host")
+        or record.get("hostname")
+        or record.get("email")
+        or record.get("url")
+        or record.get("ip")
+        or record.get("asn")
+        or record.get("name")
+    )
+    source_label = _theharvester_source_label(record) or _theharvester_source_label(record.get("source"))
+    if not value:
+        return None
+    if result_type in {"host", "hosts", "subdomain", "subdomains", "vhost", "vhosts"}:
+        hostname, ip = _theharvester_host_ip(value)
+        return _subdomain_finding(
+            repository=repository,
+            parser="theharvester",
+            target=target,
+            root_domain=root_domain,
+            subdomain=hostname,
+            source_label=source_label,
+            ip=ip,
+            raw_line="",
+            seen=seen_subdomains,
+        )
+    if result_type in {"email", "emails"}:
+        return _theharvester_email_finding(repository, target, value, "email", seen_emails, source_label)
+    if result_type in {"url", "urls", "link", "links", "interestingurl", "interestingurls", "api_endpoint", "api-endpoint"}:
+        return _theharvester_url_finding(repository, target, value, result_type.replace("_", "-"), seen_urls, source_label)
+    if result_type in {"ip", "ips", "address"}:
+        return _theharvester_observed_finding(repository, target, "ip", value, "ip", seen_observed, source_label)
+    if result_type in {"asn", "asns"}:
+        return _theharvester_observed_finding(repository, target, "asn", value, "asn", seen_observed, source_label)
+    if result_type in {"person", "people", "name", "linkedin_people", "twitter_people"}:
+        key = "username" if "twitter" in result_type else "name"
+        category = "twitter-person" if "twitter" in result_type else "person"
+        return _theharvester_observed_finding(repository, target, key, value, category, seen_observed, source_label)
+    return None
+
+
+def _theharvester_result_records(payload: object) -> tuple[dict[str, Any], ...]:
+    records: list[dict[str, Any]] = []
+
+    def add(value: object) -> None:
+        if isinstance(value, dict):
+            if any(key in value for key in ("resource", "type", "res_type")):
+                records.append(value)
+                return
+            for nested_key in ("results", "data", "items", "records", "latestscanresults", "scan_results"):
+                add(value.get(nested_key))
+            return
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                add(item)
+
+    add(payload)
+    return tuple(records)
+
+
+def _theharvester_items(
+    payload: dict[str, Any],
+    field_names: tuple[str, ...],
+    value_keys: tuple[str, ...],
+) -> tuple[tuple[str, str], ...]:
+    items: list[tuple[str, str]] = []
+    default_source = _theharvester_source_label(payload)
+    for field_name in field_names:
+        items.extend(_theharvester_value_items(payload.get(field_name), value_keys, default_source))
+    for source_map_key in _theharvester_source_map_keys(field_names):
+        items.extend(_theharvester_source_map_items(payload.get(source_map_key), value_keys))
+    for source_label, source_payload in _theharvester_nested_source_payloads(payload):
+        if isinstance(source_payload, dict):
+            for field_name in field_names:
+                items.extend(_theharvester_value_items(source_payload.get(field_name), value_keys, source_label))
+        else:
+            items.extend(_theharvester_value_items(source_payload, value_keys, source_label))
+    return tuple(_dedupe_source_items(items))
+
+
+def _theharvester_value_items(
+    value: object,
+    value_keys: tuple[str, ...],
+    source_label: str,
+) -> list[tuple[str, str]]:
+    if value is None:
+        return []
+    if isinstance(value, dict):
+        record_source = _theharvester_source_label(value) or source_label
+        record_values = _theharvester_record_values(value, value_keys)
+        if record_values:
+            return [(record_value, record_source) for record_value in record_values]
+        return _theharvester_source_map_items(value, value_keys)
+    if isinstance(value, (list, tuple, set)):
+        items: list[tuple[str, str]] = []
+        for nested in value:
+            items.extend(_theharvester_value_items(nested, value_keys, source_label))
+        return items
+    scalar = _first_scalar(value)
+    return [(scalar, source_label)] if scalar else []
+
+
+def _theharvester_record_values(record: dict[str, Any], value_keys: tuple[str, ...]) -> tuple[str, ...]:
+    values: list[str] = []
+    for key in value_keys:
+        if key in record:
+            values.extend(_string_list(record[key]) or [_first_scalar(record[key])])
+    if any(key in value_keys for key in ("name", "full_name", "fullname", "person")):
+        people = _theharvester_people(record)
+        if people:
+            values.extend(people)
+    return _dedupe_text([value for value in values if value])
+
+
+def _theharvester_source_map_items(value: object, value_keys: tuple[str, ...]) -> list[tuple[str, str]]:
+    if not isinstance(value, dict):
+        return []
+    items: list[tuple[str, str]] = []
+    for key, nested in value.items():
+        if str(key).lower() in {"source", "sources", "engine", "engines", "provider", "providers", "count", "total"}:
+            continue
+        source_label = _first_scalar(key)
+        if source_label:
+            items.extend(_theharvester_value_items(nested, value_keys, source_label))
+    return items
+
+
+def _theharvester_source_map_keys(field_names: tuple[str, ...]) -> tuple[str, ...]:
+    keys: list[str] = []
+    for field_name in field_names:
+        singular = field_name[:-1] if field_name.endswith("s") else field_name
+        keys.extend(
+            (
+                f"{field_name}_by_source",
+                f"{field_name}_by_sources",
+                f"{field_name}_sources",
+                f"{singular}_by_source",
+                f"{singular}_sources",
+                f"source_{field_name}",
+            )
+        )
+    return tuple(dict.fromkeys(keys))
+
+
+def _theharvester_nested_source_payloads(payload: dict[str, Any]) -> tuple[tuple[str, object], ...]:
+    nested_payloads: list[tuple[str, object]] = []
+    for key in ("sources", "source_results", "results_by_source", "by_source", "providers", "engines"):
+        value = payload.get(key)
+        if not isinstance(value, dict):
+            continue
+        for source_label, source_payload in value.items():
+            label = _first_scalar(source_label)
+            if label:
+                nested_payloads.append((label, source_payload))
+    return tuple(nested_payloads)
+
+
+def _theharvester_source_label(value: object) -> str:
+    if isinstance(value, dict):
+        for key in ("source_label", "source", "sources", "engine", "engines", "provider", "providers", "module"):
+            label = _metadata_list_text(value.get(key))
+            if label:
+                return "" if label.lower() == "all" else label
+        return ""
+    label = _metadata_list_text(value)
+    return "" if label.lower() == "all" else label
+
+
+def _dedupe_source_items(items: list[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
+    seen: set[tuple[str, str]] = set()
+    deduped: list[tuple[str, str]] = []
+    for value, source_label in items:
+        compact = " ".join(str(value).split())
+        source = " ".join(str(source_label).split())
+        key = (compact.lower(), source.lower())
+        if compact and key not in seen:
+            seen.add(key)
+            deduped.append((compact, source))
+    return tuple(deduped)
 
 
 def _theharvester_host_ip(value: str) -> tuple[str, str]:

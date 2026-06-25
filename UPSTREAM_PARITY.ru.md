@@ -292,7 +292,7 @@ Gap:
 - executable passive adapter target для `owasp-amass/amass`: `amass enum -passive -nocolor -d <domain>`;
 - parser для Amass passive stdout/JSON-like output: FQDN/subdomain values превращаются в `subdomain` findings без включения active/bruteforce modes;
 - executable adapter target для `laramies/theHarvester`: `theHarvester -d <domain> -b all -f <temp.json>`;
-- parser для theHarvester generated JSON/stdout output: `emails`, `hosts`, `vhosts`, `interesting_urls`, `trello_urls`, `ips`, `asns` и people fields нормализуются в `Finding`/entities/graph signals;
+- parser для theHarvester generated JSON/stdout output: `emails`, `hosts`, `vhosts`, `interesting_urls`, `trello_urls`, `api_endpoints`, `ips`, `asns` и people fields нормализуются в `Finding`/entities/graph signals; `resource/type/source` rows, `*_by_source` maps и nested `source_results` сохраняют provider/source в `source_label`;
 - executable adapter target для `blacklanternsecurity/bbot`: `bbot -t <target> -p subdomain-enum -rf passive --output <tempdir> --name osint-toolkit`;
 - explicit broader passive adapter variant для `blacklanternsecurity/bbot-passive-web`: `bbot -t <target> -p subdomain-enum web-basic -rf passive -ef active aggressive deadly portscan web-screenshots --output <tempdir> --name osint-toolkit`;
 - parser для BBOT generated JSON/NDJSON/stdout events: `DNS_NAME`, `EMAIL_ADDRESS`, `URL`, `IP_ADDRESS`, `OPEN_TCP_PORT`, `TECHNOLOGY`, `FINDING` и `VULNERABILITY` нормализуются в `Finding`/entities/graph signals;
@@ -358,7 +358,7 @@ python -m osint_toolkit adapter-setup <repository>
 - adapter-specific parser for Subfinder JSONL/plain subdomain output;
 - adapter-specific parser for httpx JSONL/plain HTTP probe output;
 - adapter-specific parser for passive Amass stdout/JSON-like subdomain output;
-- adapter-specific parser for theHarvester generated JSON/stdout domain recon output;
+- adapter-specific parser for theHarvester generated JSON/stdout domain recon output, including `source_label` preservation for stash/API-style rows and source maps;
 - adapter-specific parser for BBOT generated JSON/NDJSON/stdout event output;
 - adapter-specific parser for SpiderFoot JSON/stdout event output with domain/email/phone/username target fixtures;
 - adapter-specific parser for Argus interactive stdout/cache-like output;
@@ -374,7 +374,7 @@ python -m osint_toolkit adapter-setup <repository>
 Gap:
 
 - нет встроенной CLI-команды `install adapters`, но текущая dev/toolbox машина может быть приведена к `all-safe` ready через user-local `pipx`, Go binaries, portable image tools и venv-backed manual checkouts;
-- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, pwnedOrNot stdout, Maigret JSON/CSV dossier fields, `user-scanner` JSON/verbose, Snoop stdout/CSV, Social Analyzer JSON, Socialscan generated JSON, Blackbird JSON/stdout, DetectDee generated result/stdout, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events, SpiderFoot events, Argus stdout/cache-like output, Yark generated `yark.json` archive output, ExifTool JSON local image metadata, Tesseract OCR text и zbarimg QR/barcode payloads;
+- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, pwnedOrNot stdout, Maigret JSON/CSV dossier fields, `user-scanner` JSON/verbose, Snoop stdout/CSV, Social Analyzer JSON, Socialscan generated JSON, Blackbird JSON/stdout, DetectDee generated result/stdout, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester с source attribution для поддержанных JSON shapes, BBOT events, SpiderFoot events, Argus stdout/cache-like output, Yark generated `yark.json` archive output, ExifTool JSON local image metadata, Tesseract OCR text и zbarimg QR/barcode payloads;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.
 

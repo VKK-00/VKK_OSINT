@@ -911,6 +911,68 @@ class AdapterParserTests(unittest.TestCase):
         self.assertIn(("url", "https://www.example.com/login"), entities)
         self.assertIn(("name", "example person"), entities)
 
+    def test_parse_theharvester_json_report_preserves_source_attribution(self):
+        findings = parse_adapter_output(
+            "laramies/theHarvester",
+            ScanTarget(kind="domain", value="example.com"),
+            """
+            {
+              "emails_by_source": {
+                "hunter": [{"email": "sales@example.com"}],
+                "crtsh": ["admin@example.com"]
+              },
+              "hosts_by_source": {
+                "crtsh": ["api.example.com:93.184.216.34"]
+              },
+              "source_results": {
+                "otx": {
+                  "interesting_urls": ["https://www.example.com/login"],
+                  "ips": ["93.184.216.34"]
+                }
+              },
+              "people": [{"name": "Example Person", "source": "linkedin"}]
+            }
+            """,
+        )
+
+        metadata = [finding.metadata for finding in findings]
+        self.assertTrue(any(item.get("email") == "sales@example.com" and item.get("source_label") == "hunter" for item in metadata))
+        self.assertTrue(any(item.get("email") == "admin@example.com" and item.get("source_label") == "crtsh" for item in metadata))
+        self.assertTrue(
+            any(
+                item.get("subdomain") == "api.example.com"
+                and item.get("ip") == "93.184.216.34"
+                and item.get("source_label") == "crtsh"
+                for item in metadata
+            )
+        )
+        self.assertTrue(any(finding.url == "https://www.example.com/login" and finding.metadata.get("source_label") == "otx" for finding in findings))
+        self.assertTrue(any(item.get("ip") == "93.184.216.34" and item.get("source_label") == "otx" for item in metadata))
+        self.assertTrue(any(item.get("name") == "Example Person" and item.get("source_label") == "linkedin" for item in metadata))
+        self.assertTrue(any("(source: hunter)" in finding.evidence for finding in findings))
+
+    def test_parse_theharvester_stash_records_preserves_sources(self):
+        findings = parse_adapter_output(
+            "laramies/theHarvester",
+            ScanTarget(kind="domain", value="example.com"),
+            """
+            {
+              "results": [
+                {"resource": "api.example.com", "type": "host", "source": "crtsh"},
+                {"resource": "admin@example.com", "type": "email", "source": "hunter"},
+                {"resource": "93.184.216.34", "type": "ip", "source": "dnsdumpster"},
+                {"resource": "https://www.example.com/api", "type": "api_endpoint", "source": "api_scan"}
+              ]
+            }
+            """,
+        )
+
+        metadata = [finding.metadata for finding in findings]
+        self.assertTrue(any(item.get("subdomain") == "api.example.com" and item.get("source_label") == "crtsh" for item in metadata))
+        self.assertTrue(any(item.get("email") == "admin@example.com" and item.get("source_label") == "hunter" for item in metadata))
+        self.assertTrue(any(item.get("ip") == "93.184.216.34" and item.get("source_label") == "dnsdumpster" for item in metadata))
+        self.assertTrue(any(finding.url == "https://www.example.com/api" and finding.metadata.get("source_label") == "api_scan" for finding in findings))
+
     def test_parse_theharvester_console_output(self):
         findings = parse_adapter_output(
             "laramies/theHarvester",
