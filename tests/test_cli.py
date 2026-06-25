@@ -557,6 +557,9 @@ class CliTests(unittest.TestCase):
             self.assertEqual(show_result.returncode, 0, show_result.stderr)
             payload = json.loads(show_result.stdout)
             self.assertEqual(payload["case"]["title"], "saved case")
+            self.assertEqual(payload["metadata"]["workflow"], "investigate")
+            self.assertFalse(payload["metadata"]["include_adapters"])
+            self.assertEqual(payload["metadata"]["expanded_adapter_repositories"], [])
             entities = {(entity["kind"], entity["value"].lower()) for entity in payload["entities"]}
             self.assertIn(("email", "person@example.com"), entities)
             self.assertIn(("domain", "example.com"), entities)
@@ -852,6 +855,20 @@ class CliTests(unittest.TestCase):
             self.assertIn("# Search Execution Report: phone", content)
             self.assertIn("## Fan-out Plan", content)
             self.assertIn("## Investigation Report", content)
+            show_result = self.run_cli(
+                "case-show",
+                "--case-db",
+                str(db_path),
+                "phone-search-1",
+                "--format",
+                "json",
+            )
+            self.assertEqual(show_result.returncode, 0, show_result.stderr)
+            payload = json.loads(show_result.stdout)
+            self.assertEqual(payload["metadata"]["workflow"], "search")
+            self.assertEqual(payload["metadata"]["requested_profile"], "phone-full")
+            self.assertEqual(payload["metadata"]["search_profile"]["name"], "phone-full")
+            self.assertEqual(payload["metadata"]["executed_adapters"], [])
 
     def test_search_execute_adapters_runs_image_local_tools_and_saves_case(self):
         with tempfile.TemporaryDirectory() as tmpdir:

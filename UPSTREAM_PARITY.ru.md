@@ -390,6 +390,7 @@ python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value p
 - Entity Summary from targets, finding URLs, evidence and metadata;
 - Graph Edges for base entity relations;
 - SQLite persistence for cases, targets, entities, edges and findings;
+- per-case workflow/profile/adapter policy metadata stored in SQLite and visible through `case-show`;
 - list/show saved cases through CLI;
 - saved graph summary: node/edge counts, relation counts, entity kind counts and top connected nodes;
 - focus-neighbor query for one saved entity;
@@ -401,7 +402,7 @@ python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value p
 Gap:
 
 - graph edges пока базовые, без weighted path finding и full cross-case edge graph;
-- есть custom search profiles через `search/tools --profile-file` и CLI management `profiles list/show/export`; при этом adapter profiles в `adapters.py` остаются статическим manifest-layer, а persistent per-case adapter policy ещё не реализована;
+- есть custom search profiles через `search/tools --profile-file` и CLI management `profiles list/show/export`; saved cases persist workflow/profile/adapter policy metadata, но adapter profiles в `adapters.py` остаются статическим manifest-layer и нет UI/enforcement для per-case policy;
 - нет backend web UI, просмотра кейса в браузере и интерактивного графа; `toolbox` пока только собирает команды/порталы для ручного запуска и не делает face-ID.
 
 ## Adapter doctor

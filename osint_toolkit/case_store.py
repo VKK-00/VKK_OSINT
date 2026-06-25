@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Iterator
 if TYPE_CHECKING:
     from .investigation import InvestigationResult
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 
 class CaseStoreError(Exception):
@@ -87,7 +87,13 @@ class CaseStore:
     def __init__(self, path: str | Path):
         self.path = Path(path)
 
-    def save(self, result: InvestigationResult, *, case_id: str | None = None) -> str:
+    def save(
+        self,
+        result: InvestigationResult,
+        *,
+        case_id: str | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> str:
         normalized_case_id = (case_id or uuid.uuid4().hex).strip()
         if not normalized_case_id:
             raise CaseStoreError("case_id cannot be empty.")
@@ -189,6 +195,21 @@ class CaseStore:
                     for ordinal, edge in enumerate(result.edges)
                 ),
             )
+            if metadata:
+                conn.executemany(
+                    """
+                    INSERT INTO case_metadata(case_id, key, value_json)
+                    VALUES (?, ?, ?)
+                    """,
+                    (
+                        (
+                            normalized_case_id,
+                            key,
+                            json.dumps(value, ensure_ascii=False, sort_keys=True),
+                        )
+                        for key, value in sorted(metadata.items())
+                    ),
+                )
         return normalized_case_id
 
     def list_cases(self, *, limit: int = 20) -> tuple[CaseRecord, ...]:
@@ -273,12 +294,25 @@ class CaseStore:
                 """,
                 (case_id,),
             ).fetchall()
+            metadata_rows = conn.execute(
+                """
+                SELECT key, value_json
+                FROM case_metadata
+                WHERE case_id = ?
+                ORDER BY key
+                """,
+                (case_id,),
+            ).fetchall()
         return {
             "case": dict(case),
             "targets": [dict(row) for row in targets],
             "entities": [dict(row) for row in entities],
             "edges": [dict(row) for row in edges],
             "findings": [_finding_row_to_dict(row) for row in findings],
+            "metadata": {
+                row["key"]: json.loads(row["value_json"] or "null")
+                for row in metadata_rows
+            },
         }
 
     def list_entity_index(
@@ -469,6 +503,14 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             confidence TEXT NOT NULL,
             note TEXT NOT NULL,
             PRIMARY KEY (case_id, ordinal),
+            FOREIGN KEY (case_id) REFERENCES cases(case_id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS case_metadata (
+            case_id TEXT NOT NULL,
+            key TEXT NOT NULL,
+            value_json TEXT NOT NULL,
+            PRIMARY KEY (case_id, key),
             FOREIGN KEY (case_id) REFERENCES cases(case_id) ON DELETE CASCADE
         );
         """

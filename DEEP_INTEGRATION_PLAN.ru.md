@@ -559,6 +559,7 @@ Notes:
 7. Done: add `toolbox --serve` local backend for queued unified search execution, logs and report access.
 8. Done: add `--profile-file` JSON import and validation for custom search profiles in `search` and `tools doctor/install-plan/env`.
 9. Done: add `profiles list/show/export` for built-in and custom search profiles.
+10. Done: persist workflow/profile/adapter policy metadata in saved SQLite cases for `search --case-db` and `investigate --case-db`.
 
 ## Definition of done
 

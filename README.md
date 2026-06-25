@@ -381,7 +381,7 @@ python -m osint_toolkit investigate --title "saved case" --email person@example.
 
 `--include-adapters` по умолчанию добавляет только dry-run команды. `--adapter-profile <name>` добавляет готовую группу adapters, а `--adapter <repository>` можно повторять, чтобы ограничить кейс конкретными upstream adapters. `--execute-adapters` явно запускает настроенные upstream CLI из `PATH`, прогоняет поддерживаемый stdout/stderr через parser и добавляет найденные URL/email/phone/key-value сигналы в тот же `Entity Summary`, `Graph Edges` и SQLite case store. Restricted adapters требуют `--allow-restricted-adapters`.
 
-Если указан `--case-db`, кейс сохраняется в SQLite: targets, findings, entities и graph edges можно открыть позже через `cases`, `case-show`, `case-graph` и `case-index`.
+Если указан `--case-db`, кейс сохраняется в SQLite: targets, findings, entities, graph edges и case metadata можно открыть позже через `cases`, `case-show`, `case-graph` и `case-index`. Для `search` metadata фиксирует requested/search profile, profile file, execute flags и реально запущенные adapters/local tools; для `investigate` — adapter profiles, allowlist и execute flags.
 
 ### `cases`, `case-show`, `case-graph` и `case-index`
 
@@ -398,6 +398,8 @@ python -m osint_toolkit case-index --case-db cases.sqlite
 python -m osint_toolkit case-index --case-db cases.sqlite --kind domain --min-cases 2 --format markdown
 python -m osint_toolkit case-index --case-db cases.sqlite --kind telegram --value "@durov" --format json
 ```
+
+`case-show` в JSON/Markdown показывает `metadata`: workflow, profile/policy и execution flags, если кейс был сохранён через `search --case-db` или `investigate --case-db`.
 
 `case-graph` строит summary по сохранённым `entities` и `edges`: число узлов и связей, счётчики типов отношений, счётчики типов сущностей и самые связанные узлы. Если указать `--entity-kind` и `--entity-value`, команда покажет соседей выбранной сущности.
 

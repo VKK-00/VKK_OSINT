@@ -482,12 +482,14 @@ def format_case_detail(payload: dict[str, object], *, output_format: str = "json
     entities = payload["entities"]
     edges = payload["edges"]
     findings = payload["findings"]
+    metadata = payload.get("metadata", {})
     valid_payload = (
         isinstance(case, dict)
         and isinstance(targets, list)
         and isinstance(entities, list)
         and isinstance(edges, list)
         and isinstance(findings, list)
+        and isinstance(metadata, dict)
     )
     if not valid_payload:
         raise ValueError("Invalid case payload.")
@@ -500,11 +502,24 @@ def format_case_detail(payload: dict[str, object], *, output_format: str = "json
             f"- Generated: {case['generated_at']}",
             f"- Saved: {case['saved_at']}",
             "",
-            "## Targets",
+            "## Case Metadata",
             "",
-            "| Kind | Value | Region |",
-            "|---|---|---|",
         ]
+        if metadata:
+            for key, value in metadata.items():
+                rendered_value = json.dumps(value, ensure_ascii=False, sort_keys=True)
+                lines.append(f"- `{_escape_md(str(key))}`: `{_escape_md(rendered_value)}`")
+        else:
+            lines.append("- none")
+        lines.extend(
+            [
+                "",
+                "## Targets",
+                "",
+                "| Kind | Value | Region |",
+                "|---|---|---|",
+            ]
+        )
         for target in targets:
             lines.append(f"| {target['kind']} | {_escape_md(str(target['value']))} | {target['region']} |")
         lines.extend(
@@ -563,6 +578,7 @@ def format_case_detail(payload: dict[str, object], *, output_format: str = "json
             f"Entities:    {len(entities)}",
             f"Edges:       {len(edges)}",
             f"Findings:    {len(findings)}",
+            f"Metadata:    {len(metadata)}",
         ]
         return "\n".join(lines)
 

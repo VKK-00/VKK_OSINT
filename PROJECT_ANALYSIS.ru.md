@@ -64,7 +64,7 @@ CLI работает в пяти режимах:
 - unified search planner/executor: `search` классифицирует один seed, выбирает default/full или custom profile, строит план native/adapters/local-tools, показывает readiness/missing/config/restricted/excluded статусы, запускает ready non-restricted adapters и выполняет local image tools при `--execute-adapters`;
 - investigation runner: один кейс, несколько seed-типов, entity summary, graph edges, единый Markdown/JSON отчёт;
 - executed adapter ingestion inside investigation: явный `--execute-adapters` добавляет parsed upstream CLI findings в entities, graph edges и case store;
-- SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges и findings;
+- SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges, findings и workflow/profile policy metadata;
 - saved case graph analysis: счётчики связей/типов сущностей, top connected nodes и focus-запрос соседей сущности;
 - cross-case entity index: поиск повторяющихся email/domain/telegram/instagram/url и других сущностей между сохранёнными кейсами;
 - local toolbox: один HTML-пульт с seed-полями и направлениями для фото-зацепок, OCR, EXIF/metadata, QR/barcodes, reverse image portals, person/username/social, email/phone, domain/url, RU/UA, cases/graph/index и adapter profiles;
@@ -208,7 +208,7 @@ CLI работает в пяти режимах:
   - `analyze_case_graph()` — аналитика сохранённого кейса: node/edge counts, relation counts, kind counts, top connected nodes и соседи выбранной сущности.
 - `osint_toolkit/case_store.py`
   - `CaseStore` — SQLite-хранилище расследований.
-  - `save()` — сохраняет `InvestigationResult` в таблицы `cases`, `targets`, `entities`, `edges`, `findings`.
+  - `save()` — сохраняет `InvestigationResult` и optional case metadata в таблицы `cases`, `targets`, `entities`, `edges`, `findings`, `case_metadata`.
   - `list_cases()` — список сохранённых кейсов.
   - `load_case()` — выгрузка одного кейса для CLI output.
   - `list_entity_index()` — cross-case индекс сущностей с количеством кейсов.
@@ -374,7 +374,7 @@ Investigation:
 
 Сохранённые кейсы:
 
-`InvestigationResult -> CaseStore(SQLite) -> cases/case-show/case-graph/case-index -> table/Markdown/CSV/JSON`
+`InvestigationResult + workflow/profile policy metadata -> CaseStore(SQLite) -> cases/case-show/case-graph/case-index -> table/Markdown/CSV/JSON`
 
 ## Внешние интеграции
 
@@ -603,9 +603,9 @@ osint-toolkit stats
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
 - Adapter manifest теперь включает generated CSV/TXT folder template для `sherlock-project/sherlock`, isolated workdir TXT ingestion для `thewhiteh4t/nexfil`, generated JSON-file templates для `alpkeskin/mosint`, `h8mail` и `laramies/theHarvester`, generated JSON-report folder template для `soxoj/maigret`, generated JSON/NDJSON output folder template для `blacklanternsecurity/bbot`, required-env Python script template для `smicallef/spiderfoot`, interactive stdin template для `jasonxtn/argus`, target-specific executable templates для `user-scanner`, region-aware template для `snooppr/snoop`, required-env Node template для `qeeqbox/social-analyzer`, checkout/results template для `p1ngul1n0/blackbird` и executable template для `sundowndev/phoneinfoga`; более сложные adapters могут потребовать richer per-mode config.
 - Adapter parser покрывает общие URL/email/phone/key-value patterns, Sherlock stdout/CSV/TXT reports, Nexfil stdout/TXT reports, Mosint JSON reports, h8mail JSON reports, Maigret JSON/CSV reports, `user-scanner` JSON/verbose output, Snoop stdout/CSV output, Social Analyzer JSON output, Blackbird JSON/stdout output, PhoneInfoga CLI/API output, domain-recon adapters Subfinder/httpx/passive Amass/theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output; сложные JSON/CSV/HTML exports остальных upstream ещё не разобраны.
-- Adapter profiles в `adapters.py` пока статические. Search-layer profiles можно расширять через `--profile-file` и управлять через `profiles list/show/export`, но UI-редактора профилей и per-case persistent adapter policy ещё нет.
+- Adapter profiles в `adapters.py` пока статические. Search-layer profiles можно расширять через `--profile-file` и управлять через `profiles list/show/export`; saved cases хранят workflow/profile/adapter policy metadata, но UI-редактора профилей и enforcement per-case policy ещё нет.
 - Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> email`, `domain -> phone`, `domain -> discovered/social/sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois-server`, `domain -> ip|port|technology`, `url -> instagram`, `url -> social-profile`, `instagram -> platform/display name/account id/public URLs`, `social -> social-profile/platform/display name/account id/public URLs` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics, cross-case entity index и command toolbox, но нет weighted path finding, cross-case edge graph и интерактивной визуализации графа.
-- SQLite schema сейчас версии 2; при изменении таблиц нужна явная миграция.
+- SQLite schema сейчас версии 3; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
 
@@ -699,3 +699,4 @@ osint-toolkit stats
 - 2026-06-25: добавлен `toolbox --serve`: локальный token-protected backend для запуска queued unified `search` jobs из HTML-пульта, с logs/status/report endpoints и ограничением output paths рабочей папкой backend.
 - 2026-06-25: добавлен `--profile-file` для `search` и `tools doctor/install-plan/env`: custom search profiles загружаются из JSON, валидируются и участвуют в fan-out planning/readiness без изменения built-in profiles.
 - 2026-06-25: добавлена команда `profiles list/show/export`: built-in и custom search profiles можно просматривать и экспортировать в reusable JSON без чтения кода.
+- 2026-06-25: SQLite case store расширен таблицей `case_metadata`: `search --case-db` и `investigate --case-db` сохраняют workflow/profile/adapter policy metadata, а `case-show` выводит её в JSON/Markdown/table.

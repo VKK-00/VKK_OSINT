@@ -485,7 +485,17 @@ def handle_search(args: argparse.Namespace) -> int:
         content = render_image_search_execution(plan, execution, output_format=args.format)
         saved_message = ""
         if args.case_db:
-            case_id = CaseStore(args.case_db).save(execution.investigation, case_id=args.case_id)
+            case_id = CaseStore(args.case_db).save(
+                execution.investigation,
+                case_id=args.case_id,
+                metadata=_search_case_metadata(
+                    plan,
+                    args,
+                    executed_adapters=execution.executed_adapters,
+                    executed_local_tools=execution.executed_local_tools,
+                    derived_targets=execution.derived_targets,
+                ),
+            )
             saved_message = f"Saved case {case_id} to {args.case_db}"
         if args.out:
             path = write_investigation(args.out, content)
@@ -514,7 +524,11 @@ def handle_search(args: argparse.Namespace) -> int:
     content = _render_search_execution(plan, result, executable_adapters, output_format=args.format)
     saved_message = ""
     if args.case_db:
-        case_id = CaseStore(args.case_db).save(result, case_id=args.case_id)
+        case_id = CaseStore(args.case_db).save(
+            result,
+            case_id=args.case_id,
+            metadata=_search_case_metadata(plan, args, executed_adapters=executable_adapters),
+        )
         saved_message = f"Saved case {case_id} to {args.case_db}"
     if args.out:
         path = write_investigation(args.out, content)
@@ -573,6 +587,35 @@ def _render_search_execution(
     )
 
 
+def _search_case_metadata(
+    plan: SearchPlan,
+    args: argparse.Namespace,
+    *,
+    executed_adapters: tuple[str, ...],
+    executed_local_tools: tuple[str, ...] = (),
+    derived_targets: tuple[ScanTarget, ...] = (),
+) -> dict[str, object]:
+    return {
+        "workflow": "search",
+        "target_kind": plan.target.kind,
+        "target_region": plan.target.region,
+        "requested_profile": args.profile,
+        "profile_file": args.profile_file or "",
+        "search_profile": plan.profile.to_dict(),
+        "include_restricted": bool(args.include_restricted),
+        "execute_adapters": bool(args.execute_adapters),
+        "executed_adapters": list(executed_adapters),
+        "executed_local_tools": list(executed_local_tools),
+        "derived_targets": [
+            {"kind": target.kind, "value": target.value, "region": target.region}
+            for target in derived_targets
+        ],
+        "timeout": args.timeout,
+        "adapter_timeout": args.adapter_timeout,
+        "adapter_limit": args.adapter_limit,
+    }
+
+
 def handle_investigate(args: argparse.Namespace) -> int:
     targets = _targets_from_args(args)
     if not targets:
@@ -587,6 +630,10 @@ def handle_investigate(args: argparse.Namespace) -> int:
         raise ValueError("--execute-adapters requires --include-adapters.")
     if args.allow_restricted_adapters and not args.execute_adapters:
         raise ValueError("--allow-restricted-adapters requires --execute-adapters.")
+    adapter_repositories = expand_adapter_repositories(
+        tuple(args.adapter_profile),
+        tuple(args.adapter),
+    )
     result = run_investigation(
         targets,
         title=args.title,
@@ -603,10 +650,7 @@ def handle_investigate(args: argparse.Namespace) -> int:
         crawl_pages=args.crawl_pages,
         crawl_depth=args.crawl_depth,
         person_aliases=_person_aliases_from_args(args),
-        adapter_repositories=expand_adapter_repositories(
-            tuple(args.adapter_profile),
-            tuple(args.adapter),
-        ),
+        adapter_repositories=adapter_repositories,
     )
     content = (
         render_investigation_json(result)
@@ -615,7 +659,11 @@ def handle_investigate(args: argparse.Namespace) -> int:
     )
     saved_message = ""
     if args.case_db:
-        case_id = CaseStore(args.case_db).save(result, case_id=args.case_id)
+        case_id = CaseStore(args.case_db).save(
+            result,
+            case_id=args.case_id,
+            metadata=_investigation_case_metadata(args, adapter_repositories),
+        )
         saved_message = f"Saved case {case_id} to {args.case_db}"
     if args.out:
         path = write_investigation(args.out, content)
@@ -628,6 +676,25 @@ def handle_investigate(args: argparse.Namespace) -> int:
         else:
             print(saved_message, file=sys.stderr)
     return 0
+
+
+def _investigation_case_metadata(
+    args: argparse.Namespace,
+    adapter_repositories: tuple[str, ...],
+) -> dict[str, object]:
+    return {
+        "workflow": "investigate",
+        "live": bool(args.live),
+        "include_adapters": bool(args.include_adapters),
+        "execute_adapters": bool(args.execute_adapters),
+        "allow_restricted_adapters": bool(args.allow_restricted_adapters),
+        "adapter_profiles": list(args.adapter_profile),
+        "adapter_repositories": list(args.adapter),
+        "expanded_adapter_repositories": list(adapter_repositories),
+        "adapter_timeout": args.adapter_timeout,
+        "adapter_limit": args.adapter_limit,
+        "timeout": args.timeout,
+    }
 
 
 def handle_cases(args: argparse.Namespace) -> int:

@@ -19,7 +19,11 @@ class CaseStoreTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             store = CaseStore(Path(tmpdir) / "cases.sqlite")
-            case_id = store.save(result, case_id="case-1")
+            case_id = store.save(
+                result,
+                case_id="case-1",
+                metadata={"workflow": "unit-test", "search_profile": {"name": "email-full"}},
+            )
             records = store.list_cases()
             payload = store.load_case(case_id)
 
@@ -30,6 +34,8 @@ class CaseStoreTests(unittest.TestCase):
         self.assertGreater(records[0].entity_count, 0)
         self.assertGreater(records[0].edge_count, 0)
         self.assertEqual(payload["case"]["title"], "stored case")
+        self.assertEqual(payload["metadata"]["workflow"], "unit-test")
+        self.assertEqual(payload["metadata"]["search_profile"]["name"], "email-full")
 
         entities = {(entity["kind"], entity["value"].lower()) for entity in payload["entities"]}
         self.assertIn(("email", "person@example.com"), entities)
