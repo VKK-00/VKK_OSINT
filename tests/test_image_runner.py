@@ -143,6 +143,90 @@ class ImageRunnerTests(unittest.TestCase):
         entity_keys = {(entity.kind, entity.value.lower()) for entity in execution.investigation.entities}
         self.assertIn(("location", "50 deg 27' 0.00\" n, 30 deg 31' 0.00\" e"), entity_keys)
 
+    def test_image_execution_parses_tesseract_ocr_text(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "photo.jpg"
+            image_path.write_bytes(b"not really an image")
+
+            def fake_run(args, **kwargs):
+                if "stdout" in args:
+                    return subprocess.CompletedProcess(
+                        args=args,
+                        returncode=0,
+                        stdout="Profile @ocr_user\nEmail ocr@example.com\nSite https://ocr.example/profile\nPhone +380441234567",
+                        stderr="",
+                    )
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+            with patch("osint_toolkit.search.shutil.which", return_value="tool"), patch(
+                "osint_toolkit.image_runner.shutil.which",
+                return_value="tool",
+            ), patch("osint_toolkit.image_runner.subprocess.run", side_effect=fake_run):
+                plan = build_search_plan("image", str(image_path), profile_name="image-full")
+                execution = run_image_search(plan, adapter_limit=0, derived_limit=10)
+
+        parser_findings = [
+            finding
+            for finding in execution.investigation.findings
+            if finding.module == "local-image-parser"
+            and finding.source == "tesseract-ocr"
+            and finding.metadata.get("parser") == "tesseract-ocr-text"
+        ]
+        self.assertEqual(len(parser_findings), 1)
+        metadata = parser_findings[0].metadata
+        self.assertEqual(metadata["line_count"], "4")
+        self.assertEqual(metadata["username"], "ocr_user")
+        self.assertEqual(metadata["emails"], "ocr@example.com")
+        self.assertEqual(metadata["phones"], "+380441234567")
+        self.assertIn("https://ocr.example/profile", metadata["discovered_urls"])
+
+        target_keys = {(target.kind, target.value.lower()) for target in execution.derived_targets}
+        self.assertIn(("username", "ocr_user"), target_keys)
+        self.assertIn(("email", "ocr@example.com"), target_keys)
+        self.assertIn(("url", "https://ocr.example/profile"), target_keys)
+        self.assertIn(("phone", "+380441234567"), target_keys)
+        self.assertIn(("domain", "ocr.example"), target_keys)
+
+    def test_image_execution_parses_zbarimg_payloads(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "photo.jpg"
+            image_path.write_bytes(b"not really an image")
+
+            def fake_run(args, **kwargs):
+                if "--raw" in args:
+                    return subprocess.CompletedProcess(
+                        args=args,
+                        returncode=0,
+                        stdout="QR-Code:https://t.me/example_channel\nmailto:qr@example.com\nscanned 2 barcode symbols from 1 images\n",
+                        stderr="",
+                    )
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+            with patch("osint_toolkit.search.shutil.which", return_value="tool"), patch(
+                "osint_toolkit.image_runner.shutil.which",
+                return_value="tool",
+            ), patch("osint_toolkit.image_runner.subprocess.run", side_effect=fake_run):
+                plan = build_search_plan("image", str(image_path), profile_name="image-full")
+                execution = run_image_search(plan, adapter_limit=0, derived_limit=10)
+
+        parser_findings = [
+            finding
+            for finding in execution.investigation.findings
+            if finding.module == "local-image-parser"
+            and finding.source == "zbarimg"
+            and finding.metadata.get("parser") == "zbarimg-raw"
+        ]
+        self.assertEqual(len(parser_findings), 1)
+        metadata = parser_findings[0].metadata
+        self.assertEqual(metadata["barcode_count"], "2")
+        self.assertIn("https://t.me/example_channel", metadata["barcode_payloads"])
+        self.assertIn("mailto:qr@example.com", metadata["barcode_payloads"])
+        self.assertNotIn("scanned 2 barcode symbols", metadata["barcode_payloads"])
+
+        target_keys = {(target.kind, target.value.lower()) for target in execution.derived_targets}
+        self.assertIn(("telegram", "https://t.me/example_channel"), target_keys)
+        self.assertIn(("email", "qr@example.com"), target_keys)
+
 
 if __name__ == "__main__":
     unittest.main()

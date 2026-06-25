@@ -408,8 +408,6 @@ Profile fields:
 Приоритет 1:
 
 - Argus per-target parser fixtures.
-- Tesseract OCR text parser and seed extractor.
-- zbarimg parser.
 
 Приоритет 2:
 
@@ -580,6 +578,8 @@ Notes:
 31. Done: add pwnedOrNot stdout parser for safe `-n` breach lookups, including HIBP breach summary/rows and credential-output redaction guard.
 32. Done: add SpiderFoot phone/email/username mode examples and target provenance metadata for parsed SpiderFoot events.
 33. Done: add ExifTool JSON local image parser, structured metadata findings and derived seed extraction for GPS/camera/date/contact clues.
+34. Done: add Tesseract OCR text parser with structured OCR metadata and derived seed extraction.
+35. Done: add zbarimg raw payload parser for QR/barcode clues and derived seed extraction.
 
 ## Definition of done
 

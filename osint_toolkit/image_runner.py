@@ -301,6 +301,10 @@ def _parse_local_tool_output(
 ) -> tuple[tuple[Finding, ...], tuple[DerivedSeed, ...]]:
     if tool_name == "exiftool":
         return _parse_exiftool_json(target, output)
+    if tool_name == "tesseract-ocr":
+        return _parse_tesseract_text(target, output)
+    if tool_name == "zbarimg":
+        return _parse_zbarimg_output(target, output)
     return (), ()
 
 
@@ -334,6 +338,53 @@ def _parse_exiftool_json(target: ScanTarget, output: str) -> tuple[tuple[Finding
             )
         )
     return tuple(findings), _dedupe_seeds(tuple(seeds))
+
+
+def _parse_tesseract_text(target: ScanTarget, output: str) -> tuple[tuple[Finding, ...], tuple[DerivedSeed, ...]]:
+    text = output.strip()
+    if not text:
+        return (), ()
+    seeds = _extract_derived_seeds(text, source="tesseract-ocr")
+    metadata = {
+        "parser": "tesseract-ocr-text",
+        "text_length": str(len(text)),
+        "line_count": str(len([line for line in text.splitlines() if line.strip()])),
+        **_seed_metadata(seeds),
+    }
+    finding = Finding(
+        module="local-image-parser",
+        source="tesseract-ocr",
+        target=target.value,
+        status="completed",
+        confidence="medium" if seeds else "low",
+        evidence=_text_parser_evidence("Tesseract OCR text parsed", metadata),
+        metadata=metadata,
+    )
+    return (finding,), seeds
+
+
+def _parse_zbarimg_output(target: ScanTarget, output: str) -> tuple[tuple[Finding, ...], tuple[DerivedSeed, ...]]:
+    payloads = _zbar_payloads(output)
+    if not payloads:
+        return (), ()
+    text = "\n".join(payloads)
+    seeds = _extract_derived_seeds(text, source="zbarimg")
+    metadata = {
+        "parser": "zbarimg-raw",
+        "barcode_count": str(len(payloads)),
+        "barcode_payloads": "|".join(payloads),
+        **_seed_metadata(seeds),
+    }
+    finding = Finding(
+        module="local-image-parser",
+        source="zbarimg",
+        target=target.value,
+        status="completed",
+        confidence="medium" if seeds else "low",
+        evidence=_text_parser_evidence("zbarimg barcode payloads parsed", metadata),
+        metadata=metadata,
+    )
+    return (finding,), seeds
 
 
 def _json_payload_from_text(text: str) -> Any | None:
@@ -403,6 +454,12 @@ def _exiftool_metadata(
     elif metadata.get("gps_position"):
         metadata["location"] = metadata["gps_position"]
 
+    metadata.update(_seed_metadata(seeds))
+    return metadata
+
+
+def _seed_metadata(seeds: tuple[DerivedSeed, ...]) -> dict[str, str]:
+    metadata: dict[str, str] = {}
     urls = tuple(seed.value for seed in seeds if seed.kind in {"url", "telegram", "instagram", "social"})
     emails = tuple(seed.value for seed in seeds if seed.kind == "email")
     phones = tuple(seed.value for seed in seeds if seed.kind == "phone")
@@ -451,6 +508,41 @@ def _exiftool_evidence(metadata: dict[str, str]) -> str:
         if value:
             parts.append(f"{label}={value}")
     return "; ".join(parts)
+
+
+def _text_parser_evidence(prefix: str, metadata: dict[str, str]) -> str:
+    parts = [prefix]
+    for key, label in (
+        ("text_length", "chars"),
+        ("line_count", "lines"),
+        ("barcode_count", "payloads"),
+        ("discovered_urls", "urls"),
+        ("emails", "emails"),
+        ("phones", "phones"),
+        ("username", "username"),
+        ("domain", "domain"),
+    ):
+        value = metadata.get(key)
+        if value:
+            parts.append(f"{label}={value}")
+    return "; ".join(parts)
+
+
+def _zbar_payloads(output: str) -> tuple[str, ...]:
+    payloads: list[str] = []
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        lower = line.lower()
+        if lower.startswith(("scanned ", "warning:", "error:", "zbarimg:")):
+            continue
+        if re.match(r"^[a-z][a-z0-9_-]+:", line, re.IGNORECASE) and not line.lower().startswith(("http:", "https:", "mailto:", "tel:")):
+            _, value = line.split(":", 1)
+            line = value.strip()
+        if line:
+            payloads.append(line)
+    return tuple(payloads)
 
 
 def _derived_targets(

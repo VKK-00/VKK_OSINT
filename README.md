@@ -150,7 +150,7 @@ python -m osint_toolkit tools install-plan --profile image-full --format markdow
 python -m osint_toolkit tools env --profile email-full --format json
 ```
 
-Без `--execute-adapters` команда показывает план и ничего не запускает. `--execute-adapters` использует readiness из плана, запускает только `ready` adapters, не запускает `missing`/`config_missing`/`not_configured`/`excluded`/`restricted` entries и сохраняет результат через тот же investigation/case-store слой. Native execution тоже следует профилю: запускаются только target kinds из `native_kinds`, поэтому custom adapter-only profiles не запускают built-in native checks скрыто. Для `email-full`, `safe` и `all-safe` email seed выводит derived domain target из домена адреса и username target из валидного local-part; для URL seed профили `web-full`, `passive-recon`, `safe` и `all-safe` выводят host как derived domain target. Такие derived targets маршрутизируются через default domain/web fan-out. Если указан `--case-db`, `--scope-note` сохраняет в metadata текстовый контекст/рамки проверки без отдельной таблицы. Для `image` этот же execution mode запускает ready local tools: PowerShell hash/baseline, ExifTool JSON, ImageMagick, Tesseract и zbarimg, извлекает URL/email/phone/username/domain clues и маршрутизирует derived seeds в обычный `search` fan-out. ExifTool JSON дополнительно нормализует camera/GPS/date/source metadata в structured finding. Face-ID не выполняется.
+Без `--execute-adapters` команда показывает план и ничего не запускает. `--execute-adapters` использует readiness из плана, запускает только `ready` adapters, не запускает `missing`/`config_missing`/`not_configured`/`excluded`/`restricted` entries и сохраняет результат через тот же investigation/case-store слой. Native execution тоже следует профилю: запускаются только target kinds из `native_kinds`, поэтому custom adapter-only profiles не запускают built-in native checks скрыто. Для `email-full`, `safe` и `all-safe` email seed выводит derived domain target из домена адреса и username target из валидного local-part; для URL seed профили `web-full`, `passive-recon`, `safe` и `all-safe` выводят host как derived domain target. Такие derived targets маршрутизируются через default domain/web fan-out. Если указан `--case-db`, `--scope-note` сохраняет в metadata текстовый контекст/рамки проверки без отдельной таблицы. Для `image` этот же execution mode запускает ready local tools: PowerShell hash/baseline, ExifTool JSON, ImageMagick, Tesseract и zbarimg, извлекает URL/email/phone/username/domain clues и маршрутизирует derived seeds в обычный `search` fan-out. ExifTool JSON нормализует camera/GPS/date/source metadata, Tesseract OCR text и zbarimg QR/barcode payloads получают structured parser findings. Face-ID не выполняется.
 
 Custom search profiles можно подключать через JSON-файл, чтобы сохранить свой набор native modules, adapter profiles, отдельных repositories и local image tools:
 
@@ -222,7 +222,7 @@ python -m osint_toolkit toolbox --serve --port 8766 --out osint_toolbox.html
 В окно вынесены направления:
 
 - фото/изображение как источник небиометрических public clues;
-- локальный file baseline/hash, ExifTool JSON metadata parser, ImageMagick, Tesseract OCR, zbarimg и reverse image search portals;
+- локальный file baseline/hash, ExifTool JSON metadata parser, ImageMagick, Tesseract OCR text parser, zbarimg QR/barcode parser и reverse image search portals;
 - лицо, username, Instagram, Telegram и RU social identifiers;
 - email и телефон;
 - домен, URL, passive/broad web recon;

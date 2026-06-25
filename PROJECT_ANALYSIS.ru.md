@@ -177,6 +177,7 @@ CLI работает в пяти режимах:
 - `osint_toolkit/image_runner.py`
   - `run_image_search()` — выполняет ready local image tools из `SearchPlan`, извлекает derived seeds и маршрутизирует их в обычный `run_investigation()`.
   - ExifTool output читается как JSON: parser нормализует source/camera/GPS/date metadata, URL/email/phone/username/domain clues и создаёт structured `Finding`/derived targets.
+  - Tesseract OCR stdout и zbarimg raw payloads разбираются в structured parser findings с line/payload counts, decoded clues и derived targets.
 - `osint_toolkit/adapters.py`
   - `AdapterSpec` — карта upstream-проектов, лицензий, режима интеграции, target-specific command templates и текущего статуса.
   - `AdapterProfile` — reusable группы adapters для `investigate --adapter-profile`.
@@ -655,7 +656,7 @@ osint-toolkit stats
 - Telegram module пока не использует Telegram API и не получает private/group data.
 - Instagram module пока является safe public metadata wrapper: нет login/session handling, private data access, follower/following scraping, comments/messages export, media archive ingestion или обхода platform rate limits.
 - Social module для VK/OK/Yandex/Mail.ru пока является safe public metadata wrapper: нет VK/OK/Yandex/Mail.ru API adapters, login/session handling, private profile access, follower scraping, comments/messages export или обхода platform rate limits.
-- Toolbox static mode не выполняет команды из браузера; served mode выполняет structured unified `search` jobs через локальный backend. Собственного OCR/EXIF engine нет: image execution использует локально установленные ExifTool, ImageMagick, Tesseract, zbarimg и PowerShell hash baseline; ExifTool запускается в JSON mode, а parser нормализует camera/GPS/date/source metadata и contact/profile clues в findings/seeds. Reverse image search остаётся ручной загрузкой на внешние сайты. Face recognition и поиск человека по лицу не добавлены.
+- Toolbox static mode не выполняет команды из браузера; served mode выполняет structured unified `search` jobs через локальный backend. Собственного OCR/EXIF engine нет: image execution использует локально установленные ExifTool, ImageMagick, Tesseract, zbarimg и PowerShell hash baseline; ExifTool JSON, Tesseract OCR stdout и zbarimg payload parsers нормализуют camera/GPS/date/source metadata, decoded text/payload counts и contact/profile clues в findings/seeds. Reverse image search остаётся ручной загрузкой на внешние сайты. Face recognition и поиск человека по лицу не добавлены.
 - Served toolbox принимает custom `profile_file` только из рабочей папки backend; profile editor пишет только canonical validated JSON в этой границе. Это осознанное ограничение против чтения/записи произвольных локальных файлов из браузера.
 - Case management intentionally narrow: `case-update` и `/api/cases/<id>/update` меняют только title/scope_note, а `case-delete` и `/api/cases/<id>/delete` требуют явного подтверждения; нет bulk delete, raw SQL editor или редактирования saved findings/entities/edges из UI.
 - `search --execute-adapters` запускает только ready non-restricted external adapters. Для image targets он запускает ready local tools и маршрутизирует derived seeds; face recognition и identity-by-face matching не реализуются.
@@ -758,6 +759,7 @@ osint-toolkit stats
 - 2026-06-25: реализован ready-only execution для `search --execute-adapters`: из SearchPlan выбираются только ready non-restricted adapters, результаты проходят через existing investigation/report/case-store слой, restricted и image local tools не запускаются.
 - 2026-06-25: добавлен local image execution: ready ExifTool/ImageMagick/Tesseract/zbarimg/PowerShell tools выполняются локально, extracted seeds превращаются в обычные search targets, отчёт и case-store получают provenance, entities и graph.
 - 2026-06-25: ExifTool local image route переведён на JSON output; parser извлекает camera/GPS/date/source metadata, contact/profile clues и derived seeds для unified search.
+- 2026-06-25: Tesseract OCR stdout и zbarimg raw payloads получили local image parsers: decoded text/QR clues нормализуются в structured findings и derived seeds.
 - 2026-06-25: добавлен `tools doctor/install-plan/env --profile`: profile-level readiness, install/config actions и безопасный вывод env variable names без значений.
 - 2026-06-25: добавлен `toolbox --serve`: локальный token-protected backend для запуска queued unified `search` jobs из HTML-пульта, с logs/status/report endpoints и ограничением output paths рабочей папкой backend.
 - 2026-06-25: добавлен `--profile-file` для `search` и `tools doctor/install-plan/env`: custom search profiles загружаются из JSON, валидируются и участвуют в fan-out planning/readiness без изменения built-in profiles.
