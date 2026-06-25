@@ -5,6 +5,7 @@ from html import escape
 from pathlib import Path
 
 from .adapters import AdapterProfile, list_adapter_profiles
+from .search import TARGET_KINDS, list_search_profiles
 
 
 @dataclass(frozen=True)
@@ -575,16 +576,33 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
     return sections + (_adapter_profile_section(),)
 
 
-def render_toolbox_html() -> str:
+def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str:
     sections = toolbox_sections()
     nav = "\n".join(
         f'<a href="#{escape(section.slug)}">{escape(section.title)}</a>' for section in sections
     )
     inputs = "\n".join(_render_input(field) for field in TOOLBOX_INPUTS)
+    backend_kind_options = _render_options(("auto", *TARGET_KINDS), selected="auto")
+    backend_profile_options = _render_options(
+        ("auto", *(profile.name for profile in list_search_profiles())),
+        selected="auto",
+    )
     body_sections = "\n".join(_render_section(section) for section in sections)
     input_labels = ", ".join(
         f'"{escape(name)}": "{escape(label)}"' for name, label in INPUT_LABELS.items()
     )
+    notice = (
+        "Пульт подключён к локальному backend и может запускать только structured unified search jobs. "
+        "Фото не загружается в HTML автоматически; face-ID и идентификация личности по лицу не выполняются."
+        if backend_url and backend_auth
+        else (
+            "Пульт работает в static mode: он собирает команды, но не запускает процессы из браузера. "
+            "Для запуска из окна используй `python -m osint_toolkit toolbox --serve --open`. "
+            "Фото не загружается в HTML автоматически; face-ID и идентификация личности по лицу не выполняются."
+        )
+    )
+    backend_url_js = _js_string(backend_url)
+    backend_auth_js = _js_string(backend_auth)
     return f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -719,6 +737,7 @@ def render_toolbox_html() -> str:
       display: flex;
       gap: 8px;
       margin-top: 8px;
+      flex-wrap: wrap;
     }}
     button {{
       border: 1px solid #09596b;
@@ -729,10 +748,68 @@ def render_toolbox_html() -> str:
       font-weight: 700;
       cursor: pointer;
     }}
+    button:disabled {{
+      opacity: 0.55;
+      cursor: not-allowed;
+    }}
     button.secondary {{
       border-color: var(--line);
       background: #ffffff;
       color: #1d2a3a;
+    }}
+    select {{
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 9px 10px;
+      font: inherit;
+      color: var(--ink);
+      background: #ffffff;
+    }}
+    .backend-panel {{
+      margin-top: 14px;
+    }}
+    .backend-row {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }}
+    .backend-check {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      font-size: 13px;
+      color: #253041;
+      font-weight: 700;
+    }}
+    .backend-check input {{
+      width: auto;
+    }}
+    .backend-log {{
+      width: 100%;
+      min-height: 160px;
+      margin-top: 10px;
+      border: 1px solid #273348;
+      border-radius: 6px;
+      padding: 10px;
+      color: var(--code-ink);
+      background: var(--code-bg);
+      font: 12px Consolas, "Courier New", monospace;
+      white-space: pre-wrap;
+      overflow: auto;
+    }}
+    .backend-jobs {{
+      margin-top: 8px;
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+    }}
+    .backend-job {{
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px;
+      background: #f8fafc;
     }}
     section {{
       margin: 0 0 18px;
@@ -801,7 +878,7 @@ def render_toolbox_html() -> str:
   <nav>{nav}</nav>
   <main>
     <div class="notice">
-      Пульт не запускает команды из браузера, не загружает фото и не делает идентификацию личности по лицу.
+      {escape(notice)}
       Для фото используй только небиометрические public clues: текст, ссылки, username, домены, телефоны, email, логотипы и контекст.
     </div>
     <div class="layout">
@@ -814,6 +891,40 @@ def render_toolbox_html() -> str:
           <button type="button" id="copyCommand">Копировать</button>
           <button type="button" class="secondary" id="clearCommand">Очистить</button>
         </div>
+        <div class="panel backend-panel">
+          <h2>Unified Search Runner</h2>
+          <p id="backendStatus">Backend: static mode</p>
+          <div class="fields">
+            <label>Тип seed
+              <select id="backendTargetKind">{backend_kind_options}</select>
+            </label>
+            <label>Seed value
+              <input id="backendTargetValue" placeholder="phone/email/username/person/domain/url/image/social">
+            </label>
+            <div class="backend-row">
+              <label>Profile
+                <select id="backendProfile">{backend_profile_options}</select>
+              </label>
+              <label>Region
+                <select id="backendRegion">
+                  <option value="all">all</option>
+                  <option value="ru">ru</option>
+                  <option value="ua">ua</option>
+                </select>
+              </label>
+            </div>
+            <label class="backend-check">
+              <input type="checkbox" id="backendExecute" checked>
+              Execute ready tools
+            </label>
+          </div>
+          <div class="copy-row">
+            <button type="button" id="runUnifiedSearch">Запустить search</button>
+            <button type="button" class="secondary" id="refreshJobs">Обновить jobs</button>
+          </div>
+          <div id="backendJobs" class="backend-jobs"></div>
+          <pre id="backendLog" class="backend-log"></pre>
+        </div>
       </aside>
       <div>{body_sections}</div>
     </div>
@@ -821,6 +932,10 @@ def render_toolbox_html() -> str:
   <script>
     const inputLabels = {{{input_labels}}};
     const inputNames = Object.keys(inputLabels);
+    const backendConfig = {{
+      url: {backend_url_js},
+      auth: {backend_auth_js}
+    }};
 
     function readValue(name) {{
       const element = document.querySelector(`[data-field="${{name}}"]`);
@@ -874,16 +989,141 @@ def render_toolbox_html() -> str:
     document.getElementById("clearCommand").addEventListener("click", () => {{
       document.getElementById("commandOutput").value = "";
     }});
+
+    function backendAvailable() {{
+      return Boolean(backendConfig.url && backendConfig.auth);
+    }}
+
+    function backendHeaders() {{
+      return {{
+        "Content-Type": "application/json",
+        "X-OSINT-Token": backendConfig.auth
+      }};
+    }}
+
+    function setBackendLog(value) {{
+      document.getElementById("backendLog").textContent = value || "";
+    }}
+
+    function backendPayload() {{
+      const execute = document.getElementById("backendExecute").checked;
+      return {{
+        target_kind: document.getElementById("backendTargetKind").value,
+        target_value: document.getElementById("backendTargetValue").value.trim(),
+        profile: document.getElementById("backendProfile").value,
+        region: document.getElementById("backendRegion").value,
+        execute_adapters: execute,
+        format: execute ? "markdown" : "markdown",
+        adapter_limit: Number(readValue("adapter_limit") || "20"),
+        out: readValue("out"),
+        case_db: readValue("case_db"),
+        case_id: readValue("case_id")
+      }};
+    }}
+
+    function renderJobs(jobs) {{
+      const container = document.getElementById("backendJobs");
+      container.innerHTML = "";
+      for (const job of jobs.slice().reverse().slice(0, 8)) {{
+        const item = document.createElement("div");
+        item.className = "backend-job";
+        const reportLink = job.report_available
+          ? ` <button type="button" class="secondary" data-report-job="${{job.id}}">Report</button>`
+          : "";
+        item.innerHTML = `<strong>${{job.status}}</strong> ${{job.id}}<br>${{job.command_preview || ""}}${{reportLink}}`;
+        container.appendChild(item);
+      }}
+    }}
+
+    async function refreshJobs() {{
+      if (!backendAvailable()) return;
+      const response = await fetch(`${{backendConfig.url}}/api/jobs`, {{
+        headers: {{"X-OSINT-Token": backendConfig.auth}}
+      }});
+      if (!response.ok) throw new Error(await response.text());
+      const jobs = await response.json();
+      renderJobs(jobs.jobs || []);
+    }}
+
+    async function readJob(jobId) {{
+      const response = await fetch(`${{backendConfig.url}}/api/jobs/${{jobId}}`, {{
+        headers: {{"X-OSINT-Token": backendConfig.auth}}
+      }});
+      if (!response.ok) throw new Error(await response.text());
+      return response.json();
+    }}
+
+    async function pollJob(jobId) {{
+      const job = await readJob(jobId);
+      setBackendLog([job.status, job.stdout || "", job.stderr || "", job.error || ""].filter(Boolean).join("\\n\\n"));
+      await refreshJobs();
+      if (["queued", "running"].includes(job.status)) {{
+        setTimeout(() => pollJob(jobId).catch((error) => setBackendLog(String(error))), 1000);
+      }}
+    }}
+
+    async function runUnifiedSearch() {{
+      if (!backendAvailable()) {{
+        setBackendLog("Backend недоступен. Запусти: python -m osint_toolkit toolbox --serve --open");
+        return;
+      }}
+      const payload = backendPayload();
+      if (!payload.target_value) {{
+        setBackendLog("Укажи seed value.");
+        return;
+      }}
+      const response = await fetch(`${{backendConfig.url}}/api/search`, {{
+        method: "POST",
+        headers: backendHeaders(),
+        body: JSON.stringify(payload)
+      }});
+      if (!response.ok) {{
+        setBackendLog(await response.text());
+        return;
+      }}
+      const data = await response.json();
+      setBackendLog(`queued ${{data.job.id}}\\n${{data.job.command_preview}}`);
+      await pollJob(data.job.id);
+    }}
+
+    async function readReport(jobId) {{
+      const response = await fetch(`${{backendConfig.url}}/api/jobs/${{jobId}}/report`, {{
+        headers: {{"X-OSINT-Token": backendConfig.auth}}
+      }});
+      setBackendLog(await response.text());
+    }}
+
+    document.getElementById("runUnifiedSearch").addEventListener("click", () => {{
+      runUnifiedSearch().catch((error) => setBackendLog(String(error)));
+    }});
+
+    document.getElementById("refreshJobs").addEventListener("click", () => {{
+      refreshJobs().catch((error) => setBackendLog(String(error)));
+    }});
+
+    document.addEventListener("click", (event) => {{
+      const button = event.target.closest("[data-report-job]");
+      if (!button) return;
+      readReport(button.getAttribute("data-report-job")).catch((error) => setBackendLog(String(error)));
+    }});
+
+    if (backendAvailable()) {{
+      document.getElementById("backendStatus").textContent = `Backend: ${{backendConfig.url}}`;
+      refreshJobs().catch(() => {{}});
+    }} else {{
+      document.getElementById("runUnifiedSearch").disabled = true;
+      document.getElementById("refreshJobs").disabled = true;
+    }}
   </script>
 </body>
 </html>
 """
 
 
-def write_toolbox(output_path: str | Path) -> Path:
+def write_toolbox(output_path: str | Path, *, backend_url: str = "", backend_auth: str = "") -> Path:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_toolbox_html(), encoding="utf-8")
+    path.write_text(render_toolbox_html(backend_url=backend_url, backend_auth=backend_auth), encoding="utf-8")
     return path
 
 
@@ -942,6 +1182,20 @@ def _render_input(field: ToolboxInput) -> str:
         f'<input data-field="{escape(field.name)}" type="{escape(field.input_type)}" '
         f'placeholder="{escape(field.placeholder)}"></label>'
     )
+
+
+def _render_options(values: tuple[str, ...], *, selected: str = "") -> str:
+    options = []
+    for value in values:
+        marker = " selected" if value == selected else ""
+        options.append(f'<option value="{escape(value, quote=True)}"{marker}>{escape(value)}</option>')
+    return "\n".join(options)
+
+
+def _js_string(value: str) -> str:
+    import json
+
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _render_section(section: ToolboxSection) -> str:

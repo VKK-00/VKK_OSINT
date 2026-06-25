@@ -177,6 +177,9 @@ def build_parser() -> argparse.ArgumentParser:
     toolbox = subparsers.add_parser("toolbox", help="Generate a local one-window OSINT toolbox.")
     toolbox.add_argument("--out", default="osint_toolbox.html", help="Output HTML path.")
     toolbox.add_argument("--open", action="store_true", help="Open the generated HTML file in the default browser.")
+    toolbox.add_argument("--serve", action="store_true", help="Run a local backend so the toolbox can execute unified search jobs.")
+    toolbox.add_argument("--host", default="127.0.0.1", help="Toolbox backend host for --serve.")
+    toolbox.add_argument("--port", type=int, default=8765, help="Toolbox backend port for --serve.")
     toolbox.set_defaults(handler=handle_toolbox)
 
     search = subparsers.add_parser("search", help="Build a unified fan-out search plan for one OSINT seed.")
@@ -382,6 +385,15 @@ def handle_brief(args: argparse.Namespace) -> int:
 
 
 def handle_toolbox(args: argparse.Namespace) -> int:
+    if args.serve:
+        from .toolbox_server import run_toolbox_server
+
+        return run_toolbox_server(
+            host=args.host,
+            port=args.port,
+            out=args.out,
+            open_browser=args.open,
+        )
     path = write_toolbox(args.out).resolve()
     print(f"Wrote toolbox {path}")
     if args.open:

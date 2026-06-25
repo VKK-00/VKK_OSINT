@@ -42,6 +42,7 @@
 - запускать Subfinder, httpx, пассивный Amass, theHarvester, BBOT, SpiderFoot и Argus recon adapters и нормализовать subdomains/emails/phones/URLs/IPs/ports/technologies/HTTP probe results в общий graph;
 - строить unified `search` fan-out: один seed автоматически разворачивается в native checks, совместимые adapters, readiness/install hints и local image tools, а `--execute-adapters` запускает ready non-restricted adapters в единый report/case;
 - генерировать локальное HTML-окно `toolbox` с направлениями OSINT, seed-полями и copy-ready командами для фото-зацепок, OCR, EXIF/metadata, QR/barcodes, reverse image portals, лиц/username, email, телефона, домена/URL, РФ/Украины, кейсов, графов и adapters;
+- запускать unified `search` jobs из toolbox через локальный token-protected backend без передачи произвольных shell-команд из браузера;
 - получать безопасный workflow под задачу;
 - генерировать Markdown-brief для кейса.
 - сохранять расследования в SQLite и анализировать graph edges сохранённого кейса.
@@ -52,6 +53,7 @@
 ```powershell
 python -m osint_toolkit stats
 python -m osint_toolkit toolbox --out osint_toolbox.html
+python -m osint_toolkit toolbox --serve --open
 python -m osint_toolkit search phone +380441234567 --profile phone-full --plan-only
 python -m osint_toolkit search phone +380441234567 --profile phone-full --execute-adapters --adapter-limit 3 --out reports/phone.md --case-db cases.sqlite --case-id phone-001
 python -m osint_toolkit search email person@example.com --profile email-full --plan-only --format markdown
@@ -152,11 +154,13 @@ python -m osint_toolkit tools env --profile email-full --format json
 
 ### `toolbox`
 
-Генерирует одно локальное HTML-окно для ручной работы оператора: слева seed-поля, справа направления OSINT и кнопки, которые собирают copy-ready команды текущего CLI.
+Генерирует одно локальное HTML-окно для ручной работы оператора: слева seed-поля, справа направления OSINT и кнопки, которые собирают copy-ready команды текущего CLI. В served mode окно также запускает unified `search` jobs через локальный backend.
 
 ```powershell
 python -m osint_toolkit toolbox --out osint_toolbox.html
 python -m osint_toolkit toolbox --out osint_toolbox.html --open
+python -m osint_toolkit toolbox --serve --open
+python -m osint_toolkit toolbox --serve --port 8766 --out osint_toolbox.html
 ```
 
 В окно вынесены направления:
@@ -170,7 +174,7 @@ python -m osint_toolkit toolbox --out osint_toolbox.html --open
 - SQLite cases, graph и cross-case index;
 - каталог, adapter readiness/setup и reusable adapter profiles.
 
-`toolbox` не загружает фото автоматически, не запускает команды из браузера и не делает идентификацию личности по лицу. Для фото workflow такой: оператор запускает нужную локальную команду по файлу, например ExifTool/OCR/QR/hash, вручную проверяет результат, переносит найденные public clues в seed-поля и копирует подходящую OSINT-команду. Reverse image search открывается как ручная загрузка на внешние сайты для источника, дублей и контекста изображения, а не для face-ID.
+Static `toolbox --out` не загружает фото автоматически и не запускает команды из браузера: он собирает команды для ручного запуска. `toolbox --serve` поднимает локальный `127.0.0.1` backend с per-session token и принимает только структурированный `/api/search` payload: target kind/value, profile, region, execute/plan mode, limits и пути отчёта/case DB. Произвольный shell из браузера не исполняется. Для фото served mode запускает тот же `search image ... --execute-adapters`: ready local tools, derived seeds, report/case. Reverse image search остаётся ручной загрузкой на внешние сайты для источника, дублей и контекста изображения, а не для face-ID.
 
 ### `stats`
 

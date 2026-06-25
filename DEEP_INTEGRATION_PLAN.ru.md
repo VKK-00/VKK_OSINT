@@ -52,9 +52,9 @@ python -m osint_toolkit search domain example.com --profile passive-recon --plan
 - generated report ingestion;
 - SQLite case store;
 - graph edges and cross-case entity index;
-- static `toolbox` window.
+- static `toolbox` window and optional local execution backend.
 
-Главный core gap закрыт: `search --plan-only` строит единый high-level fan-out plan, `search --execute-adapters` запускает ready non-restricted external adapters, image execution запускает ready local tools и маршрутизирует derived seeds, а `tools doctor/install-plan/env --profile` закрывает readiness/install/config visibility. Оставшийся optional gap — полноценный локальный UI backend для запуска команд прямо из браузерного окна; текущий toolbox остаётся static control window с copy-ready командами.
+Главный core gap закрыт: `search --plan-only` строит единый high-level fan-out plan, `search --execute-adapters` запускает ready non-restricted external adapters, image execution запускает ready local tools и маршрутизирует derived seeds, а `tools doctor/install-plan/env --profile` закрывает readiness/install/config visibility. UI gap также закрыт для unified search: `toolbox --serve` поднимает локальный token-protected backend, запускает queued `/api/search` jobs и показывает logs/status/report links. Static `toolbox --out` остаётся безопасным copy-ready режимом.
 
 ## Целевая архитектура
 
@@ -543,7 +543,8 @@ Deliverables:
 Notes:
 
 - current static HTML is safe for command generation;
-- execution UI needs a local backend because browsers cannot safely run shell commands directly.
+- execution UI uses a local backend because browsers cannot safely run shell commands directly;
+- backend accepts structured unified `search` payloads only, not arbitrary shell commands.
 
 ## First implementation order
 
@@ -553,6 +554,7 @@ Notes:
 4. Done: add fan-out execution for ready non-restricted adapters.
 5. Done: add image local tool execution and derived seed extraction.
 6. Done for stable routes: replace toolbox command cards with `search` plan/execution commands where high-level routing is stable.
+7. Done: add `toolbox --serve` local backend for queued unified search execution, logs and report access.
 
 ## Definition of done
 

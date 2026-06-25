@@ -20,7 +20,7 @@ CLI работает в пяти режимах:
 - scan/adapters — единое ядро выполнения и карта функциональной совместимости upstream-проектов;
 - search — high-level fan-out планировщик и executor: один seed -> native checks, compatible adapters, readiness/install hints, local image tools; при `--execute-adapters` запускаются ready non-restricted adapters или ready local image tools с derived-seed fan-out в единый report/case;
 - investigate — объединение нескольких seed values, native findings, adapter dry-runs и нормализованных сущностей в один отчёт;
-- toolbox — локальное HTML-окно для ручного выбора OSINT-направления и сборки copy-ready CLI-команд.
+- toolbox — локальное HTML-окно для ручного выбора OSINT-направления, сборки copy-ready CLI-команд и, в `--serve` режиме, запуска unified `search` jobs через локальный backend.
 
 Первый native-слой уже выполняет:
 
@@ -67,6 +67,7 @@ CLI работает в пяти режимах:
 - saved case graph analysis: счётчики связей/типов сущностей, top connected nodes и focus-запрос соседей сущности;
 - cross-case entity index: поиск повторяющихся email/domain/telegram/instagram/url и других сущностей между сохранёнными кейсами;
 - local toolbox: один HTML-пульт с seed-полями и направлениями для фото-зацепок, OCR, EXIF/metadata, QR/barcodes, reverse image portals, person/username/social, email/phone, domain/url, RU/UA, cases/graph/index и adapter profiles;
+- toolbox backend: `toolbox --serve` поднимает локальный token-protected HTTP server, принимает только структурированные `/api/search` payloads, ведёт job queue, logs/status и report access;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
 
@@ -79,7 +80,8 @@ CLI работает в пяти режимах:
 - `osint_toolkit/` — Python-пакет CLI.
 - `osint_toolkit/modules/` — native scan-модули.
 - `osint_toolkit/search.py` — unified search profiles, target classifier и fan-out planner.
-- `osint_toolkit/toolbox.py` — генератор локального HTML-пульта с направлениями и шаблонами команд.
+- `osint_toolkit/toolbox.py` — генератор локального HTML-пульта с направлениями, шаблонами команд и optional backend runner UI.
+- `osint_toolkit/toolbox_server.py` — локальный backend для `toolbox --serve`: token auth, allowlisted unified search jobs, status/logs/report endpoints.
 - `osint_toolkit/resources/sherlock_data.json` — встроенный snapshot Sherlock `sherlock_project/resources/data.json`, commit `206068d`, MIT license.
 - `osint_toolkit/resources/whatsmyname_wmn_data.json` — встроенный snapshot WhatsMyName `wmn-data.json`, commit `7c44595`, CC BY-SA 4.0 license.
 - `osint_toolkit/resources/maigret_sites.json` — sanitized projection Maigret `maigret/resources/data.json`, commit `2484509`, MIT license.
@@ -224,8 +226,12 @@ CLI работает в пяти режимах:
   - `build_search_plan()` — строит deterministic fan-out plan по target/profile/region.
 - `osint_toolkit/toolbox.py`
   - `toolbox_sections()` — машинно-читаемое описание направлений, cards и шаблонов команд.
-  - `render_toolbox_html()` — static HTML/CSS/JS для локального пульта.
+  - `render_toolbox_html()` — HTML/CSS/JS для локального пульта; без backend остаётся static copy-ready режимом, с backend URL/token показывает unified search runner.
   - `write_toolbox()` — запись HTML-файла на диск.
+- `osint_toolkit/toolbox_server.py`
+  - `ToolboxJobRunner` — создаёт allowlisted `python -m osint_toolkit search ...` jobs, ограничивает output paths рабочей папкой backend и сохраняет stdout/stderr/status.
+  - `ToolboxRequestHandler` — HTTP endpoints `/api/search`, `/api/jobs`, `/api/jobs/<id>`, `/api/jobs/<id>/report`, `/api/health`.
+  - `run_toolbox_server()` — CLI entrypoint для `toolbox --serve`.
 - `osint_toolkit/cli.py`
   - argparse CLI: `stats`, `catalog`, `show`, `scan`, `search`, `adapters`, `adapter-profiles`, `adapter-setup`, `doctor`, `run-adapter`, `toolbox`, `investigate`, `cases`, `case-show`, `case-graph`, `case-index`, `recommend`, `brief`.
 
@@ -241,12 +247,12 @@ CLI работает в пяти режимах:
 
 Toolbox-поток:
 
-1. Пользователь запускает `python -m osint_toolkit toolbox --out osint_toolbox.html`.
-2. CLI вызывает `write_toolbox()`, который берёт текущее описание направлений и adapter profiles.
-3. `render_toolbox_html()` создаёт самодостаточный HTML/CSS/JS без внешних assets и сетевых запросов.
-4. В браузере оператор заполняет seed-поля, выбирает направление и копирует готовую команду.
-5. HTML не запускает процессы и не загружает фото сам; для фото он собирает команды для локальных утилит ExifTool, ImageMagick, Tesseract, zbarimg, PowerShell hash baseline и открывает reverse image portals для ручной загрузки.
-6. Найденные через metadata/OCR/QR/reverse-search public clues оператор переносит в seed-поля и запускает существующие CLI-маршруты.
+1. Static mode: пользователь запускает `python -m osint_toolkit toolbox --out osint_toolbox.html`; CLI вызывает `write_toolbox()`, который берёт текущее описание направлений и adapter profiles.
+2. `render_toolbox_html()` создаёт самодостаточный HTML/CSS/JS без внешних assets; пользователь заполняет seed-поля один раз, а cards подставляют значения в шаблоны команд.
+3. Served mode: пользователь запускает `python -m osint_toolkit toolbox --serve --open`; CLI создаёт session token, пишет HTML с backend URL/token и поднимает локальный HTTP server.
+4. Browser отправляет только структурированный `/api/search` payload: target kind/value, profile, region, execute/plan mode, limits, report path и case DB.
+5. Backend собирает allowlisted `python -m osint_toolkit search ...`, запускает job в фоне, показывает queue/status/stdout/stderr и отдаёт report content по job id.
+6. HTML не загружает фото сам; для фото served mode запускает только тот же `search image ... --execute-adapters`, а reverse image portals остаются ручной загрузкой.
 
 Search-поток:
 
@@ -321,7 +327,7 @@ Case-store поток:
 
 Toolbox:
 
-`ToolboxSection[] + AdapterProfile[] -> render_toolbox_html() -> local HTML -> operator fills image path/seeds -> copy-ready local image-tool or OSINT CLI command`
+`ToolboxSection[] + AdapterProfile[] -> render_toolbox_html() -> local HTML -> operator fills image path/seeds -> copy-ready command OR /api/search -> ToolboxJobRunner -> python -m osint_toolkit search -> report/case`
 
 Search:
 
@@ -396,6 +402,8 @@ External adapters должны подключать upstream CLI/API без ко
 - `--out` — путь Markdown-файла для `brief`.
 - `toolbox --out` — путь HTML-файла локального пульта.
 - `toolbox --open` — открыть созданный HTML в браузере через стандартный `webbrowser`.
+- `toolbox --serve` — поднять локальный backend для запуска unified `search` jobs из toolbox.
+- `toolbox --host` и `toolbox --port` — адрес локального backend в served mode.
 - `search --profile` — built-in profile для fan-out планирования: `auto`, `phone-full`, `email-full`, `username-full`, `person-full`, `passive-recon`, `web-full`, `image-full`, `social-full`, `ru-ua-full`, `all-safe`, `safe`.
 - `search --plan-only` — вывести план без запуска tools.
 - `search --execute-adapters` — запустить только ready non-restricted adapters из SearchPlan и записать unified report/case.
@@ -446,6 +454,8 @@ External adapters должны подключать upstream CLI/API без ко
 python -m osint_toolkit stats
 python -m osint_toolkit toolbox --out osint_toolbox.html
 python -m osint_toolkit toolbox --out osint_toolbox.html --open
+python -m osint_toolkit toolbox --serve --open
+python -m osint_toolkit toolbox --serve --port 8766 --out osint_toolbox.html
 python -m osint_toolkit search phone +380441234567 --profile phone-full --plan-only
 python -m osint_toolkit search phone +380441234567 --profile phone-full --execute-adapters --adapter-limit 3 --out reports/phone.md --case-db cases.sqlite --case-id phone-001
 python -m osint_toolkit search email person@example.com --profile email-full --plan-only --format markdown
@@ -543,7 +553,7 @@ osint-toolkit stats
 - SQLite case store отделён от engine: сканирование можно использовать без записи на диск, а сохранение включается явно через `--case-db`.
 - Graph analysis отделён от case store: SQLite хранит факты кейса, а `analyze_case_graph()` вычисляет summary и neighbors без изменения схемы БД.
 - Cross-case entity index использует уже сохранённую таблицу `entities`; новая таблица не добавлена, потому что индекс пока вычисляется read-only запросами и не требует миграции.
-- Toolbox сделан как статический локальный HTML, а не как сервер: он не требует новых зависимостей, не открывает порт и не может сам запустить внешний CLI из браузера.
+- Toolbox сохраняет static mode без сервера и новых зависимостей; served mode открывает локальный порт только по явному `--serve`, требует per-session token и принимает только structured unified `search` jobs, а не произвольные shell-команды.
 - В photo-направлении toolbox добавляет только небиометрические маршруты: file hash/baseline, EXIF/metadata, OCR, QR/barcodes и reverse image source/context search. Идентификация личности по лицу не реализуется.
 - Unified `search` использует planner как источник правды для execution: запуск идёт только по ready non-restricted adapter steps, поэтому missing/config/restricted tools не превращаются в неявные процессы.
 - Dry-run используется по умолчанию для scan-команд. Live-сетевые проверки требуют явного `--live`.
@@ -553,7 +563,7 @@ osint-toolkit stats
 
 ## Рассмотренные варианты реализации
 
-- Полноценный web UI с backend-исполнением команд: отложен, потому что сначала нужно стабилизировать engine/adapters и модель безопасного запуска. Вместо этого добавлен статический toolbox, который собирает команды для ручного запуска оператором.
+- Полноценный web UI заменён более узким local execution backend: `toolbox --serve` запускает только allowlisted unified `search`, а не любые commands из cards. Это закрывает one-window execution для главного fan-out сценария без превращения браузера в shell.
 - Буквальное копирование кода из всех проектов: допускается только после license review. Обязательный путь для цели — 1:1 functional parity поведения через native-compatible modules, external adapters и documented restricted/excluded decisions.
 - Новая база данных SQLite: пока не нужна, CSV достаточно для каталога; для истории scan-запусков может понадобиться позже.
 
@@ -575,7 +585,7 @@ osint-toolkit stats
 - Telegram module пока не использует Telegram API и не получает private/group data.
 - Instagram module пока является safe public metadata wrapper: нет login/session handling, private data access, follower/following scraping, comments/messages export, media archive ingestion или обхода platform rate limits.
 - Social module для VK/OK/Yandex/Mail.ru пока является safe public metadata wrapper: нет VK/OK/Yandex/Mail.ru API adapters, login/session handling, private profile access, follower scraping, comments/messages export или обхода platform rate limits.
-- Toolbox не выполняет команды из браузера и не содержит собственного OCR/EXIF engine: он собирает copy-ready команды для локально установленных ExifTool, ImageMagick, Tesseract, zbarimg и PowerShell hash baseline. Reverse image search остаётся ручной загрузкой на внешние сайты. Face recognition и поиск человека по лицу не добавлены.
+- Toolbox static mode не выполняет команды из браузера; served mode выполняет structured unified `search` jobs через локальный backend. Собственного OCR/EXIF engine нет: image execution использует локально установленные ExifTool, ImageMagick, Tesseract, zbarimg и PowerShell hash baseline. Reverse image search остаётся ручной загрузкой на внешние сайты. Face recognition и поиск человека по лицу не добавлены.
 - `search --execute-adapters` запускает только ready non-restricted external adapters. Для image targets он запускает ready local tools и маршрутизирует derived seeds; face recognition и identity-by-face matching не реализуются.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
@@ -675,3 +685,4 @@ osint-toolkit stats
 - 2026-06-25: реализован ready-only execution для `search --execute-adapters`: из SearchPlan выбираются только ready non-restricted adapters, результаты проходят через existing investigation/report/case-store слой, restricted и image local tools не запускаются.
 - 2026-06-25: добавлен local image execution: ready ExifTool/ImageMagick/Tesseract/zbarimg/PowerShell tools выполняются локально, extracted seeds превращаются в обычные search targets, отчёт и case-store получают provenance, entities и graph.
 - 2026-06-25: добавлен `tools doctor/install-plan/env --profile`: profile-level readiness, install/config actions и безопасный вывод env variable names без значений.
+- 2026-06-25: добавлен `toolbox --serve`: локальный token-protected backend для запуска queued unified `search` jobs из HTML-пульта, с logs/status/report endpoints и ограничением output paths рабочей папкой backend.

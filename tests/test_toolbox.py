@@ -37,9 +37,19 @@ class ToolboxTests(unittest.TestCase):
         self.assertIn("zbarimg", html)
         self.assertIn("lens.google.com/upload", html)
         self.assertIn("tineye.com", html)
-        self.assertIn("идентификацию личности по лицу", html)
+        self.assertIn("идентификация личности по лицу", html)
         self.assertIn("[[--username {username}]]", html)
         self.assertIn("function commandWithFields", html)
+        self.assertIn("Unified Search Runner", html)
+        self.assertIn("/api/search", html)
+        self.assertIn("toolbox --serve --open", html)
+
+    def test_rendered_html_can_embed_backend_connection(self):
+        html = render_toolbox_html(backend_url="http://127.0.0.1:8765", backend_auth="test-auth")
+
+        self.assertIn('"http://127.0.0.1:8765"', html)
+        self.assertIn('"test-auth"', html)
+        self.assertIn("X-OSINT-Token", html)
 
     def test_command_templates_reference_known_inputs(self):
         known_inputs = {field.name for field in TOOLBOX_INPUTS}
