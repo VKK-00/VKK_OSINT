@@ -37,6 +37,12 @@ DETECTDEE_STDOUT_RE = re.compile(
     r"\[\+\]\s*(?P<identity>\S+)\s+(?P<site>[^:]{2,120}?)\s*:\s*(?P<url>https?://\S+)",
     re.IGNORECASE,
 )
+PWNEDORNOT_STATUS_RE = re.compile(
+    r"Checking Breach status for\s+(?P<email>\S+)\s+\[\s*(?P<status>not pwned|pwned)\s*\]",
+    re.IGNORECASE,
+)
+PWNEDORNOT_TOTAL_RE = re.compile(r"Total Breaches\s*:\s*(?P<count>\d+)", re.IGNORECASE)
+PWNEDORNOT_API_STATUS_RE = re.compile(r"Status\s+(?P<code>\d{3})\s*:\s*(?P<message>.+)", re.IGNORECASE)
 SHERLOCK_LINE_RE = re.compile(
     r"^\s*(?:\[(?P<marker>[+\-])\]\s*)?(?P<site>[^:]{2,120}):\s*(?P<rest>.+?)\s*$",
     re.IGNORECASE,
@@ -52,6 +58,7 @@ PARSER_REPOSITORIES = {
     "snooppr/snoop",
     "alpkeskin/mosint",
     "khast3x/h8mail",
+    "thewhiteh4t/pwnedOrNot",
     "sundowndev/phoneinfoga",
     "kaifcodec/user-scanner",
     "projectdiscovery/subfinder",
@@ -111,6 +118,8 @@ def parse_adapter_output(
         return _mosint_findings(repository, target, text)
     if repository == "khast3x/h8mail":
         return _h8mail_findings(repository, target, text)
+    if repository == "thewhiteh4t/pwnedOrNot":
+        return _pwnedornot_findings(repository, target, text)
     if repository == "sundowndev/phoneinfoga":
         return _phoneinfoga_findings(repository, target, text)
     if repository == "projectdiscovery/subfinder":
@@ -2496,6 +2505,275 @@ def _h8mail_evidence(
     if category == "breach-source":
         return f"h8mail {h8mail_target}: breach source {value}"
     return f"h8mail {h8mail_target}: {result_type}={value}{source}"
+
+
+def _pwnedornot_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    seen: set[tuple[str, ...]] = set()
+
+    email = _pwnedornot_email(target, text)
+    status_label = _pwnedornot_status(text)
+    total_breaches = _pwnedornot_total(text)
+
+    summary = _pwnedornot_summary_finding(repository, target, email, status_label, total_breaches, seen)
+    if summary:
+        findings.append(summary)
+
+    for record in _pwnedornot_breach_records(text):
+        finding = _pwnedornot_breach_finding(repository, target, email, record, seen)
+        if finding:
+            findings.append(finding)
+
+    credential = _pwnedornot_credential_finding(repository, target, email, text, seen)
+    if credential:
+        findings.append(credential)
+
+    error = _pwnedornot_error_finding(repository, target, email, text, seen)
+    if error:
+        findings.append(error)
+
+    return tuple(findings)
+
+
+def _pwnedornot_email(target: ScanTarget, text: str) -> str:
+    if EMAIL_RE.fullmatch(target.value):
+        return target.value
+    match = EMAIL_RE.search(text)
+    return match.group(0) if match else target.value
+
+
+def _pwnedornot_status(text: str) -> str:
+    match = PWNEDORNOT_STATUS_RE.search(text)
+    if not match:
+        return ""
+    return "not_pwned" if "not" in match.group("status").lower() else "pwned"
+
+
+def _pwnedornot_total(text: str) -> int | None:
+    match = PWNEDORNOT_TOTAL_RE.search(text)
+    if not match:
+        return None
+    try:
+        return int(match.group("count"))
+    except ValueError:
+        return None
+
+
+def _pwnedornot_summary_finding(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    status_label: str,
+    total_breaches: int | None,
+    seen: set[tuple[str, ...]],
+) -> Finding | None:
+    if not status_label and total_breaches is None:
+        return None
+    count = total_breaches if total_breaches is not None else (0 if status_label == "not_pwned" else None)
+    status = "candidate" if status_label == "pwned" or (count is not None and count > 0) else "not_found"
+    confidence = "high" if status == "candidate" else "medium"
+    metadata = _pwnedornot_metadata(repository, target, email, "breach-summary")
+    if status_label:
+        metadata["result_status"] = status_label
+    if count is not None:
+        metadata["breach_count"] = str(count)
+    evidence = f"pwnedOrNot {email}: {count} breach(es)" if count is not None else f"pwnedOrNot {email}: {status_label}"
+    return _pwnedornot_finding(
+        repository=repository,
+        target=target,
+        status=status,
+        confidence=confidence,
+        evidence=evidence,
+        metadata=metadata,
+        seen=seen,
+        key=("pwnedornot", "summary", email.lower(), status_label, str(count)),
+    )
+
+
+def _pwnedornot_breach_records(text: str) -> tuple[dict[str, str], ...]:
+    records: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = _strip_prefix(raw_line)
+        if not line or ":" not in line:
+            continue
+        label, value = line.split(":", 1)
+        key = _metadata_key(label)
+        value = " ".join(value.split())
+        if key not in {
+            "breach",
+            "domain",
+            "date",
+            "breachedinfo",
+            "breached_info",
+            "data_types",
+            "pwn_count",
+            "fabricated",
+            "verified",
+            "retired",
+            "spam",
+        }:
+            continue
+        if key == "breach" and current:
+            records.append(current)
+            current = {}
+        current[key] = value
+    if current:
+        records.append(current)
+    return tuple(records)
+
+
+def _pwnedornot_breach_finding(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    record: dict[str, str],
+    seen: set[tuple[str, ...]],
+) -> Finding | None:
+    breach_name = record.get("breach", "")
+    breach_domain = record.get("domain", "")
+    breach_date = record.get("date", "")
+    if not any((breach_name, breach_domain, breach_date)):
+        return None
+
+    metadata = _pwnedornot_metadata(repository, target, email, "breach")
+    if breach_name:
+        metadata["breach_name"] = breach_name
+    if breach_domain:
+        metadata["domain"] = breach_domain.lower()
+    if breach_date:
+        metadata["breach_date"] = breach_date
+    data_classes = record.get("breachedinfo") or record.get("breached_info") or record.get("data_types")
+    if data_classes:
+        metadata["data_classes"] = data_classes.strip("[]")
+    if record.get("pwn_count"):
+        metadata["pwn_count"] = record["pwn_count"]
+    for source_key, metadata_key in (
+        ("fabricated", "extra_is_fabricated"),
+        ("verified", "extra_is_verified"),
+        ("retired", "extra_is_retired"),
+        ("spam", "extra_is_spam_list"),
+    ):
+        if record.get(source_key):
+            metadata[metadata_key] = record[source_key]
+
+    return _pwnedornot_finding(
+        repository=repository,
+        target=target,
+        status="candidate",
+        confidence="high" if record.get("verified", "").lower() == "true" else "medium",
+        evidence=f"pwnedOrNot HIBP breach: {breach_name or breach_domain} ({breach_date or 'date unknown'})",
+        metadata=metadata,
+        seen=seen,
+        key=("pwnedornot", "breach", email.lower(), breach_name.lower(), breach_domain.lower(), breach_date),
+    )
+
+
+def _pwnedornot_credential_finding(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    text: str,
+    seen: set[tuple[str, ...]],
+) -> Finding | None:
+    if not _pwnedornot_has_dump_signal(text):
+        return None
+    metadata = _pwnedornot_metadata(repository, target, email, "credential-exposure")
+    metadata["sensitive_value_redacted"] = "true"
+    metadata["credential_signal"] = "password_or_dump"
+    return _pwnedornot_finding(
+        repository=repository,
+        target=target,
+        status="candidate",
+        confidence="high",
+        evidence="pwnedOrNot dump/password signal observed; sensitive values redacted",
+        metadata=metadata,
+        seen=seen,
+        key=("pwnedornot", "credential", email.lower()),
+    )
+
+
+def _pwnedornot_has_dump_signal(text: str) -> bool:
+    for raw_line in text.splitlines():
+        line = _strip_prefix(raw_line)
+        lowered = line.lower()
+        if "dumps found" in lowered and "no dumps found" not in lowered:
+            return True
+        if re.fullmatch(r"passwords\s*:", line, re.IGNORECASE):
+            return True
+    return False
+
+
+def _pwnedornot_error_finding(
+    repository: str,
+    target: ScanTarget,
+    email: str,
+    text: str,
+    seen: set[tuple[str, ...]],
+) -> Finding | None:
+    match = PWNEDORNOT_API_STATUS_RE.search(text)
+    message = ""
+    status_code = ""
+    if match:
+        status_code = match.group("code")
+        message = _short(match.group("message"), 160)
+    elif "Error :" in text:
+        message = _short(text.split("Error :", 1)[1], 160)
+    if not message:
+        return None
+    metadata = _pwnedornot_metadata(repository, target, email, "api-error")
+    if status_code:
+        metadata["status_code"] = status_code
+    metadata["error_summary"] = message
+    return _pwnedornot_finding(
+        repository=repository,
+        target=target,
+        status="error",
+        confidence="medium",
+        evidence=f"pwnedOrNot API error{f' {status_code}' if status_code else ''}: {message}",
+        metadata=metadata,
+        seen=seen,
+        key=("pwnedornot", "error", email.lower(), status_code, message.lower()),
+    )
+
+
+def _pwnedornot_metadata(repository: str, target: ScanTarget, email: str, category: str) -> dict[str, str]:
+    metadata = {
+        "repository": repository,
+        "parser": "pwnedornot",
+        "target_kind": target.kind,
+        "category": category,
+        "source_label": "haveibeenpwned",
+    }
+    if EMAIL_RE.fullmatch(email):
+        metadata["email"] = email
+        metadata["domain"] = email.rsplit("@", 1)[1].lower()
+    return metadata
+
+
+def _pwnedornot_finding(
+    *,
+    repository: str,
+    target: ScanTarget,
+    status: str,
+    confidence: str,
+    evidence: str,
+    metadata: dict[str, str],
+    seen: set[tuple[str, ...]],
+    key: tuple[str, ...],
+) -> Finding | None:
+    if key in seen:
+        return None
+    seen.add(key)
+    return Finding(
+        module="external-adapter-parser",
+        source=repository,
+        target=target.value,
+        status=status,
+        confidence=confidence,
+        evidence=_short(evidence),
+        metadata=metadata,
+    )
 
 
 PHONEINFOGA_SCALAR_KEYS = {

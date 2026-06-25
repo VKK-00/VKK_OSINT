@@ -116,6 +116,76 @@ class AdapterParserTests(unittest.TestCase):
         self.assertEqual(github.metadata["username"], "example_user")
         self.assertEqual(github.status, "candidate")
 
+    def test_parse_pwnedornot_breach_stdout(self):
+        findings = parse_adapter_output(
+            "thewhiteh4t/pwnedOrNot",
+            ScanTarget(kind="email", value="person@example.com"),
+            """
+            [+] Checking Breach status for person@example.com [ pwned ]
+
+            [*] Total Breaches : 2
+
+            Breach       : Adobe
+            Domain       : adobe.com
+            Date         : 2013-10-04
+            BreachedInfo : Emails, Passwords, Usernames
+            Fabricated   : False
+            Verified     : True
+            Retired      : False
+            Spam         : False
+
+            Breach       : Example
+            Domain       : example.com
+            Date         : 2020-01-01
+            BreachedInfo : Emails
+            Fabricated   : False
+            Verified     : False
+            Retired      : False
+            Spam         : False
+            """,
+        )
+
+        summary = next(finding for finding in findings if finding.metadata["category"] == "breach-summary")
+        self.assertEqual(summary.status, "candidate")
+        self.assertEqual(summary.metadata["parser"], "pwnedornot")
+        self.assertEqual(summary.metadata["breach_count"], "2")
+        self.assertFalse(any(finding.metadata["category"] == "credential-exposure" for finding in findings))
+
+        adobe = next(finding for finding in findings if finding.metadata.get("breach_name") == "Adobe")
+        self.assertEqual(adobe.status, "candidate")
+        self.assertEqual(adobe.confidence, "high")
+        self.assertEqual(adobe.metadata["domain"], "adobe.com")
+        self.assertEqual(adobe.metadata["breach_date"], "2013-10-04")
+        self.assertEqual(adobe.metadata["data_classes"], "Emails, Passwords, Usernames")
+
+    def test_parse_pwnedornot_not_pwned_and_redacts_dump_values(self):
+        findings = parse_adapter_output(
+            "thewhiteh4t/pwnedOrNot",
+            ScanTarget(kind="email", value="person@example.com"),
+            """
+            [+] Checking Breach status for person@example.com [ not pwned ]
+            [+] Looking for Dumps... [ Dumps Found ]
+
+            [+] Passwords :
+
+            hunter2
+            person@example.com:supersecret
+            """,
+        )
+
+        summary = next(finding for finding in findings if finding.metadata["category"] == "breach-summary")
+        credential = next(finding for finding in findings if finding.metadata["category"] == "credential-exposure")
+        self.assertEqual(summary.status, "not_found")
+        self.assertEqual(credential.status, "candidate")
+        self.assertEqual(credential.metadata["sensitive_value_redacted"], "true")
+
+        joined = "\n".join(
+            [finding.evidence for finding in findings]
+            + [str(sorted(finding.metadata.items())) for finding in findings]
+        )
+        self.assertNotIn("hunter2", joined)
+        self.assertNotIn("supersecret", joined)
+
     def test_parse_mosint_style_key_values(self):
         findings = parse_adapter_output(
             "alpkeskin/mosint",
@@ -1437,6 +1507,42 @@ class AdapterParserTests(unittest.TestCase):
 
         self.assertEqual(findings[0].status, "completed")
         self.assertTrue(any(finding.metadata.get("site_name") == "Github" for finding in findings[1:]))
+
+    def test_run_pwnedornot_adapter_adds_parsed_breach_results_after_execution(self):
+        completed = subprocess.CompletedProcess(
+            args=["pwnedornot", "-e", "person@example.com", "-n"],
+            returncode=0,
+            stdout="""
+            [+] Checking Breach status for person@example.com [ pwned ]
+
+            [*] Total Breaches : 1
+
+            Breach       : Adobe
+            Domain       : adobe.com
+            Date         : 2013-10-04
+            BreachedInfo : Emails, Passwords
+            Fabricated   : False
+            Verified     : True
+            Retired      : False
+            Spam         : False
+            """,
+            stderr="",
+        )
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="pwnedornot"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            return_value=completed,
+        ):
+            findings = run_adapter_findings(
+                "thewhiteh4t/pwnedOrNot",
+                ScanTarget(kind="email", value="person@example.com"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertIn("-n", findings[0].metadata["command"])
+        self.assertTrue(any(finding.metadata.get("parser") == "pwnedornot" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("breach_name") == "Adobe" for finding in findings[1:]))
 
     def test_run_detectdee_adapter_reads_generated_result_file_after_execution(self):
         def fake_run(args, **kwargs):

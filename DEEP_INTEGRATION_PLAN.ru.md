@@ -220,7 +220,7 @@ python -m osint_toolkit search email person@example.com --profile email-full --e
 Что нужно реализовать:
 
 - profile `email-full`;
-- parser coverage for pwnedOrNot if not complete;
+- parser coverage for pwnedOrNot is implemented for safe stdout breach status and breach rows.
 - API key readiness metadata grouped by provider;
 - redaction tests for breach/password/hash/token-like values;
 - output grouping: auth/security, breach/reputation, related identities, domains, URLs.
@@ -407,7 +407,6 @@ Profile fields:
 
 Приоритет 1:
 
-- pwnedOrNot parser hardening.
 - SpiderFoot phone/email/username mode examples.
 - Argus per-target parser fixtures.
 - ExifTool JSON parser.
@@ -580,6 +579,7 @@ Notes:
 28. Done: verify a user-local all-safe toolchain where pipx tools, Go tools, portable image tools and manual GitHub checkouts all report `ready` in `tools doctor --profile all-safe`.
 29. Done: add Windows runtime env refresh so CLI/toolbox readiness sees newly installed user-local `pipx`, Go, portable binaries and configured OSINT env variables without restarting the current terminal.
 30. Done: add DetectDee executable route and parser for username/email/phone profiles; readiness uses `DetectDee` in `PATH` plus `DETECTDEE_DATA`, and execution only uses upstream detect mode.
+31. Done: add pwnedOrNot stdout parser for safe `-n` breach lookups, including HIBP breach summary/rows and credential-output redaction guard.
 
 ## Definition of done
 

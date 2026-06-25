@@ -120,6 +120,7 @@ Gap до полного 1:1:
 - executable target-specific adapter для `kaifcodec/user-scanner`: `user-scanner -e <email> -f json`;
 - parser для `user-scanner` JSON/verbose results: `Registered`/`Found` -> `candidate`, `Available`/`Not Found`/`Not Registered` -> `not_found`, `Error` -> `error`.
 - executable adapter для `thewhiteh4t/pwnedOrNot`: `pwnedornot -e <email> -n`, чтобы по умолчанию не запрашивать password dump payloads;
+- parser для pwnedOrNot stdout: breach status, total breaches, `Breach`/`Domain`/`Date`/`BreachedInfo` rows и API errors нормализуются в `Finding`/entities; dump/password output помечается как credential-exposure с redaction;
 - executable target-specific adapter для `p1ngul1n0/blackbird`: `<BLACKBIRD_PYTHON|python> blackbird.py --email <email> --json --no-update --timeout 30`;
 - parser для Blackbird email JSON exports/stdout found-lines: found account URLs, site/category, platform domains и extracted metadata нормализуются в `Finding`/entities;
 - executable adapter для `Yvesssn/DetectDee`: `DetectDee detect -e <email> -f <DETECTDEE_DATA> -o <temp>`;
@@ -341,6 +342,7 @@ python -m osint_toolkit adapter-setup <repository>
 - adapter-specific parser for Nexfil stdout and autosaved TXT report rows;
 - adapter-specific parser for Mosint JSON report rows with credential-value redaction;
 - adapter-specific parser for h8mail JSON report rows with credential-value redaction;
+- adapter-specific parser for pwnedOrNot stdout breach rows with credential-output redaction guard;
 - adapter-specific parser for Maigret NDJSON/simple JSON and CSV report rows;
 - adapter-specific parser for `user-scanner` JSON and verbose line output;
 - adapter-specific parser for Snoop stdout and CSV report rows;
@@ -364,7 +366,7 @@ python -m osint_toolkit adapter-setup <repository>
 Gap:
 
 - нет встроенной CLI-команды `install adapters`, но текущая dev/toolbox машина может быть приведена к `all-safe` ready через user-local `pipx`, Go binaries, portable image tools и venv-backed manual checkouts;
-- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, Social Analyzer JSON, Blackbird JSON/stdout, DetectDee generated result/stdout, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output;
+- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, pwnedOrNot stdout, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, Social Analyzer JSON, Blackbird JSON/stdout, DetectDee generated result/stdout, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.
 
