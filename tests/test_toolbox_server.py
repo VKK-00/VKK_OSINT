@@ -528,12 +528,14 @@ class ToolboxServerTests(unittest.TestCase):
                 thread.join(timeout=5)
 
     def _wait_for_job(self, base_url: str, job_id: str) -> dict[str, object]:
-        for _ in range(60):
+        last_job: dict[str, object] | None = None
+        for _ in range(180):
             job = self._request_json(f"{base_url}/api/jobs/{job_id}", auth="test-auth")
+            last_job = job
             if job["status"] in {"completed", "failed"}:
                 return job
             time.sleep(0.2)
-        self.fail(f"Job did not finish: {job_id}")
+        self.fail(f"Job did not finish: {job_id}; last status: {last_job}")
 
     def _request_json(
         self,

@@ -666,6 +666,14 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     note="Для реального запуска добавь --execute; runtime_error/config/manual steps не запускаются автоматически.",
                 ),
                 ToolboxCommand(
+                    "Search install missing",
+                    "Берёт профиль из seed/search routing и показывает install dry-run для missing tools.",
+                    "python -m osint_toolkit search phone {phone} --profile auto --install-missing --format markdown",
+                    required_inputs=("phone",),
+                    badges=("search", "install"),
+                    note="Для реального запуска добавь --execute-install; режим несовместим с --execute-adapters.",
+                ),
+                ToolboxCommand(
                     "Profile env names",
                     "Показывает required/optional env variable names без значений.",
                     "python -m osint_toolkit tools env --profile all-safe --format markdown",

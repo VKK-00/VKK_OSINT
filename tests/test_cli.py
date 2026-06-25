@@ -1117,6 +1117,51 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("mutually exclusive", result.stderr)
 
+    def test_search_install_missing_uses_resolved_profile_dry_run(self):
+        result = self.run_cli(
+            "search",
+            "phone",
+            "+380441234567",
+            "--profile",
+            "auto",
+            "--install-missing",
+            "--format",
+            "json",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+
+        self.assertIsInstance(payload, list)
+        self.assertFalse(any(row["name"] == "megadose/ignorant" for row in payload))
+        self.assertFalse(any(row["status"] == "installed" for row in payload))
+
+    def test_search_install_missing_conflicts_with_execution_modes(self):
+        result = self.run_cli(
+            "search",
+            "phone",
+            "+380441234567",
+            "--profile",
+            "phone-full",
+            "--install-missing",
+            "--execute-adapters",
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("mutually exclusive", result.stderr)
+
+    def test_search_execute_install_requires_install_missing(self):
+        result = self.run_cli(
+            "search",
+            "phone",
+            "+380441234567",
+            "--profile",
+            "phone-full",
+            "--execute-install",
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--execute-install requires --install-missing", result.stderr)
+
     def test_search_case_id_requires_case_db(self):
         result = self.run_cli(
             "search",

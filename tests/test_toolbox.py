@@ -34,6 +34,7 @@ class ToolboxTests(unittest.TestCase):
         self.assertIn("python -m osint_toolkit tools doctor --profile all-safe", html)
         self.assertIn("python -m osint_toolkit tools install-plan --profile all-safe", html)
         self.assertIn("python -m osint_toolkit tools install all-safe", html)
+        self.assertIn("--install-missing", html)
         self.assertIn("exiftool -json -a -u -g1 -ee", html)
         self.assertIn("tesseract", html)
         self.assertIn("zbarimg", html)

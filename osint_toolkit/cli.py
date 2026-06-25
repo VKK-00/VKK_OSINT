@@ -233,6 +233,8 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--profile-file", help="JSON file with custom search profiles.")
     search.add_argument("--plan-only", action="store_true", help="Only show the fan-out plan. No tools are executed.")
     search.add_argument("--execute-adapters", action="store_true", help="Execute ready non-restricted external adapters from the search plan.")
+    search.add_argument("--install-missing", action="store_true", help="Show or install missing allowlisted tools for the resolved search profile.")
+    search.add_argument("--execute-install", action="store_true", help="Actually run allowlisted install commands with --install-missing. Default is dry-run.")
     search.add_argument("--include-restricted", action="store_true", help="Include restricted tools in the plan with explicit markings.")
     search.add_argument("--region", choices=("all", "ru", "ua"), default="all")
     search.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
@@ -242,6 +244,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--scope-note", default="", help="Scope/context note saved in case metadata when --case-db is used.")
     search.add_argument("--timeout", type=float, default=10.0)
     search.add_argument("--adapter-timeout", type=float, default=60.0)
+    search.add_argument("--install-timeout", type=float, default=300.0)
     search.add_argument("--adapter-limit", type=int, default=20)
     search.add_argument("--derived-limit", type=int, default=20, help="Maximum image-derived seeds to route into normal search.")
     search.set_defaults(handler=handle_search)
@@ -536,8 +539,18 @@ def handle_search(args: argparse.Namespace) -> int:
         include_restricted=args.include_restricted,
         custom_profiles=custom_profiles,
     )
-    if args.plan_only and args.execute_adapters:
-        raise ValueError("--plan-only and --execute-adapters are mutually exclusive.")
+    selected_modes = sum(bool(value) for value in (args.plan_only, args.execute_adapters, args.install_missing))
+    if selected_modes > 1:
+        raise ValueError("--plan-only, --execute-adapters and --install-missing are mutually exclusive.")
+    if args.execute_install and not args.install_missing:
+        raise ValueError("--execute-install requires --install-missing.")
+    if args.install_missing:
+        rows = build_profile_tool_readiness(plan.profile.name, custom_profiles=custom_profiles)
+        results = build_tool_install_results(rows, execute=args.execute_install, timeout=args.install_timeout)
+        print(format_tool_install_results(results, output_format=args.format))
+        if args.execute_install and any(result.status == "failed" for result in results):
+            return 1
+        return 0
     if not args.execute_adapters:
         print(format_search_plan(plan, output_format=args.format))
         return 0

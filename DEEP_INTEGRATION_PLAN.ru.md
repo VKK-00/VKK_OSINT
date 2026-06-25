@@ -54,7 +54,7 @@ python -m osint_toolkit search domain example.com --profile passive-recon --plan
 - graph edges and cross-case entity index;
 - static `toolbox` window and optional local execution backend.
 
-Главный core gap закрыт: `search --plan-only` строит единый high-level fan-out plan, `search --execute-adapters` запускает ready non-restricted external adapters, image execution запускает ready local tools и маршрутизирует derived seeds, `tools doctor/install-plan/env --profile` закрывает readiness/install/config visibility, а `tools install <profile>` добавляет осторожный dry-run/`--execute` installer layer для allowlisted missing tools. UI gap также закрыт для unified search: `toolbox --serve` поднимает локальный token-protected backend, запускает queued `/api/search` jobs, показывает logs/status/report links и отдаёт `/api/tools` readiness/install/env views по выбранному профилю. Static `toolbox --out` остаётся безопасным copy-ready режимом.
+Главный core gap закрыт: `search --plan-only` строит единый high-level fan-out plan, `search --execute-adapters` запускает ready non-restricted external adapters, image execution запускает ready local tools и маршрутизирует derived seeds, `tools doctor/install-plan/env --profile` закрывает readiness/install/config visibility, `tools install <profile>` добавляет осторожный dry-run/`--execute` installer layer, а `search --install-missing` связывает этот installer layer с resolved search profile. UI gap также закрыт для unified search: `toolbox --serve` поднимает локальный token-protected backend, запускает queued `/api/search` jobs, показывает logs/status/report links и отдаёт `/api/tools` readiness/install/env views по выбранному профилю. Static `toolbox --out` остаётся безопасным copy-ready режимом.
 
 ## Целевая архитектура
 
@@ -110,7 +110,7 @@ python -m osint_toolkit search domain example.com --profile passive-recon --case
 - `--profile safe|full|ru-ua-full|passive-recon|broad-recon|custom`.
 - `--plan-only` — только показать план.
 - `--execute-adapters` — запускать внешние CLI.
-- `--install-missing` — позже; базовый installer layer уже доступен отдельно через `tools install <profile>`.
+- `--install-missing` — отдельный search-mode поверх installer layer; dry-run по умолчанию, реальный запуск только с `--execute-install`.
 - `--case-db`, `--case-id`, `--out`, `--format markdown|json`.
 - `--max-tools`, `--timeout`, `--concurrency`, `--request-delay`.
 - `--scope-note` — текстовое основание/контекст проверки, сохраняется в case metadata.
@@ -587,7 +587,8 @@ Notes:
 37. Done: add Yark archive JSON parser, safe temporary archive execution route and generated `yark.json` ingestion for YouTube channel/video archive clues.
 38. Done: preserve theHarvester API/source attribution from stash/API-style rows and source maps into `source_label` metadata and evidence.
 39. Done: add `tools install <profile>` dry-run/`--execute` installer layer for allowlisted missing tools while keeping config/runtime/manual/restricted steps explicit.
-38. Done: add Socialscan username/email adapter, generated JSON parser and safe availability-signal mapping for `candidate`/`not_found`/`skipped`/`error` results.
+40. Done: wire `search --install-missing` to the resolved profile installer view, with `--execute-install` required for real package-manager execution and mutual exclusion from plan/execution modes.
+41. Done: add Socialscan username/email adapter, generated JSON parser and safe availability-signal mapping for `candidate`/`not_found`/`skipped`/`error` results.
 
 ## Definition of done
 

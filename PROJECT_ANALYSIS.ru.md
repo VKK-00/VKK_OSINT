@@ -18,7 +18,7 @@ CLI работает в пяти режимах:
 
 - catalog/recommend/brief — работа с curated-каталогом;
 - scan/adapters — единое ядро выполнения и карта функциональной совместимости upstream-проектов;
-- search — high-level fan-out планировщик и executor: один seed -> native checks, compatible adapters, readiness/install hints, local image tools; при `--execute-adapters` запускаются ready non-restricted adapters или ready local image tools с derived-seed fan-out в единый report/case;
+- search — high-level fan-out планировщик и executor: один seed -> native checks, compatible adapters, readiness/install hints, local image tools; при `--execute-adapters` запускаются ready non-restricted adapters или ready local image tools с derived-seed fan-out в единый report/case; при `--install-missing` показывается/запускается installer view для resolved profile без запуска расследования;
 - investigate — объединение нескольких seed values, native findings, adapter dry-runs и нормализованных сущностей в один отчёт;
 - toolbox — локальное HTML-окно для ручного выбора OSINT-направления, сборки copy-ready CLI-команд и, в `--serve` режиме, запуска unified `search` jobs через локальный backend.
 
@@ -64,7 +64,7 @@ CLI работает в пяти режимах:
 - adapter doctor: проверка фактической доступности upstream CLI в `PATH`;
 - profile tools workflow: `tools doctor/install-plan/env --profile ...` показывает readiness, install/config actions и env variable names без значений; `tools install <profile>` добавляет dry-run/`--execute` слой для allowlisted missing tools;
 - custom search profiles: `--profile-file` загружает JSON profiles с валидацией target kinds, adapter profiles, repositories и local tools;
-- unified search planner/executor: `search` классифицирует один seed, выбирает default/full или custom profile, строит план native/adapters/local-tools, показывает readiness/missing/config/restricted/excluded статусы, запускает ready non-restricted adapters и выполняет local image tools при `--execute-adapters`;
+- unified search planner/executor: `search` классифицирует один seed, выбирает default/full или custom profile, строит план native/adapters/local-tools, показывает readiness/missing/config/restricted/excluded статусы, запускает ready non-restricted adapters и выполняет local image tools при `--execute-adapters`, а `--install-missing` использует resolved profile для dry-run/explicit install mode;
 - investigation runner: один кейс, несколько seed-типов, entity summary, graph edges, единый Markdown/JSON отчёт;
 - executed adapter ingestion inside investigation: явный `--execute-adapters` добавляет parsed upstream CLI findings в entities, graph edges и case store;
 - SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges, findings и workflow/profile/scope policy metadata;
@@ -284,16 +284,17 @@ Toolbox-поток:
 
 Search-поток:
 
-1. Пользователь запускает `python -m osint_toolkit search <kind|auto> <value> --profile <profile>` с `--plan-only` или `--execute-adapters`.
+1. Пользователь запускает `python -m osint_toolkit search <kind|auto> <value> --profile <profile>` с `--plan-only`, `--execute-adapters` или `--install-missing`.
 2. `classify_target()` определяет target kind для `auto`.
 3. `build_search_plan()` выбирает profile: например phone -> `phone-full`, email -> `email-full`, image -> `image-full`.
 4. Planner добавляет built-in native steps, разворачивает adapter profiles через `expand_adapter_repositories()` и проверяет readiness через `build_adapter_setup()`.
 5. Если profile содержит `derived_target_kinds`, planner добавляет derived targets: `email-full`/`safe`/`all-safe` выводят domain target из email и username target из валидного local-part, а `web-full`/`passive-recon`/`safe`/`all-safe` выводят URL host как domain target и добавляют default domain/web fan-out.
 6. Для image target planner добавляет local-tool routes: PowerShell baseline/hash, ExifTool, ImageMagick, Tesseract и zbarimg.
 7. В plan-only режиме результат выводится как table/Markdown/CSV/JSON через `format_search_plan()`. Missing/config/restricted tools остаются строками плана, а не ошибками.
-8. В adapter execution режиме `ready_adapter_repositories()` выбирает только `stage=adapter,status=ready,readiness=ready` и отсекает restricted entries даже при `--include-restricted`.
-9. `run_investigation()` получает исходный target, derived targets из `SearchPlan`, native target kinds из planned native steps и allowlist ready repositories, запускает только planned native target kinds и внешние adapters через существующий `run_adapter_findings()`, затем сохраняет Markdown/JSON report и SQLite case при `--out`/`--case-db`; `--scope-note` попадает в case metadata как текстовый контекст/рамки проверки.
-10. Для `image` target `run_image_search()` запускает ready local tools, добавляет missing/error/timeout findings по остальным local tools, извлекает URL/email/phone/username/domain clues и маршрутизирует derived targets через обычный `search`/`run_investigation()` flow.
+8. В `--install-missing` режиме resolved profile передаётся в `build_profile_tool_readiness()`/`build_tool_install_results()`: dry-run показывает install actions, а реальный запуск разрешён только через отдельный `--execute-install`; режим взаимоисключён с plan/execution modes.
+9. В adapter execution режиме `ready_adapter_repositories()` выбирает только `stage=adapter,status=ready,readiness=ready` и отсекает restricted entries даже при `--include-restricted`.
+10. `run_investigation()` получает исходный target, derived targets из `SearchPlan`, native target kinds из planned native steps и allowlist ready repositories, запускает только planned native target kinds и внешние adapters через существующий `run_adapter_findings()`, затем сохраняет Markdown/JSON report и SQLite case при `--out`/`--case-db`; `--scope-note` попадает в case metadata как текстовый контекст/рамки проверки.
+11. Для `image` target `run_image_search()` запускает ready local tools, добавляет missing/error/timeout findings по остальным local tools, извлекает URL/email/phone/username/domain clues и маршрутизирует derived targets через обычный `search`/`run_investigation()` flow.
 
 Scan-поток:
 
@@ -446,6 +447,7 @@ External adapters должны подключать upstream CLI/API без ко
 - `search --profile-file` — JSON-файл custom search profiles; файл принимает top-level list или объект `{"profiles": [...]}` и валидируется перед планированием.
 - `search --plan-only` — вывести план без запуска tools.
 - `search --execute-adapters` — запустить только ready non-restricted adapters из SearchPlan и записать unified report/case.
+- `search --install-missing [--execute-install]` — использовать resolved search profile для install dry-run или явного запуска allowlisted install commands; режим не пишет report/case.
 - `search image ... --execute-adapters` — запустить ready local image tools, извлечь derived seeds и записать unified report/case.
 - `search --include-restricted` — показать restricted tools в плане с явной маркировкой.
 - `search --format table|markdown|csv|json` — формат плана.
@@ -525,6 +527,7 @@ python -m osint_toolkit search email person@example.com --profile email-full --p
 python -m osint_toolkit search auto https://vk.com/example --profile auto --plan-only --format json
 python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --plan-only
 python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --execute-adapters --out reports/photo.md --case-db cases.sqlite --case-id photo-001 --scope-note "image source context review"
+python -m osint_toolkit search phone +380441234567 --profile auto --install-missing --format markdown
 python -m osint_toolkit search email person@example.com --profile case-email-safe --profile-file profiles\case_profiles.json --plan-only
 python -m osint_toolkit profiles list --format markdown
 python -m osint_toolkit profiles export email-full --out profiles\email-full.json
@@ -770,6 +773,7 @@ osint-toolkit stats
 - 2026-06-25: Tesseract OCR stdout и zbarimg raw payloads получили local image parsers: decoded text/QR clues нормализуются в structured findings и derived seeds.
 - 2026-06-25: добавлен `tools doctor/install-plan/env --profile`: profile-level readiness, install/config actions и безопасный вывод env variable names без значений.
 - 2026-06-25: добавлен `tools install <profile>`: dry-run installer view и explicit `--execute` для allowlisted missing tools (`pipx`, `go`, `winget`, `choco`), без автозапуска config/runtime/manual/restricted steps.
+- 2026-06-25: `search --install-missing` подключён к installer layer: команда использует resolved profile из seed/profile/custom profile, dry-run по умолчанию и требует `--execute-install` для реального запуска allowlisted install commands.
 - 2026-06-25: добавлен `toolbox --serve`: локальный token-protected backend для запуска queued unified `search` jobs из HTML-пульта, с logs/status/report endpoints и ограничением output paths рабочей папкой backend.
 - 2026-06-25: добавлен `--profile-file` для `search` и `tools doctor/install-plan/env`: custom search profiles загружаются из JSON, валидируются и участвуют в fan-out planning/readiness без изменения built-in profiles.
 - 2026-06-25: добавлена команда `profiles list/show/export`: built-in и custom search profiles можно просматривать и экспортировать в reusable JSON без чтения кода.
