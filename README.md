@@ -205,6 +205,8 @@ python -m osint_toolkit tools env --profile email-full --format json
 
 `tools doctor` показывает readiness adapters и local tools по профилю. `tools install-plan` генерирует install/config actions для missing/config tools, но ничего не устанавливает автоматически и не предлагает excluded/restricted adapters как обычную установку. `tools env` выводит только имена required/optional env variables, без значений.
 
+На Windows CLI и served toolbox автоматически перечитывают user/machine `PATH` и известные OSINT env variable names из системного окружения. Это нужно, чтобы только что установленные через `pipx`, Go или portable folders инструменты не отображались как `missing` в уже открытом терминале.
+
 ### `toolbox`
 
 Генерирует одно локальное HTML-окно для ручной работы оператора: слева seed-поля, справа направления OSINT и кнопки, которые собирают copy-ready команды текущего CLI. В served mode окно также запускает unified `search` jobs, передаёт `scope_note`, читает saved cases/graph/index и рисует кликабельный SVG-граф связей через локальный backend.

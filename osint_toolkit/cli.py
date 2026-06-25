@@ -13,6 +13,7 @@ from .case_store import CaseStore, CaseStoreError
 from .catalog import Catalog, CatalogError
 from .doctor import inspect_adapters
 from .engine import RunConfig, ScanTarget
+from .environment import refresh_runtime_environment
 from .graph import analyze_case_graph, analyze_cross_case_network, analyze_cross_case_path
 from .image_runner import render_image_search_execution, run_image_search
 from .investigation import (
@@ -64,6 +65,7 @@ from .workflows import TASK_PROFILES, recommend_projects, render_brief, render_r
 
 
 def main(argv: list[str] | None = None) -> int:
+    refresh_runtime_environment()
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

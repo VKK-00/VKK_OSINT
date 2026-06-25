@@ -579,6 +579,7 @@ Notes:
 26. Done: add `wrong_executable` readiness and declarative identity probes for Subfinder, ProjectDiscovery `httpx`, Amass, theHarvester, BBOT and PhoneInfoga so unrelated binaries are not treated as ready adapters.
 27. Done: support venv-backed manual checkout adapters through `BLACKBIRD_PYTHON` and `SPIDERFOOT_PYTHON`, while preserving `python` as the default fallback.
 28. Done: verify a user-local all-safe toolchain where pipx tools, Go tools, portable image tools and manual GitHub checkouts all report `ready` in `tools doctor --profile all-safe`.
+29. Done: add Windows runtime env refresh so CLI/toolbox readiness sees newly installed user-local `pipx`, Go, portable binaries and configured OSINT env variables without restarting the current terminal.
 
 ## Definition of done
 

@@ -15,6 +15,7 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .case_store import CaseStore, CaseStoreError
+from .environment import refresh_runtime_environment
 from .graph import analyze_case_graph, analyze_cross_case_network, analyze_cross_case_path
 from .search import (
     TARGET_KINDS,
@@ -201,6 +202,7 @@ class ToolboxJobRunner:
         view: str = "doctor",
         output_format: str = "markdown",
     ) -> dict[str, object]:
+        refresh_runtime_environment()
         if view not in VALID_TOOL_VIEWS:
             raise ValueError(f"view must be one of: {', '.join(VALID_TOOL_VIEWS)}")
         if output_format not in VALID_FORMATS:

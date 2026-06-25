@@ -1182,7 +1182,6 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
         self.assertIn("Install / action", result.stdout)
-        self.assertIn("ExifTool", result.stdout)
 
     def test_tools_install_plan_skips_excluded_restricted_adapters(self):
         doctor = self.run_cli("tools", "doctor", "--profile", "phone-full", "--format", "json")

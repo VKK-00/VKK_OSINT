@@ -57,6 +57,7 @@ CLI работает в пяти режимах:
 - SpiderFoot adapter: `<SPIDERFOOT_PYTHON|python> <SPIDERFOOT_SF_PATH> -s <target> -u passive -o json -q` и parser JSON/stdout events для domains, subdomains, emails, phones, URLs, IPs, ports, names, technologies и findings;
 - Argus adapter: интерактивный `argus` со stdin-сценарием `set target`, `runall infra`, `viewout`, `exit` и parser stdout/cache-like output для URLs, emails, phones, subdomains, IPs, ports и technologies;
 - adapter setup/readiness layer: install hints, docs URLs, PATH/env readiness;
+- Windows runtime env refresh: CLI и served toolbox перечитывают user/machine `PATH` и известные OSINT env variable names, чтобы newly installed user-local tools были видны без рестарта терминала;
 - adapter profiles: готовые группы upstream adapters для типовых расследований;
 - adapter doctor: проверка фактической доступности upstream CLI в `PATH`;
 - profile tools workflow: `tools doctor/install-plan/env --profile ...` показывает readiness, install/config actions и env variable names без значений;
@@ -82,6 +83,7 @@ CLI работает в пяти режимах:
 - `osint_people_ru_ua_2026-06-24.csv` — объединённая разметка people + ru/ua.
 - `osint_toolkit/` — Python-пакет CLI.
 - `osint_toolkit/modules/` — native scan-модули.
+- `osint_toolkit/environment.py` — Windows runtime env refresh для user/machine `PATH` и известных OSINT env variable names.
 - `osint_toolkit/search.py` — unified search profiles, target classifier и fan-out planner.
 - `osint_toolkit/toolbox.py` — генератор локального HTML-пульта с направлениями, шаблонами команд, optional backend runner UI, Case Browser, safe case management controls и bounded clickable SVG-визуализацией сохранённого графа.
 - `osint_toolkit/toolbox_server.py` — локальный backend для `toolbox --serve`: token auth, allowlisted unified search jobs со `scope_note`, status/logs/report endpoints и allowlisted case endpoints.
@@ -107,6 +109,8 @@ CLI работает в пяти режимах:
   - `RunConfig` — dry-run/live, timeout, limit, HTTP backoff, crawler limits и person alias inputs.
   - `Finding` — единый формат результата.
   - `Engine` — запуск подходящих модулей.
+- `osint_toolkit/environment.py`
+  - `refresh_runtime_environment()` — на Windows объединяет registry user/machine `PATH` с текущим process `PATH` и подхватывает известные OSINT env variables, не перезаписывая явно заданные значения процесса.
 - `osint_toolkit/modules/username.py`
   - `UsernameScanModule` — Sherlock/Maigret/WhatsMyName-подобные проверки публичных профилей.
   - `normalize_username()` — нормализация leading `@` для username inputs.
@@ -443,6 +447,7 @@ External adapters должны подключать upstream CLI/API без ко
 - `tools doctor --profile [--profile-file]` — readiness по adapters и local tools search-профиля.
 - `tools install-plan --profile [--profile-file]` — install/config actions по missing/config tools без автоматической установки; excluded/restricted adapters не выдаются как обычные install actions.
 - `tools env --profile [--profile-file]` — только имена required/optional env variables, без значений.
+- Windows runtime env refresh — при запуске CLI и при toolbox `/api/tools` перечитываются user/machine `PATH` и известные OSINT env variable names; значения текущего процесса остаются приоритетными для явных override.
 - `scan --live` — явное разрешение сетевых проверок.
 - `scan --timeout` — HTTP timeout.
 - `scan email --live` — дополнительно делает domain resolution, MX/TXT lookup, SPF classification и DMARC lookup/classification.
@@ -763,3 +768,4 @@ osint-toolkit stats
 - 2026-06-25: `classify_target()` переведён на hostname-based social URL routing для Instagram, Telegram и поддерживаемых RU social hosts, чтобы `search auto <social-url>` выбирал platform modules и не ловил ложные substring-совпадения.
 - 2026-06-25: adapter readiness получил статус `wrong_executable`, declarative identity probes для Subfinder/httpx/Amass/theHarvester/BBOT/PhoneInfoga и per-adapter timeout; `search`/`tools`/doctor/direct runner теперь не считают unrelated binaries в PATH готовыми adapters.
 - 2026-06-25: Blackbird и SpiderFoot adapters получили env-backed venv executable support через `BLACKBIRD_PYTHON` и `SPIDERFOOT_PYTHON`; pwnedOrNot переведён на `-e <email> -n`, а локальная all-safe toolchain проверена через `tools doctor --profile all-safe`.
+- 2026-06-25: добавлен Windows runtime env refresh для CLI и toolbox `/api/tools`: user/machine `PATH` и известные OSINT env variables подхватываются из системного окружения, поэтому newly installed user-local tools видны без рестарта текущего терминала.
