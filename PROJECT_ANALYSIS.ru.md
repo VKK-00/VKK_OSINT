@@ -12,11 +12,12 @@
 
 Проект хранит датированные CSV/Markdown/JSON-срезы GitHub OSINT-проектов и предоставляет Python CLI/engine поверх этих данных.
 
-CLI работает в трёх режимах:
+CLI работает в четырёх режимах:
 
 - catalog/recommend/brief — работа с curated-каталогом;
 - scan/adapters — единое ядро выполнения и карта функциональной совместимости upstream-проектов;
-- investigate — объединение нескольких seed values, native findings, adapter dry-runs и нормализованных сущностей в один отчёт.
+- investigate — объединение нескольких seed values, native findings, adapter dry-runs и нормализованных сущностей в один отчёт;
+- toolbox — локальное HTML-окно для ручного выбора OSINT-направления и сборки copy-ready CLI-команд.
 
 Первый native-слой уже выполняет:
 
@@ -60,6 +61,7 @@ CLI работает в трёх режимах:
 - SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges и findings;
 - saved case graph analysis: счётчики связей/типов сущностей, top connected nodes и focus-запрос соседей сущности;
 - cross-case entity index: поиск повторяющихся email/domain/telegram/instagram/url и других сущностей между сохранёнными кейсами;
+- local toolbox: один HTML-пульт с seed-полями и направлениями для фото-зацепок, person/username/social, email/phone, domain/url, RU/UA, cases/graph/index и adapter profiles;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
 
@@ -71,6 +73,7 @@ CLI работает в трёх режимах:
 - `osint_people_ru_ua_2026-06-24.csv` — объединённая разметка people + ru/ua.
 - `osint_toolkit/` — Python-пакет CLI.
 - `osint_toolkit/modules/` — native scan-модули.
+- `osint_toolkit/toolbox.py` — генератор локального HTML-пульта с направлениями и шаблонами команд.
 - `osint_toolkit/resources/sherlock_data.json` — встроенный snapshot Sherlock `sherlock_project/resources/data.json`, commit `206068d`, MIT license.
 - `osint_toolkit/resources/whatsmyname_wmn_data.json` — встроенный snapshot WhatsMyName `wmn-data.json`, commit `7c44595`, CC BY-SA 4.0 license.
 - `osint_toolkit/resources/maigret_sites.json` — sanitized projection Maigret `maigret/resources/data.json`, commit `2484509`, MIT license.
@@ -208,8 +211,12 @@ CLI работает в трёх режимах:
   - `render_brief()` — генерация Markdown-brief.
 - `osint_toolkit/output.py`
   - форматирование таблиц, Markdown, CSV и JSON.
+- `osint_toolkit/toolbox.py`
+  - `toolbox_sections()` — машинно-читаемое описание направлений, cards и шаблонов команд.
+  - `render_toolbox_html()` — static HTML/CSS/JS для локального пульта.
+  - `write_toolbox()` — запись HTML-файла на диск.
 - `osint_toolkit/cli.py`
-  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `adapters`, `adapter-profiles`, `adapter-setup`, `doctor`, `run-adapter`, `investigate`, `cases`, `case-show`, `case-graph`, `case-index`, `recommend`, `brief`.
+  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `adapters`, `adapter-profiles`, `adapter-setup`, `doctor`, `run-adapter`, `toolbox`, `investigate`, `cases`, `case-show`, `case-graph`, `case-index`, `recommend`, `brief`.
 
 ## Как система работает end-to-end
 
@@ -220,6 +227,14 @@ CLI работает в трёх режимах:
 3. `Catalog.load()` читает top-100 CSV и overlay-разметку people/ru-ua.
 4. Команда применяет фильтры или профиль workflow.
 5. Результат выводится в консоль или записывается как Markdown-brief.
+
+Toolbox-поток:
+
+1. Пользователь запускает `python -m osint_toolkit toolbox --out osint_toolbox.html`.
+2. CLI вызывает `write_toolbox()`, который берёт текущее описание направлений и adapter profiles.
+3. `render_toolbox_html()` создаёт самодостаточный HTML/CSS/JS без внешних assets и сетевых запросов.
+4. В браузере оператор заполняет seed-поля, выбирает направление и копирует готовую команду.
+5. HTML не запускает процессы и не загружает фото; для фото используются только вручную извлечённые небиометрические public clues.
 
 Scan-поток:
 
@@ -279,6 +294,10 @@ Case-store поток:
 Каталог:
 
 `CSV snapshot -> Catalog.load() -> OsintProject[] -> filter/recommend/brief -> console/Markdown output`
+
+Toolbox:
+
+`ToolboxSection[] + AdapterProfile[] -> render_toolbox_html() -> local HTML -> operator fills seeds -> copy-ready CLI command`
 
 Сканирование:
 
@@ -347,6 +366,8 @@ External adapters должны подключать upstream CLI/API без ко
 - `--data-dir` — путь к папке с CSV.
 - `--format` — формат вывода для команд `catalog` и `show`.
 - `--out` — путь Markdown-файла для `brief`.
+- `toolbox --out` — путь HTML-файла локального пульта.
+- `toolbox --open` — открыть созданный HTML в браузере через стандартный `webbrowser`.
 - `scan --live` — явное разрешение сетевых проверок.
 - `scan --timeout` — HTTP timeout.
 - `scan email --live` — дополнительно делает domain resolution, MX/TXT lookup, SPF classification и DMARC lookup/classification.
@@ -386,6 +407,8 @@ External adapters должны подключать upstream CLI/API без ко
 
 ```powershell
 python -m osint_toolkit stats
+python -m osint_toolkit toolbox --out osint_toolbox.html
+python -m osint_toolkit toolbox --out osint_toolbox.html --open
 python -m osint_toolkit catalog --kind people --direct-only --limit 10
 python -m osint_toolkit scan person "Ivan Petrenko" --limit 10
 python -m osint_toolkit scan username exampleuser --limit 10
@@ -474,6 +497,8 @@ osint-toolkit stats
 - SQLite case store отделён от engine: сканирование можно использовать без записи на диск, а сохранение включается явно через `--case-db`.
 - Graph analysis отделён от case store: SQLite хранит факты кейса, а `analyze_case_graph()` вычисляет summary и neighbors без изменения схемы БД.
 - Cross-case entity index использует уже сохранённую таблицу `entities`; новая таблица не добавлена, потому что индекс пока вычисляется read-only запросами и не требует миграции.
+- Toolbox сделан как статический локальный HTML, а не как сервер: он не требует новых зависимостей, не открывает порт и не может сам запустить внешний CLI из браузера.
+- В photo-направлении toolbox работает только с небиометрическими public clues, которые оператор извлёк вручную; идентификация личности по лицу не реализуется.
 - Dry-run используется по умолчанию для scan-команд. Live-сетевые проверки требуют явного `--live`.
 - Лицензионно сложные или большие проекты подключаются adapters вместо прямого копирования кода.
 - Password recovery flows, email-to-account и phone-to-account механики не переносятся в native-код без restricted-режима.
@@ -481,7 +506,7 @@ osint-toolkit stats
 
 ## Рассмотренные варианты реализации
 
-- Полноценный web UI: отложен, потому что сначала нужно стабилизировать engine/adapters.
+- Полноценный web UI с backend-исполнением команд: отложен, потому что сначала нужно стабилизировать engine/adapters и модель безопасного запуска. Вместо этого добавлен статический toolbox, который собирает команды для ручного запуска оператором.
 - Буквальное копирование кода из всех проектов: допускается только после license review. Обязательный путь для цели — 1:1 functional parity поведения через native-compatible modules, external adapters и documented restricted/excluded decisions.
 - Новая база данных SQLite: пока не нужна, CSV достаточно для каталога; для истории scan-запусков может понадобиться позже.
 
@@ -503,13 +528,14 @@ osint-toolkit stats
 - Telegram module пока не использует Telegram API и не получает private/group data.
 - Instagram module пока является safe public metadata wrapper: нет login/session handling, private data access, follower/following scraping, comments/messages export, media archive ingestion или обхода platform rate limits.
 - Social module для VK/OK/Yandex/Mail.ru пока является safe public metadata wrapper: нет VK/OK/Yandex/Mail.ru API adapters, login/session handling, private profile access, follower scraping, comments/messages export или обхода platform rate limits.
+- Toolbox не выполняет OCR, EXIF parsing, image search или face recognition сам. Фото-направление сейчас является операторским маршрутом: вручную извлечённые clues вводятся в seed-поля и отправляются в существующие CLI-команды.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
 - Adapter manifest теперь включает generated CSV/TXT folder template для `sherlock-project/sherlock`, isolated workdir TXT ingestion для `thewhiteh4t/nexfil`, generated JSON-file templates для `alpkeskin/mosint`, `h8mail` и `laramies/theHarvester`, generated JSON-report folder template для `soxoj/maigret`, generated JSON/NDJSON output folder template для `blacklanternsecurity/bbot`, required-env Python script template для `smicallef/spiderfoot`, interactive stdin template для `jasonxtn/argus`, target-specific executable templates для `user-scanner`, region-aware template для `snooppr/snoop`, required-env Node template для `qeeqbox/social-analyzer`, checkout/results template для `p1ngul1n0/blackbird` и executable template для `sundowndev/phoneinfoga`; более сложные adapters могут потребовать richer per-mode config.
 - Adapter parser покрывает общие URL/email/phone/key-value patterns, Sherlock stdout/CSV/TXT reports, Nexfil stdout/TXT reports, Mosint JSON reports, h8mail JSON reports, Maigret JSON/CSV reports, `user-scanner` JSON/verbose output, Snoop stdout/CSV output, Social Analyzer JSON output, Blackbird JSON/stdout output, PhoneInfoga CLI/API output, domain-recon adapters Subfinder/httpx/passive Amass/theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output; сложные JSON/CSV/HTML exports остальных upstream ещё не разобраны.
 - Adapter profiles пока статические; нет пользовательских профилей и per-case persistent adapter policy.
-- Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> email`, `domain -> phone`, `domain -> discovered/social/sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois-server`, `domain -> ip|port|technology`, `url -> instagram`, `url -> social-profile`, `instagram -> platform/display name/account id/public URLs`, `social -> social-profile/platform/display name/account id/public URLs` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics и cross-case entity index, но нет weighted path finding, cross-case edge graph и визуального UI.
+- Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> email`, `domain -> phone`, `domain -> discovered/social/sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois-server`, `domain -> ip|port|technology`, `url -> instagram`, `url -> social-profile`, `instagram -> platform/display name/account id/public URLs`, `social -> social-profile/platform/display name/account id/public URLs` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics, cross-case entity index и command toolbox, но нет weighted path finding, cross-case edge graph и интерактивной визуализации графа.
 - SQLite schema сейчас версии 2; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
@@ -534,6 +560,7 @@ osint-toolkit stats
 - При изменении graph relations обновлять `graph.py`, `case_store.py`, README и тесты.
 - При изменении SQLite-схемы обновлять `case_store.py`, schema version, тесты сохранения и документацию.
 - При изменении cross-case индекса обновлять `case_store.py`, `output.py`, CLI-тесты и README.
+- При изменении toolbox-направлений или шаблонов команд обновлять `toolbox.py`, CLI-тесты, README и этот анализ.
 - При добавлении команд обновлять `README.md` и этот анализ.
 - При изменении safety-границ обновлять `README.md`, `workflows.py` и тесты brief/recommend.
 - При новом snapshot обновлять дату в `catalog.py` или добавить явный выбор snapshot.
@@ -591,3 +618,4 @@ osint-toolkit stats
 - 2026-06-25: добавлен `jasonxtn/argus` interactive external adapter: runner поддерживает scripted stdin, профиль `broad-recon` объединяет BBOT/SpiderFoot/Argus, parser нормализует Argus stdout/cache-like output в URLs, emails, phones, subdomains, IPs, ports и technologies.
 - 2026-06-25: добавлен `qeeqbox/social-analyzer` external adapter: runner требует `SOCIAL_ANALYZER_APP_JS`, запускает upstream Node `app.js` в fast JSON mode с optional RU/UA country filter, а parser нормализует `detected`/`unknown`/`failed` profiles в `Finding`/entities/graph signals.
 - 2026-06-25: добавлен `p1ngul1n0/blackbird` external adapter: runner поддерживает upstream checkout working directory через `BLACKBIRD_DIR`, читает только свежие/изменённые JSON exports из `results/`, а parser нормализует Blackbird username/email account hits в entities/graph signals.
+- 2026-06-25: добавлен `toolbox` HTML-пульт: одно локальное окно для seed-полей, направлений OSINT, фото-зацепок без face-ID, cases/graph/index и adapter profiles с copy-ready CLI-командами.

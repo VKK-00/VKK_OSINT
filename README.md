@@ -38,6 +38,7 @@
 - запускать Social Analyzer adapter в fast JSON mode с optional RU/UA `--countries` фильтром и разбирать `detected`/`unknown`/`failed` profiles;
 - запускать Blackbird adapter из upstream checkout, читать свежие JSON exports и stdout profile hits для username/email account discovery;
 - запускать Subfinder, httpx, пассивный Amass, theHarvester, BBOT, SpiderFoot и Argus recon adapters и нормализовать subdomains/emails/phones/URLs/IPs/ports/technologies/HTTP probe results в общий graph;
+- генерировать локальное HTML-окно `toolbox` с направлениями OSINT, seed-полями и copy-ready командами для фото-зацепок, лиц/username, email, телефона, домена/URL, РФ/Украины, кейсов, графов и adapters;
 - получать безопасный workflow под задачу;
 - генерировать Markdown-brief для кейса.
 - сохранять расследования в SQLite и анализировать graph edges сохранённого кейса.
@@ -47,6 +48,7 @@
 
 ```powershell
 python -m osint_toolkit stats
+python -m osint_toolkit toolbox --out osint_toolbox.html
 python -m osint_toolkit catalog --kind people --direct-only --limit 10
 python -m osint_toolkit catalog --kind ru-ua --level direct_ru_ua
 python -m osint_toolkit scan person "Ivan Petrenko" --limit 8
@@ -104,6 +106,27 @@ osint-toolkit stats
 ```
 
 ## Команды
+
+### `toolbox`
+
+Генерирует одно локальное HTML-окно для ручной работы оператора: слева seed-поля, справа направления OSINT и кнопки, которые собирают copy-ready команды текущего CLI.
+
+```powershell
+python -m osint_toolkit toolbox --out osint_toolbox.html
+python -m osint_toolkit toolbox --out osint_toolbox.html --open
+```
+
+В окно вынесены направления:
+
+- фото/изображение как источник небиометрических public clues;
+- лицо, username, Instagram, Telegram и RU social identifiers;
+- email и телефон;
+- домен, URL, passive/broad web recon;
+- РФ/Украина;
+- SQLite cases, graph и cross-case index;
+- каталог, adapter readiness/setup и reusable adapter profiles.
+
+`toolbox` не загружает фото, не запускает команды из браузера и не делает идентификацию личности по лицу. Для фото workflow такой: оператор сам извлекает видимые публичные зацепки, например текст, handle, URL, домен, email, телефон, логотип или географический контекст, вводит их в seed-поля и копирует подходящую команду.
 
 ### `stats`
 

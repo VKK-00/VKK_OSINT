@@ -602,6 +602,18 @@ class CliTests(unittest.TestCase):
             self.assertIn("OSINT brief", content)
             self.assertIn("Seed value: `public channel`", content)
 
+    def test_toolbox_command_writes_html_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "toolbox.html"
+            result = self.run_cli("toolbox", "--out", str(output))
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(output.exists())
+            content = output.read_text(encoding="utf-8")
+            self.assertIn("OSINT Toolkit Control Window", content)
+            self.assertIn("Фото / изображение", content)
+            self.assertIn("username-full", content)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -395,13 +395,14 @@ python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value p
 - focus-neighbor query for one saved entity;
 - cross-case entity index and exact saved-case lookup by entity;
 - parsed executed adapter outputs can enter investigation entities, graph edges and case store;
+- static local `toolbox` HTML command window with OSINT directions, seed fields, cases/graph/index routes and adapter profile buttons;
 - review checklist in every Markdown report.
 
 Gap:
 
 - graph edges пока базовые, без weighted path finding и full cross-case edge graph;
 - нет пользовательских adapter profiles и persistent per-case adapter policy;
-- нет UI для просмотра кейса и интерактивного графа.
+- нет backend web UI, просмотра кейса в браузере и интерактивного графа; `toolbox` пока только собирает команды для ручного запуска.
 
 ## Adapter doctor
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import webbrowser
 from pathlib import Path
 
 from .adapter_runner import run_adapter_findings
@@ -33,6 +34,7 @@ from .output import (
     format_stats,
 )
 from .runtime import build_default_engine
+from .toolbox import write_toolbox
 from .workflows import TASK_PROFILES, recommend_projects, render_brief, render_recommendation, write_brief
 
 
@@ -137,6 +139,11 @@ def build_parser() -> argparse.ArgumentParser:
     brief.add_argument("--limit", type=int, default=10)
     brief.add_argument("--out", required=True, help="Output Markdown path.")
     brief.set_defaults(handler=handle_brief)
+
+    toolbox = subparsers.add_parser("toolbox", help="Generate a local one-window OSINT toolbox.")
+    toolbox.add_argument("--out", default="osint_toolbox.html", help="Output HTML path.")
+    toolbox.add_argument("--open", action="store_true", help="Open the generated HTML file in the default browser.")
+    toolbox.set_defaults(handler=handle_toolbox)
 
     investigate = subparsers.add_parser("investigate", help="Run a multi-target OSINT case through native modules.")
     investigate.add_argument("--title", default="OSINT investigation")
@@ -301,6 +308,14 @@ def handle_brief(args: argparse.Namespace) -> int:
     content = render_brief(profile, projects, target_value=args.target_value, region=args.region)
     path = write_brief(args.out, content)
     print(f"Wrote {path}")
+    return 0
+
+
+def handle_toolbox(args: argparse.Namespace) -> int:
+    path = write_toolbox(args.out).resolve()
+    print(f"Wrote toolbox {path}")
+    if args.open:
+        webbrowser.open(path.as_uri())
     return 0
 
 
