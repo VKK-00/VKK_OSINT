@@ -435,6 +435,8 @@ Done:
 - graph edges;
 - execution metadata: start/end/duration, exit code, timeout, parser version.
 
+Status: для external adapters это реализовано в `run_adapter_findings()`: summary finding получает command/route/executable/returncode/timestamps/duration/timeout/generated output count/parser version, а parsed findings получают prefixed adapter provenance рядом с parser-specific metadata.
+
 ## Safety and audit controls
 
 Для security use-case важны не “запреты ради запретов”, а воспроизводимость и контролируемость:
@@ -591,6 +593,7 @@ Notes:
 41. Done: add Socialscan username/email adapter, generated JSON parser and safe availability-signal mapping for `candidate`/`not_found`/`skipped`/`error` results.
 42. Done: add BBOT Docker fallback route for Windows/POSIX startup failures so `all-safe` can use `docker run --rm -v <output_dir>:/root/.bbot/scans -v <config_dir>:/root/.config/bbot blacklanternsecurity/bbot:stable ...` when native BBOT fails its runtime probe.
 43. Done: add source-by-source execution summaries to unified search reports: `Phone Sources`, `Email Sources`, `Web Sources`, `Image Sources` or generic `Source Summary`, plus JSON `source_summary`.
+44. Done: add execution provenance to adapter summary and parsed findings: command, route, executable path, return code, start/end timestamps, duration, timeout, generated output count and parser version are available in metadata for reports/case-store audit.
 
 ## Definition of done
 

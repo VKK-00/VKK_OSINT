@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 
 from .engine import Finding, ScanTarget
 
+PARSER_VERSION = "adapter-parsers-v1"
+
 URL_RE = re.compile(r"https?://[^\s<>\]\)\"']+", re.IGNORECASE)
 EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 PHONE_RE = re.compile(r"\+[1-9]\d{7,14}\b")

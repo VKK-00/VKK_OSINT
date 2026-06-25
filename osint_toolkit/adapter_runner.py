@@ -4,9 +4,12 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
+from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 
-from .adapter_parsers import parse_adapter_output
+from .adapter_parsers import PARSER_VERSION, parse_adapter_output
 from .adapter_runtime import (
     render_adapter_command,
     render_adapter_output_dir_args,
@@ -173,6 +176,8 @@ def run_adapter_findings(
             )
             command_text = format_command(command)
 
+    started_at = _timestamp()
+    started_counter = time.perf_counter()
     try:
         result = subprocess.run(
             [executable, *command[1:]],
@@ -185,6 +190,8 @@ def run_adapter_findings(
             env=process_env,
         )
     except subprocess.TimeoutExpired as exc:
+        finished_at = _timestamp()
+        duration_ms = _elapsed_ms(started_counter)
         if output_dir_context:
             output_dir_context.cleanup()
         return (
@@ -197,13 +204,23 @@ def run_adapter_findings(
                 evidence=f"Adapter timed out after {timeout} seconds.",
                 metadata={
                     **adapter.to_dict(),
+                    "command": command_text,
+                    "execution_route": runtime.route,
+                    "executable_path": executable,
                     "stdout": _truncate(exc.stdout),
                     "stderr": _truncate(exc.stderr),
                     "stdin_lines": str(command_input_lines),
+                    "started_at": started_at,
+                    "finished_at": finished_at,
+                    "duration_ms": duration_ms,
+                    "timeout_seconds": _format_seconds(timeout),
+                    "parser_version": PARSER_VERSION,
                 },
             ),
         )
     except OSError as exc:
+        finished_at = _timestamp()
+        duration_ms = _elapsed_ms(started_counter)
         if output_dir_context:
             output_dir_context.cleanup()
         return (
@@ -217,11 +234,20 @@ def run_adapter_findings(
                 metadata={
                     **adapter.to_dict(),
                     "command": command_text,
+                    "execution_route": runtime.route,
+                    "executable_path": executable,
                     "stdin_lines": str(command_input_lines),
+                    "started_at": started_at,
+                    "finished_at": finished_at,
+                    "duration_ms": duration_ms,
+                    "timeout_seconds": _format_seconds(timeout),
+                    "parser_version": PARSER_VERSION,
                 },
             ),
         )
 
+    finished_at = _timestamp()
+    duration_ms = _elapsed_ms(started_counter)
     generated_output, generated_count = _read_generated_outputs(
         output_dir,
         adapter.generated_output_patterns,
@@ -247,11 +273,30 @@ def run_adapter_findings(
             "stderr": _truncate(result.stderr),
             "generated_output_files": str(generated_count),
             "stdin_lines": str(command_input_lines),
+            "executable_path": executable,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "duration_ms": duration_ms,
+            "timeout_seconds": _format_seconds(timeout),
+            "parser_version": PARSER_VERSION,
         },
     )
     parsed_stdout = "\n".join(part for part in (result.stdout, generated_output) if part)
     parsed = parse_adapter_output(adapter.repository, target, parsed_stdout, result.stderr)
-    return (summary, *parsed)
+    provenance = {
+        "adapter_repository": adapter.repository,
+        "adapter_command": command_text,
+        "adapter_execution_route": runtime.route,
+        "adapter_executable_path": executable,
+        "adapter_returncode": str(result.returncode),
+        "adapter_started_at": started_at,
+        "adapter_finished_at": finished_at,
+        "adapter_duration_ms": duration_ms,
+        "adapter_timeout_seconds": _format_seconds(timeout),
+        "adapter_generated_output_files": str(generated_count),
+        "parser_version": PARSER_VERSION,
+    }
+    return (summary, *_with_execution_provenance(parsed, provenance))
 
 
 def format_command(command: tuple[str, ...]) -> str:
@@ -273,6 +318,28 @@ def _truncate(value: str | bytes | None, limit: int = 1200) -> str:
     if len(compact) <= limit:
         return compact
     return compact[: limit - 1] + "…"
+
+
+def _with_execution_provenance(
+    findings: tuple[Finding, ...],
+    provenance: dict[str, str],
+) -> tuple[Finding, ...]:
+    enriched: list[Finding] = []
+    for finding in findings:
+        enriched.append(replace(finding, metadata={**finding.metadata, **provenance}))
+    return tuple(enriched)
+
+
+def _timestamp() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _elapsed_ms(started_counter: float) -> str:
+    return str(max(0, round((time.perf_counter() - started_counter) * 1000)))
+
+
+def _format_seconds(value: float) -> str:
+    return f"{value:g}"
 
 
 def _snapshot_generated_outputs(output_dir: str, patterns: tuple[str, ...]) -> dict[Path, tuple[int, int]]:

@@ -1498,7 +1498,22 @@ class AdapterParserTests(unittest.TestCase):
 
         self.assertEqual(findings[0].module, "external-adapter")
         self.assertEqual(findings[0].status, "completed")
-        self.assertTrue(any(finding.url == "https://github.com/example_user" for finding in findings[1:]))
+        self.assertEqual(findings[0].metadata["returncode"], "0")
+        self.assertEqual(findings[0].metadata["parser_version"], "adapter-parsers-v1")
+        self.assertEqual(findings[0].metadata["timeout_seconds"], "60")
+        self.assertIn("started_at", findings[0].metadata)
+        self.assertIn("finished_at", findings[0].metadata)
+        self.assertTrue(findings[0].metadata["duration_ms"].isdigit())
+
+        parsed = next(finding for finding in findings[1:] if finding.url == "https://github.com/example_user")
+        self.assertEqual(parsed.metadata["parser"], "sherlock")
+        self.assertEqual(parsed.metadata["adapter_repository"], "sherlock-project/sherlock")
+        self.assertEqual(parsed.metadata["adapter_returncode"], "0")
+        self.assertEqual(parsed.metadata["adapter_execution_route"], "native")
+        self.assertEqual(parsed.metadata["adapter_timeout_seconds"], "60")
+        self.assertEqual(parsed.metadata["parser_version"], "adapter-parsers-v1")
+        self.assertIn("sherlock example_user", parsed.metadata["adapter_command"])
+        self.assertTrue(parsed.metadata["adapter_duration_ms"].isdigit())
 
     def test_run_sherlock_adapter_reads_generated_csv_report_after_execution(self):
         def fake_run(args, **kwargs):
