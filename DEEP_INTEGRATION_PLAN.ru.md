@@ -596,6 +596,7 @@ Notes:
 44. Done: add execution provenance to adapter summary and parsed findings: command, route, executable path, return code, start/end timestamps, duration, timeout, generated output count and parser version are available in metadata for reports/case-store audit.
 45. Done: surface adapter execution provenance in source summaries: Markdown/table output includes `Runs`, `Routes`, `Exit`, `Duration ms` and `Parser`, while JSON/CSV include execution counts, routes, return codes, total duration, generated output files and parser versions.
 46. Done: expose the installer layer in served toolbox through `/api/tools/install`, `Install` dry-run and `Run install` explicit execute controls for profile-aware allowlisted missing tools.
+47. Done: add served toolbox graph exploration filters for entity kind/value, relation and text query over the bounded SVG case/cross-case graph.
 
 ## Definition of done
 

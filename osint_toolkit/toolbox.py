@@ -72,6 +72,7 @@ TOOLBOX_INPUTS: tuple[ToolboxInput, ...] = (
     ToolboxInput("entity_kind", "Entity kind", "domain"),
     ToolboxInput("entity_value", "Entity value", "example.com"),
     ToolboxInput("relation", "Relation filter", "email_domain"),
+    ToolboxInput("graph_filter", "Graph contains", "example.com"),
     ToolboxInput("target_entity_kind", "Target entity kind", "url"),
     ToolboxInput("target_entity_value", "Target entity value", "https://example.com/profile"),
     ToolboxInput("out", "Файл отчета", "reports/case.md"),
@@ -1145,6 +1146,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
             <button type="button" class="secondary" id="showCaseIndex">Index</button>
             <button type="button" class="secondary" id="showCasePath">Path</button>
             <button type="button" class="secondary" id="showCaseNetwork">Network</button>
+            <button type="button" class="secondary" id="clearGraphFilters">Clear filters</button>
           </div>
           <div id="caseList" class="case-list"></div>
           <div id="caseGraphSummary" class="case-graph-summary"></div>
@@ -1518,10 +1520,70 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       return colors[kind] || "#4b647f";
     }}
 
+    function graphFilters() {{
+      return {{
+        kind: readValue("entity_kind").toLowerCase(),
+        value: readValue("entity_value").toLowerCase(),
+        relation: readValue("relation").toLowerCase(),
+        text: readValue("graph_filter").toLowerCase()
+      }};
+    }}
+
+    function graphHasFilters(filters) {{
+      return Boolean(filters && (filters.kind || filters.value || filters.relation || filters.text));
+    }}
+
+    function textMatches(value, needle) {{
+      return !needle || String(value || "").toLowerCase().includes(needle);
+    }}
+
+    function nodeMatchesGraphFilters(kind, value, filters) {{
+      if (filters.kind && String(kind || "").toLowerCase() !== filters.kind) return false;
+      if (filters.value && !textMatches(value, filters.value)) return false;
+      if (filters.text && !(
+        textMatches(kind, filters.text) ||
+        textMatches(value, filters.text)
+      )) return false;
+      return true;
+    }}
+
+    function edgeMatchesGraphFilters(edge, filters) {{
+      if (filters.relation && !textMatches(edge.relation, filters.relation)) return false;
+      if (filters.kind) {{
+        const sourceKind = String(edge.source_kind || "").toLowerCase();
+        const targetKind = String(edge.target_kind || "").toLowerCase();
+        if (sourceKind !== filters.kind && targetKind !== filters.kind) return false;
+      }}
+      if (filters.value) {{
+        if (!textMatches(edge.source_value, filters.value) && !textMatches(edge.target_value, filters.value)) return false;
+      }}
+      if (filters.text) {{
+        const fields = [
+          edge.source_kind,
+          edge.source_value,
+          edge.target_kind,
+          edge.target_value,
+          edge.relation,
+          edge.source,
+          edge.case_id
+        ];
+        if (!fields.some((value) => textMatches(value, filters.text))) return false;
+      }}
+      return true;
+    }}
+
     function collectGraph(casePayload) {{
       const nodeMap = new Map();
-      const rawEdges = Array.isArray(casePayload && casePayload.edges) ? casePayload.edges : [];
-      const rawEntities = Array.isArray(casePayload && casePayload.entities) ? casePayload.entities : [];
+      const filters = graphFilters();
+      const allEdges = Array.isArray(casePayload && casePayload.edges) ? casePayload.edges : [];
+      const allEntities = Array.isArray(casePayload && casePayload.entities) ? casePayload.entities : [];
+      const filtered = graphHasFilters(filters);
+      const rawEdges = filtered
+        ? allEdges.filter((edge) => edgeMatchesGraphFilters(edge, filters))
+        : allEdges;
+      const rawEntities = filtered
+        ? allEntities.filter((entity) => nodeMatchesGraphFilters(entity.kind, entity.value, filters))
+        : allEntities;
       for (const entity of rawEntities) {{
         addGraphNode(nodeMap, entity.kind, entity.value);
       }}
@@ -1555,8 +1617,11 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       return {{
         nodes: visibleNodes,
         edges: visibleEdges,
+        filters,
         hiddenNodes: Math.max(0, nodes.length - visibleNodes.length),
-        hiddenEdges: Math.max(0, rawEdges.length - visibleEdges.length)
+        hiddenEdges: Math.max(0, rawEdges.length - visibleEdges.length),
+        filteredNodes: nodes.length,
+        filteredEdges: rawEdges.length
       }};
     }}
 
@@ -1572,7 +1637,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       while (element.firstChild) element.removeChild(element.firstChild);
     }}
 
-    function renderGraphSummary(casePayload, analysis, hiddenNodes, hiddenEdges) {{
+    function renderGraphSummary(casePayload, analysis, hiddenNodes, hiddenEdges, filters) {{
       const summary = document.getElementById("caseGraphSummary");
       const legend = document.getElementById("caseGraphLegend");
       summary.innerHTML = "";
@@ -1588,6 +1653,10 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       }}
       if (hiddenNodes) pills.push("hidden nodes " + hiddenNodes);
       if (hiddenEdges) pills.push("hidden edges " + hiddenEdges);
+      if (filters && filters.kind) pills.push("kind " + filters.kind);
+      if (filters && filters.value) pills.push("value " + shortText(filters.value, 24));
+      if (filters && filters.relation) pills.push("relation " + shortText(filters.relation, 24));
+      if (filters && filters.text) pills.push("contains " + shortText(filters.text, 24));
       for (const text of pills) {{
         const item = document.createElement("span");
         item.className = "graph-pill";
@@ -1642,17 +1711,19 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       const empty = document.getElementById("caseGraphEmpty");
       clearElement(svg);
       if (!casePayload) {{
-        renderGraphSummary(null, null, 0, 0);
+        renderGraphSummary(null, null, 0, 0, graphFilters());
         svg.classList.add("hidden");
         empty.textContent = "Открой кейс или граф, чтобы увидеть связи entities.";
         empty.classList.remove("hidden");
         return;
       }}
       const graph = collectGraph(casePayload);
-      renderGraphSummary(casePayload, analysis, graph.hiddenNodes, graph.hiddenEdges);
+      renderGraphSummary(casePayload, analysis, graph.hiddenNodes, graph.hiddenEdges, graph.filters);
       if (!graph.nodes.length) {{
         svg.classList.add("hidden");
-        empty.textContent = "В кейсе пока нет entities/edges для визуализации.";
+        empty.textContent = graphHasFilters(graph.filters)
+          ? "Фильтры не нашли visible entities/edges в текущем графе."
+          : "В кейсе пока нет entities/edges для визуализации.";
         empty.classList.remove("hidden");
         return;
       }}
@@ -1922,6 +1993,19 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       setCaseLog(JSON.stringify(data, null, 2));
     }}
 
+    async function clearGraphFilters() {{
+      setFieldValue("entity_kind", "");
+      setFieldValue("entity_value", "");
+      setFieldValue("relation", "");
+      setFieldValue("graph_filter", "");
+      if (currentGraphMode === "network" && backendAvailable()) {{
+        await showCaseNetwork();
+        return;
+      }}
+      renderCaseGraph(currentCasePayload, currentGraphAnalysis);
+      setCaseLog("Graph filters cleared.");
+    }}
+
     document.getElementById("runUnifiedSearch").addEventListener("click", () => {{
       runUnifiedSearch().catch((error) => setBackendLog(String(error)));
     }});
@@ -1996,6 +2080,10 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       showCaseNetwork().catch((error) => setCaseLog(String(error)));
     }});
 
+    document.getElementById("clearGraphFilters").addEventListener("click", () => {{
+      clearGraphFilters().catch((error) => setCaseLog(String(error)));
+    }});
+
     document.addEventListener("click", (event) => {{
       const button = event.target.closest("[data-open-case]");
       if (!button) return;
@@ -2038,6 +2126,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       document.getElementById("showCaseIndex").disabled = true;
       document.getElementById("showCasePath").disabled = true;
       document.getElementById("showCaseNetwork").disabled = true;
+      document.getElementById("clearGraphFilters").disabled = true;
     }}
   </script>
 </body>
