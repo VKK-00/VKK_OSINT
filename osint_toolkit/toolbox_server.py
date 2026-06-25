@@ -25,11 +25,18 @@ from .search import (
     parse_search_profiles,
 )
 from .toolbox import render_toolbox_html, write_toolbox
+from .tools import (
+    build_profile_tool_readiness,
+    format_env_plan,
+    format_install_plan,
+    format_tool_readiness,
+)
 
 
 VALID_TARGET_KINDS = ("auto", *TARGET_KINDS)
 VALID_REGIONS = ("all", "ru", "ua")
 VALID_FORMATS = ("markdown", "json")
+VALID_TOOL_VIEWS = ("doctor", "install-plan", "env")
 
 
 @dataclass
@@ -184,6 +191,36 @@ class ToolboxJobRunner:
             "profile": profile_name,
             "custom_count": len(remaining_profiles),
             "profiles": [item.to_dict() for item in list_search_profiles(remaining_profiles)],
+        }
+
+    def profile_tools(
+        self,
+        *,
+        profile: str,
+        profile_file: str = "",
+        view: str = "doctor",
+        output_format: str = "markdown",
+    ) -> dict[str, object]:
+        if view not in VALID_TOOL_VIEWS:
+            raise ValueError(f"view must be one of: {', '.join(VALID_TOOL_VIEWS)}")
+        if output_format not in VALID_FORMATS:
+            raise ValueError(f"format must be one of: {', '.join(VALID_FORMATS)}")
+        custom_profiles, profile_file_path = self._custom_profiles(profile_file)
+        selected_profile = find_search_profile(profile, custom_profiles=custom_profiles)
+        rows = build_profile_tool_readiness(selected_profile.name, custom_profiles=custom_profiles)
+        if view == "install-plan":
+            content = format_install_plan(rows, output_format=output_format)
+        elif view == "env":
+            content = format_env_plan(rows, output_format=output_format)
+        else:
+            content = format_tool_readiness(rows, output_format=output_format)
+        return {
+            "profile_file": str(profile_file_path) if profile_file_path else "",
+            "profile": selected_profile.to_dict(),
+            "view": view,
+            "format": output_format,
+            "rows": [row.to_dict() for row in rows],
+            "content": content,
         }
 
     def list_cases(
@@ -555,6 +592,18 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
                     200,
                     self._runner().list_profiles(
                         _query_string(query, "profile_file", default=""),
+                    ),
+                )
+                return
+            if path == "/api/tools":
+                self._require_token()
+                self._send_json(
+                    200,
+                    self._runner().profile_tools(
+                        profile=_query_string(query, "profile", default="all-safe"),
+                        profile_file=_query_string(query, "profile_file", default=""),
+                        view=_query_string(query, "view", default="doctor"),
+                        output_format=_query_string(query, "format", default="markdown"),
                     ),
                 )
                 return

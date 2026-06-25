@@ -70,7 +70,7 @@ CLI работает в пяти режимах:
 - cross-case path analysis: weighted shortest path между двумя сущностями по объединённым graph edges saved cases;
 - cross-case network analysis: bounded общий graph по нескольким saved cases с aggregation, degree/case_count и фильтрами kind/relation;
 - local toolbox: один HTML-пульт с seed-полями и направлениями для фото-зацепок, OCR, EXIF/metadata, QR/barcodes, reverse image portals, person/username/social, email/phone, domain/url, RU/UA, cases/clickable SVG graph/index и adapter profiles;
-- toolbox backend: `toolbox --serve` поднимает локальный token-protected HTTP server, принимает только структурированные `/api/search` payloads включая `scope_note` и guarded `profile_file`, ведёт job queue, logs/status/report access, `/api/profiles`/save/delete и allowlisted case endpoints для saved SQLite cases/graph/index/update/delete;
+- toolbox backend: `toolbox --serve` поднимает локальный token-protected HTTP server, принимает только структурированные `/api/search` payloads включая `scope_note` и guarded `profile_file`, ведёт job queue, logs/status/report access, `/api/profiles`/save/delete, `/api/tools` profile readiness views и allowlisted case endpoints для saved SQLite cases/graph/index/update/delete;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
 
@@ -234,8 +234,8 @@ CLI работает в пяти режимах:
   - `render_toolbox_html()` — HTML/CSS/JS для локального пульта; без backend остаётся static copy-ready режимом, с backend URL/token показывает unified search runner и Case Browser.
   - `write_toolbox()` — запись HTML-файла на диск.
 - `osint_toolkit/toolbox_server.py`
-  - `ToolboxJobRunner` — создаёт allowlisted `python -m osint_toolkit search ...` jobs, ограничивает output paths и profile-file inputs рабочей папкой backend, валидирует/пишет custom search profiles и сохраняет stdout/stderr/status.
-  - `ToolboxRequestHandler` — HTTP endpoints `/api/search`, `/api/profiles`, `/api/profiles/save`, `/api/profiles/delete`, `/api/jobs`, `/api/jobs/<id>`, `/api/jobs/<id>/report`, `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph`, `/api/cases/<id>/update`, `/api/cases/<id>/delete`, `/api/case-index`, `/api/case-path`, `/api/case-network`, `/api/health`.
+  - `ToolboxJobRunner` — создаёт allowlisted `python -m osint_toolkit search ...` jobs, ограничивает output paths и profile-file inputs рабочей папкой backend, валидирует/пишет custom search profiles, отдаёт profile tool readiness/install/env views и сохраняет stdout/stderr/status.
+  - `ToolboxRequestHandler` — HTTP endpoints `/api/search`, `/api/profiles`, `/api/profiles/save`, `/api/profiles/delete`, `/api/tools`, `/api/jobs`, `/api/jobs/<id>`, `/api/jobs/<id>/report`, `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph`, `/api/cases/<id>/update`, `/api/cases/<id>/delete`, `/api/case-index`, `/api/case-path`, `/api/case-network`, `/api/health`.
   - `run_toolbox_server()` — CLI entrypoint для `toolbox --serve`.
 - `osint_toolkit/case_store.py`
   - `CaseStore.save()` — сохраняет investigation result, graph и metadata в SQLite.
@@ -263,7 +263,7 @@ Toolbox-поток:
 3. Served mode: пользователь запускает `python -m osint_toolkit toolbox --serve --open`; CLI создаёт session token, пишет HTML с backend URL/token и поднимает локальный HTTP server.
 4. Browser отправляет только структурированный `/api/search` payload: target kind/value, profile/custom profile, optional profile file, region, execute/plan mode, limits, report path, case DB и optional scope note.
 5. Backend валидирует profile file только внутри рабочей папки backend, собирает allowlisted `python -m osint_toolkit search ...`, запускает job в фоне, показывает queue/status/stdout/stderr и отдаёт report content по job id.
-6. Browser может запросить `/api/profiles`, чтобы увидеть built-in и custom profiles из указанного JSON-файла до запуска search, или сохранить/удалить custom profile через `/api/profiles/save` и `/api/profiles/delete`.
+6. Browser может запросить `/api/profiles`, чтобы увидеть built-in и custom profiles из указанного JSON-файла до запуска search, сохранить/удалить custom profile через `/api/profiles/save` и `/api/profiles/delete`, а также открыть `/api/tools` views `doctor`/`install-plan`/`env` по выбранному профилю.
 7. Case Browser читает `/api/cases` с optional workflow/profile/scope filters, `/api/cases/<id>` и `/api/cases/<id>/graph`, рисует bounded SVG-граф из сохранённых `entities`/`edges` и показывает summary/focus analysis рядом с JSON; клик или Enter/Space на узле заполняет focus entity и перезапрашивает соседей.
 8. Case Browser меняет только allowlisted поля title/scope_note через `/api/cases/<id>/update`; delete идёт через `/api/cases/<id>/delete` только если typed confirmation точно совпадает с `case_id`.
 9. HTML не загружает фото сам; для фото served mode запускает только тот же `search image ... --execute-adapters`, а reverse image portals остаются ручной загрузкой.
@@ -349,7 +349,7 @@ Case-store поток:
 
 Toolbox:
 
-`ToolboxSection[] + AdapterProfile[] -> render_toolbox_html() -> local HTML -> operator fills image path/seeds/profile fields -> copy-ready command OR /api/profiles|/api/profiles/save|/api/profiles/delete|/api/search -> ToolboxJobRunner -> python -m osint_toolkit search -> report/case -> Case Browser /api/cases|graph|update|delete|case-index|case-path|case-network`
+`ToolboxSection[] + AdapterProfile[] -> render_toolbox_html() -> local HTML -> operator fills image path/seeds/profile fields -> copy-ready command OR /api/profiles|/api/profiles/save|/api/profiles/delete|/api/tools|/api/search -> ToolboxJobRunner -> readiness view OR python -m osint_toolkit search -> report/case -> Case Browser /api/cases|graph|update|delete|case-index|case-path|case-network`
 
 Search:
 
@@ -464,6 +464,7 @@ External adapters должны подключать upstream CLI/API без ко
 - `toolbox /api/profiles?profile_file=...` — token-protected listing built-in/custom profiles; `profile_file` должен находиться внутри рабочей папки backend.
 - `toolbox /api/profiles/save` — token-protected upsert custom search profile в JSON-файл внутри рабочей папки backend после полной валидации.
 - `toolbox /api/profiles/delete` — token-protected удаление custom search profile из guarded profile JSON.
+- `toolbox /api/tools?profile=...&view=doctor|install-plan|env` — token-protected profile readiness/install/env view без shell; optional `profile_file` проходит тот же path guard внутри backend cwd.
 - `toolbox /api/search` `profile_file` — optional profile JSON path внутри рабочей папки backend; backend валидирует custom profile перед добавлением `--profile-file`.
 - `case-graph --entity-kind` и `case-graph --entity-value` — focus-сущность для поиска соседей в сохранённом графе.
 - `case-graph --limit` — ограничение top nodes и списка соседей.
@@ -754,3 +755,4 @@ osint-toolkit stats
 - 2026-06-25: `toolbox --serve` получил guarded custom profile integration: `/api/profiles`, поля `Profile file`/`Custom profile`, path guard внутри backend cwd и передачу `--profile-file` в allowlisted `/api/search` jobs после JSON validation.
 - 2026-06-25: served toolbox расширен минимальным profile editor: `/api/profiles/save`, `/api/profiles/delete`, поля profile target/native/adapter/local/excluded lists, canonical JSON write и повторная валидация всего custom profile file перед сохранением.
 - 2026-06-25: `search --execute-adapters` теперь передаёт `profile.native_kinds` в `run_investigation()`, поэтому custom adapter-only profiles не запускают скрытые native-модули вне выбранного профиля.
+- 2026-06-25: `toolbox --serve` получил `/api/tools` и кнопки Tools/Install/Env, чтобы profile readiness/install/env views были доступны из того же окна без shell и без вывода значений env variables.

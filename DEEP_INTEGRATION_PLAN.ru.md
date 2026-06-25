@@ -54,7 +54,7 @@ python -m osint_toolkit search domain example.com --profile passive-recon --plan
 - graph edges and cross-case entity index;
 - static `toolbox` window and optional local execution backend.
 
-Главный core gap закрыт: `search --plan-only` строит единый high-level fan-out plan, `search --execute-adapters` запускает ready non-restricted external adapters, image execution запускает ready local tools и маршрутизирует derived seeds, а `tools doctor/install-plan/env --profile` закрывает readiness/install/config visibility. UI gap также закрыт для unified search: `toolbox --serve` поднимает локальный token-protected backend, запускает queued `/api/search` jobs и показывает logs/status/report links. Static `toolbox --out` остаётся безопасным copy-ready режимом.
+Главный core gap закрыт: `search --plan-only` строит единый high-level fan-out plan, `search --execute-adapters` запускает ready non-restricted external adapters, image execution запускает ready local tools и маршрутизирует derived seeds, а `tools doctor/install-plan/env --profile` закрывает readiness/install/config visibility. UI gap также закрыт для unified search: `toolbox --serve` поднимает локальный token-protected backend, запускает queued `/api/search` jobs, показывает logs/status/report links и отдаёт `/api/tools` readiness/install/env views по выбранному профилю. Static `toolbox --out` остаётся безопасным copy-ready режимом.
 
 ## Целевая архитектура
 
@@ -571,6 +571,7 @@ Notes:
 18. Done: add guarded custom search profiles in served toolbox through `Profile file`, `Custom profile`, `/api/profiles` and `/api/search --profile-file` command construction.
 19. Done: add minimal served toolbox profile editor through `/api/profiles/save`, `/api/profiles/delete`, structured profile fields and canonical validated JSON writes.
 20. Done: make `search --execute-adapters` respect `profile.native_kinds`, so custom adapter-only profiles do not run hidden native modules outside the selected profile.
+21. Done: expose profile readiness/install/env views in served toolbox through `/api/tools` and Tools/Install/Env controls.
 
 ## Definition of done
 

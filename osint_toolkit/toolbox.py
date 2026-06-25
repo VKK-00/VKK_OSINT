@@ -1095,6 +1095,9 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
           <div class="copy-row">
             <button type="button" id="runUnifiedSearch">Запустить search</button>
             <button type="button" class="secondary" id="listProfiles">Профили</button>
+            <button type="button" class="secondary" id="toolsDoctor">Tools</button>
+            <button type="button" class="secondary" id="toolsInstall">Install</button>
+            <button type="button" class="secondary" id="toolsEnv">Env</button>
             <button type="button" class="secondary" id="saveProfile">Save profile</button>
             <button type="button" class="secondary" id="deleteProfile">Delete profile</button>
             <button type="button" class="secondary" id="refreshJobs">Обновить jobs</button>
@@ -1316,6 +1319,18 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       if (profileFile) params.profile_file = profileFile;
       const data = await fetchCaseJson("/api/profiles", params);
       setBackendLog(JSON.stringify(data, null, 2));
+    }}
+
+    async function loadProfileTools(view) {{
+      const params = {{
+        profile: readValue("custom_profile") || document.getElementById("backendProfile").value,
+        view,
+        format: "markdown"
+      }};
+      const profileFile = readValue("profile_file");
+      if (profileFile) params.profile_file = profileFile;
+      const data = await fetchCaseJson("/api/tools", params);
+      setBackendLog(data.content || JSON.stringify(data, null, 2));
     }}
 
     function csvList(name) {{
@@ -1875,6 +1890,18 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       loadBackendProfiles().catch((error) => setBackendLog(String(error)));
     }});
 
+    document.getElementById("toolsDoctor").addEventListener("click", () => {{
+      loadProfileTools("doctor").catch((error) => setBackendLog(String(error)));
+    }});
+
+    document.getElementById("toolsInstall").addEventListener("click", () => {{
+      loadProfileTools("install-plan").catch((error) => setBackendLog(String(error)));
+    }});
+
+    document.getElementById("toolsEnv").addEventListener("click", () => {{
+      loadProfileTools("env").catch((error) => setBackendLog(String(error)));
+    }});
+
     document.getElementById("saveProfile").addEventListener("click", () => {{
       saveSearchProfile().catch((error) => setBackendLog(String(error)));
     }});
@@ -1948,6 +1975,9 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
     }} else {{
       document.getElementById("runUnifiedSearch").disabled = true;
       document.getElementById("listProfiles").disabled = true;
+      document.getElementById("toolsDoctor").disabled = true;
+      document.getElementById("toolsInstall").disabled = true;
+      document.getElementById("toolsEnv").disabled = true;
       document.getElementById("saveProfile").disabled = true;
       document.getElementById("deleteProfile").disabled = true;
       document.getElementById("refreshJobs").disabled = true;

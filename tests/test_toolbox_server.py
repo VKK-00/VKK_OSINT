@@ -399,6 +399,73 @@ class ToolboxServerTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_tools_endpoint_reports_profile_readiness(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_dir = Path(tmpdir) / "profiles"
+            profile_dir.mkdir()
+            profile_path = profile_dir / "case_profiles.json"
+            profile_path.write_text(
+                json.dumps(
+                    {
+                        "profiles": [
+                            {
+                                "name": "case-email-safe",
+                                "target_kinds": ["email"],
+                                "adapter_profiles": ["email-safe"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            runner = ToolboxJobRunner(cwd=tmpdir, auth="test-auth")
+            server = create_toolbox_server(host="127.0.0.1", port=0, runner=runner)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base_url = f"http://{server.server_address[0]}:{server.server_address[1]}"
+            try:
+                doctor = self._request_json(
+                    (
+                        f"{base_url}/api/tools?profile=case-email-safe"
+                        "&profile_file=profiles/case_profiles.json"
+                        "&view=doctor&format=markdown"
+                    ),
+                    auth="test-auth",
+                )
+                names = {row["name"] for row in doctor["rows"]}
+                self.assertEqual(doctor["profile"]["name"], "case-email-safe")
+                self.assertEqual(doctor["view"], "doctor")
+                self.assertIn("alpkeskin/mosint", names)
+                self.assertIn("| Kind | Name | Readiness |", doctor["content"])
+
+                env = self._request_json(
+                    (
+                        f"{base_url}/api/tools?profile=case-email-safe"
+                        "&profile_file=profiles/case_profiles.json"
+                        "&view=env&format=markdown"
+                    ),
+                    auth="test-auth",
+                )
+                self.assertIn("HIBP_API_KEY", env["content"])
+
+                install = self._request_json(
+                    f"{base_url}/api/tools?profile=image-full&view=install-plan&format=markdown",
+                    auth="test-auth",
+                )
+                self.assertIn("Install / action", install["content"])
+
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    self._request_json(
+                        f"{base_url}/api/tools?profile=case-email-safe&profile_file=../outside.json",
+                        auth="test-auth",
+                    )
+                self.assertEqual(raised.exception.code, 400)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_case_endpoints_reject_db_outside_working_directory(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = ToolboxJobRunner(cwd=tmpdir, auth="test-auth")
