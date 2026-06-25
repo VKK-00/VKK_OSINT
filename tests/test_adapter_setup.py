@@ -51,13 +51,28 @@ class AdapterSetupTests(unittest.TestCase):
             setup = build_adapter_setup(adapter)
 
         self.assertEqual(setup.readiness, "missing")
-        self.assertEqual(setup.install_command, "python -m pip install h8mail")
+        self.assertEqual(setup.install_kind, "pipx")
+        self.assertEqual(setup.install_command, "pipx install h8mail")
         self.assertEqual(
             adapter.render_command(ScanTarget(kind="email", value="person@example.com")),
             ("h8mail", "-t", "person@example.com", "--hide"),
         )
         self.assertEqual(adapter.render_output_file_args("C:\\tmp\\h8mail.json"), ("-j", "C:\\tmp\\h8mail.json"))
         self.assertEqual(adapter.generated_output_patterns, ("*.json",))
+
+    def test_pwnedornot_setup_uses_safe_email_flags(self):
+        adapter = find_adapter("thewhiteh4t/pwnedOrNot")
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "missing")
+        self.assertEqual(setup.install_kind, "manual")
+        self.assertEqual(
+            adapter.render_command(ScanTarget(kind="email", value="person@example.com")),
+            ("pwnedornot", "-e", "person@example.com", "-n"),
+        )
+        self.assertIn("PWNED_API_KEY", adapter.optional_env)
 
     def test_mosint_setup_uses_json_output_command(self):
         adapter = find_adapter("alpkeskin/mosint")
@@ -82,7 +97,8 @@ class AdapterSetupTests(unittest.TestCase):
 
         self.assertEqual(setup.readiness, "missing")
         self.assertEqual(setup.executable, "user-scanner")
-        self.assertEqual(setup.install_command, "python -m pip install user-scanner")
+        self.assertEqual(setup.install_kind, "pipx")
+        self.assertEqual(setup.install_command, "pipx install user-scanner")
         self.assertEqual(
             adapter.render_command(ScanTarget(kind="email", value="person@example.com")),
             ("user-scanner", "-e", "person@example.com", "-f", "json"),
@@ -148,6 +164,21 @@ class AdapterSetupTests(unittest.TestCase):
             adapter.render_command(ScanTarget(kind="email", value="person@example.com")),
             ("python", "blackbird.py", "--email", "person@example.com", "--json", "--no-update", "--timeout", "30"),
         )
+        with patch.dict(os.environ, {"BLACKBIRD_PYTHON": "C:\\tools\\blackbird\\.venv\\Scripts\\python.exe"}):
+            self.assertEqual(adapter.executable_names(), ("C:\\tools\\blackbird\\.venv\\Scripts\\python.exe",))
+            self.assertEqual(
+                adapter.render_command(ScanTarget(kind="username", value="example_user")),
+                (
+                    "C:\\tools\\blackbird\\.venv\\Scripts\\python.exe",
+                    "blackbird.py",
+                    "--username",
+                    "example_user",
+                    "--json",
+                    "--no-update",
+                    "--timeout",
+                    "30",
+                ),
+            )
 
     def test_nexfil_setup_uses_isolated_workdir_reports(self):
         adapter = find_adapter("thewhiteh4t/nexfil")
@@ -156,8 +187,8 @@ class AdapterSetupTests(unittest.TestCase):
             setup = build_adapter_setup(adapter)
 
         self.assertEqual(setup.readiness, "missing")
-        self.assertEqual(setup.install_kind, "pip")
-        self.assertEqual(setup.install_command, "python -m pip install nexfil")
+        self.assertEqual(setup.install_kind, "pipx")
+        self.assertEqual(setup.install_command, "pipx install nexfil")
         self.assertEqual(
             adapter.render_command(ScanTarget(kind="username", value="example_user")),
             ("nexfil", "-u", "example_user"),
@@ -226,6 +257,28 @@ class AdapterSetupTests(unittest.TestCase):
                 spiderfoot.render_command(ScanTarget(kind="domain", value="example.com")),
                 ("python", "C:\\tools\\spiderfoot\\sf.py", "-s", "example.com", "-u", "passive", "-o", "json", "-q"),
             )
+        with patch.dict(
+            os.environ,
+            {
+                "SPIDERFOOT_SF_PATH": "C:\\tools\\spiderfoot\\sf.py",
+                "SPIDERFOOT_PYTHON": "C:\\tools\\spiderfoot\\.venv\\Scripts\\python.exe",
+            },
+        ):
+            self.assertEqual(spiderfoot.executable_names(), ("C:\\tools\\spiderfoot\\.venv\\Scripts\\python.exe",))
+            self.assertEqual(
+                spiderfoot.render_command(ScanTarget(kind="domain", value="example.com")),
+                (
+                    "C:\\tools\\spiderfoot\\.venv\\Scripts\\python.exe",
+                    "C:\\tools\\spiderfoot\\sf.py",
+                    "-s",
+                    "example.com",
+                    "-u",
+                    "passive",
+                    "-o",
+                    "json",
+                    "-q",
+                ),
+            )
 
         self.assertEqual(argus.render_command(ScanTarget(kind="domain", value="example.com")), ("argus",))
         self.assertEqual(
@@ -272,8 +325,8 @@ class AdapterSetupTests(unittest.TestCase):
             argus_setup = build_adapter_setup(argus)
 
         self.assertEqual(argus_setup.readiness, "missing")
-        self.assertEqual(argus_setup.install_kind, "pip")
-        self.assertEqual(argus_setup.install_command, "python -m pip install argus-recon")
+        self.assertEqual(argus_setup.install_kind, "pipx")
+        self.assertEqual(argus_setup.install_command, "pipx install argus-recon")
 
     def test_httpx_setup_rejects_wrong_executable_on_path(self):
         adapter = find_adapter("projectdiscovery/httpx")
@@ -291,7 +344,8 @@ class AdapterSetupTests(unittest.TestCase):
             setup = build_adapter_setup(adapter)
 
         self.assertEqual(setup.readiness, "wrong_executable")
-        self.assertIn("ProjectDiscovery httpx", setup.readiness_note)
+        self.assertIn("projectdiscovery/httpx", setup.readiness_note)
+        self.assertIn("-tech-detect", setup.readiness_note)
 
     def test_httpx_setup_accepts_projectdiscovery_help_flags(self):
         adapter = find_adapter("projectdiscovery/httpx")
@@ -329,7 +383,61 @@ class AdapterSetupTests(unittest.TestCase):
             )
 
         self.assertEqual(findings[0].status, "wrong_executable")
-        self.assertIn("ProjectDiscovery httpx", findings[0].evidence)
+        self.assertIn("projectdiscovery/httpx", findings[0].evidence)
+
+    def test_declarative_probe_rejects_wrong_subfinder_executable(self):
+        adapter = find_adapter("projectdiscovery/subfinder")
+        wrong_help = subprocess.CompletedProcess(
+            args=("subfinder", "-h"),
+            returncode=0,
+            stdout="Usage: subfinder [OPTIONS]\n",
+            stderr="",
+        )
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value="C:\\tools\\subfinder.exe"), patch(
+            "osint_toolkit.adapter_probe.subprocess.run",
+            return_value=wrong_help,
+        ):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "wrong_executable")
+        self.assertIn("projectdiscovery/subfinder", setup.readiness_note)
+        self.assertIn("-d", setup.readiness_note)
+
+    def test_declarative_probe_accepts_subfinder_help_markers(self):
+        adapter = find_adapter("projectdiscovery/subfinder")
+        subfinder_help = subprocess.CompletedProcess(
+            args=("subfinder", "-h"),
+            returncode=0,
+            stdout="subfinder usage\n  -d string\n  -silent\n",
+            stderr="",
+        )
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value="C:\\tools\\subfinder.exe"), patch(
+            "osint_toolkit.adapter_probe.subprocess.run",
+            return_value=subfinder_help,
+        ):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "ready")
+
+    def test_declarative_probe_uses_adapter_timeout(self):
+        adapter = find_adapter("blacklanternsecurity/bbot")
+        bbot_help = subprocess.CompletedProcess(
+            args=("bbot", "-h"),
+            returncode=0,
+            stdout="usage: bbot\n  -t TARGET\n  -p PRESET\n",
+            stderr="",
+        )
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value="C:\\tools\\bbot.exe"), patch(
+            "osint_toolkit.adapter_probe.subprocess.run",
+            return_value=bbot_help,
+        ) as run_probe:
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "ready")
+        self.assertEqual(run_probe.call_args.kwargs["timeout"], 15.0)
 
     def test_setup_reports_not_configured_for_dataset_adapter(self):
         setup = build_adapter_setup(find_adapter("WebBreacher/WhatsMyName"))

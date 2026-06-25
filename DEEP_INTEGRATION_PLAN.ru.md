@@ -370,9 +370,9 @@ Acceptance:
 
 Минимальный install matrix:
 
-- Python/pip/pipx: Sherlock, Maigret, h8mail, Nexfil, Instaloader, Yark, BBOT, Argus.
+- Python/pipx: Sherlock, Maigret, h8mail, Nexfil, Instaloader, user-scanner, Yark, BBOT, Argus.
 - Go: Mosint, Subfinder, httpx, Amass.
-- Manual/binary: PhoneInfoga, Snoop, SpiderFoot, Blackbird, Social Analyzer, theHarvester.
+- Manual/binary/venv: PhoneInfoga, Snoop, SpiderFoot, Blackbird, Social Analyzer, theHarvester, pwnedOrNot.
 - Local image tools: ExifTool, ImageMagick, Tesseract, zbarimg.
 
 ## Profiles to add
@@ -576,7 +576,9 @@ Notes:
 23. Done: add URL host -> domain fan-out so `web-full`/`passive-recon`/`safe`/`all-safe` route URL seeds through domain/web search planning and execution.
 24. Done: add email local-part -> username fan-out so `email-full`/`safe`/`all-safe` route email seeds through username/profile search planning and execution when the local-part is handle-like.
 25. Done: use hostname-based `search auto` routing for Instagram, Telegram and supported RU social URLs, avoiding substring false positives and sending platform URLs to platform modules.
-26. Done: add `wrong_executable` readiness and a ProjectDiscovery `httpx` identity probe so unrelated `httpx` binaries are not treated as ready domain-recon adapters.
+26. Done: add `wrong_executable` readiness and declarative identity probes for Subfinder, ProjectDiscovery `httpx`, Amass, theHarvester, BBOT and PhoneInfoga so unrelated binaries are not treated as ready adapters.
+27. Done: support venv-backed manual checkout adapters through `BLACKBIRD_PYTHON` and `SPIDERFOOT_PYTHON`, while preserving `python` as the default fallback.
+28. Done: verify a user-local all-safe toolchain where pipx tools, Go tools, portable image tools and manual GitHub checkouts all report `ready` in `tools doctor --profile all-safe`.
 
 ## Definition of done
 

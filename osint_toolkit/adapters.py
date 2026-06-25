@@ -34,6 +34,9 @@ class AdapterSpec:
     working_dir_env: str = ""
     generated_output_base_env: str = ""
     generated_output_subdir: str = ""
+    executable_probe_args: tuple[str, ...] = ()
+    executable_probe_required: tuple[str, ...] = ()
+    executable_probe_timeout: float = 2.0
 
     def to_dict(self) -> dict[str, str]:
         return {
@@ -61,6 +64,9 @@ class AdapterSpec:
             "working_dir_env": self.working_dir_env,
             "generated_output_base_env": self.generated_output_base_env,
             "generated_output_subdir": self.generated_output_subdir,
+            "executable_probe_args": " ".join(self.executable_probe_args),
+            "executable_probe_required": ", ".join(self.executable_probe_required),
+            "executable_probe_timeout": str(self.executable_probe_timeout),
         }
 
     def render_command(self, target: ScanTarget) -> tuple[str, ...]:
@@ -86,10 +92,10 @@ class AdapterSpec:
     def executable_names(self) -> tuple[str, ...]:
         names: list[str] = []
         if self.command_template:
-            names.append(self.command_template[0])
+            names.append(_static_executable_value(self.command_template[0]))
         for _, template in self.command_templates:
             if template:
-                names.append(template[0])
+                names.append(_static_executable_value(template[0]))
         return _dedupe_strings(tuple(names))
 
     def render_command_templates(self) -> str:
@@ -138,7 +144,9 @@ class AdapterSpec:
             "social_analyzer_app": _social_analyzer_app_value(),
             "instagram_profile": _instagram_profile_value(target.value),
             "bbot_target": _bbot_target_value(target),
+            "blackbird_python": _blackbird_python_value(),
             "spiderfoot_script": _spiderfoot_script_value(),
+            "spiderfoot_python": _spiderfoot_python_value(),
         }
 
 
@@ -190,8 +198,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Native username layer imports sanitized GET-compatible site rules; recursive search, reports and enrichment logic are used through adapter-generated reports.",
         ("username",),
         ("maigret", "{target_value}", "--json", "ndjson", "{region_tags_flag}", "{region_tag}"),
-        "pip",
-        ("python", "-m", "pip", "install", "maigret"),
+        "pipx",
+        ("pipx", "install", "maigret"),
         "Optional PDF reporting needs the upstream pdf extra and system graphics libraries.",
         "https://maigret.readthedocs.io/en/latest/installation.html",
         generated_output_dir_args=("--folderoutput", "{output_dir}"),
@@ -247,21 +255,22 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "external_cli",
         "NOASSERTION",
         "planned",
-        "python blackbird.py --username <username> --json --no-update",
+        "<BLACKBIRD_PYTHON|python> blackbird.py --username <username> --json --no-update",
         "Runs the real upstream checkout from BLACKBIRD_DIR and ingests fresh JSON exports plus stdout profile hits; no code is copied because license metadata is missing.",
         ("username", "email"),
         install_kind="manual",
         install_note="Clone upstream Blackbird, run pip install -r requirements.txt in that checkout, and set BLACKBIRD_DIR to the checkout root containing blackbird.py.",
         docs_url="https://github.com/p1ngul1n0/blackbird",
         required_env=("BLACKBIRD_DIR",),
+        optional_env=("BLACKBIRD_PYTHON",),
         command_templates=(
             (
                 "username",
-                ("python", "blackbird.py", "--username", "{target_value}", "--json", "--no-update", "--timeout", "30"),
+                ("{blackbird_python}", "blackbird.py", "--username", "{target_value}", "--json", "--no-update", "--timeout", "30"),
             ),
             (
                 "email",
-                ("python", "blackbird.py", "--email", "{target_value}", "--json", "--no-update", "--timeout", "30"),
+                ("{blackbird_python}", "blackbird.py", "--email", "{target_value}", "--json", "--no-update", "--timeout", "30"),
             ),
         ),
         generated_output_patterns=("*.json",),
@@ -279,8 +288,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Native instagram target covers public web metadata; use upstream CLI for full Instagram behavior and media edge cases.",
         ("username", "instagram"),
         (),
-        "pip",
-        ("python", "-m", "pip", "install", "instaloader"),
+        "pipx",
+        ("pipx", "install", "instaloader"),
         "Some private Instagram workflows require upstream login/session configuration.",
         "https://instaloader.github.io/installation.html",
         command_templates=(
@@ -298,8 +307,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Adapter should normalize archive outputs into unified Finding records.",
         ("url",),
         ("yark", "new", "{target_value}"),
-        "pip",
-        ("python", "-m", "pip", "install", "yark"),
+        "pipx",
+        ("pipx", "install", "yark"),
         "FFmpeg is optional upstream dependency for some archive workflows.",
         "https://github.com/owez/yark",
     ),
@@ -318,6 +327,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Many passive sources require provider API keys in the upstream provider config before results are complete.",
         "https://github.com/projectdiscovery/subfinder",
         optional_env=("SUBFINDER_CONFIG", "SUBFINDER_PROVIDER_CONFIG"),
+        executable_probe_args=("-h",),
+        executable_probe_required=("subfinder", "-d", "-silent"),
     ),
     AdapterSpec(
         "projectdiscovery/httpx",
@@ -374,6 +385,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         install_command=("go", "install", "-v", "github.com/projectdiscovery/httpx/cmd/httpx@latest"),
         install_note="Ensure PATH resolves the ProjectDiscovery httpx binary, not the unrelated Python httpx package.",
         docs_url="https://github.com/projectdiscovery/httpx",
+        executable_probe_args=("-h",),
+        executable_probe_required=("-tech-detect", "-status-code"),
     ),
     AdapterSpec(
         "owasp-amass/amass",
@@ -390,6 +403,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Use upstream config/data-source files for API keys; this adapter keeps default execution passive.",
         "https://github.com/owasp-amass/amass",
         optional_env=("AMASS_CONFIG",),
+        executable_probe_args=("-h",),
+        executable_probe_required=("amass", "enum"),
     ),
     AdapterSpec(
         "laramies/theHarvester",
@@ -407,6 +422,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         optional_env=("THEHARVESTER_API_KEY",),
         generated_output_file_args=("-f", "{output_file}"),
         generated_output_patterns=("*.json",),
+        executable_probe_args=("-h",),
+        executable_probe_required=("theharvester", "-d", "-b"),
     ),
     AdapterSpec(
         "blacklanternsecurity/bbot",
@@ -424,6 +441,9 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         docs_url="https://www.blacklanternsecurity.com/bbot/",
         generated_output_dir_args=("--output", "{output_dir}", "--name", "osint-toolkit"),
         generated_output_patterns=("*.json",),
+        executable_probe_args=("-h",),
+        executable_probe_required=("bbot", "-t", "-p"),
+        executable_probe_timeout=15.0,
     ),
     AdapterSpec(
         "alpkeskin/mosint",
@@ -452,8 +472,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "External adapter target for h8mail breach counts, local breach search and related-email chasing through upstream JSON output.",
         ("email",),
         ("h8mail", "-t", "{target_value}", "--hide"),
-        "pip",
-        ("python", "-m", "pip", "install", "h8mail"),
+        "pipx",
+        ("pipx", "install", "h8mail"),
         "API-backed checks require upstream config/API keys; local breach searches need operator-provided breach files.",
         "https://github.com/khast3x/h8mail",
         optional_env=("HIBP_API_KEY", "HUNTERIO_API_KEY", "EMAILREP_API_KEY"),
@@ -466,14 +486,15 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "external_cli",
         "MIT",
         "planned",
-        "pwnedornot <email>",
+        "pwnedornot -e <email> -n",
         "Should be opt-in and avoid printing sensitive breach payloads by default.",
         ("email",),
-        ("pwnedornot", "{target_value}"),
+        ("pwnedornot", "-e", "{target_value}", "-n"),
         "manual",
         (),
         "Install from upstream README and ensure the pwnedornot executable is on PATH.",
         "https://github.com/thewhiteh4t/pwnedOrNot",
+        optional_env=("PWNED_API_KEY",),
     ),
     AdapterSpec(
         "kaifcodec/user-scanner",
@@ -488,8 +509,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
             ("email", ("user-scanner", "-e", "{target_value}", "-f", "json")),
             ("username", ("user-scanner", "-u", "{target_value}", "-f", "json")),
         ),
-        install_kind="pip",
-        install_command=("python", "-m", "pip", "install", "user-scanner"),
+        install_kind="pipx",
+        install_command=("pipx", "install", "user-scanner"),
         install_note="Install from PyPI; use explicit --execute only after checking lawful scope and platform terms.",
         docs_url="https://github.com/kaifcodec/user-scanner",
     ),
@@ -503,8 +524,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Execute mode runs in a temporary working directory and ingests Nexfil autosaved TXT reports.",
         ("username",),
         ("nexfil", "-u", "{target_value}"),
-        "pip",
-        ("python", "-m", "pip", "install", "nexfil"),
+        "pipx",
+        ("pipx", "install", "nexfil"),
         "Nexfil autosaves reports below its working directory/HOME; runner isolates this in execute mode.",
         "https://github.com/thewhiteh4t/nexfil",
         generated_output_patterns=("*.txt",),
@@ -560,6 +581,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         (),
         "Download an OS-specific binary from upstream releases or build from source.",
         "https://sundowndev.github.io/phoneinfoga/getting-started/install/",
+        executable_probe_args=("--help",),
+        executable_probe_required=("phoneinfoga", "scan"),
     ),
     AdapterSpec(
         "smicallef/spiderfoot",
@@ -567,14 +590,15 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "external_cli",
         "MIT",
         "planned",
-        "python <SPIDERFOOT_SF_PATH> -s <target> -u passive -o json -q",
+        "<SPIDERFOOT_PYTHON|python> <SPIDERFOOT_SF_PATH> -s <target> -u passive -o json -q",
         "SpiderFoot CLI adapter in passive use-case mode; execute mode ingests JSON stdout events without running the web/API server.",
         ("domain", "url", "email", "username", "phone"),
-        ("python", "{spiderfoot_script}", "-s", "{target_value}", "-u", "passive", "-o", "json", "-q"),
+        ("{spiderfoot_python}", "{spiderfoot_script}", "-s", "{target_value}", "-u", "passive", "-o", "json", "-q"),
         install_kind="manual",
         install_note="Clone upstream SpiderFoot, install its requirements, then set SPIDERFOOT_SF_PATH to the local sf.py path.",
         docs_url="https://github.com/smicallef/spiderfoot",
         required_env=("SPIDERFOOT_SF_PATH",),
+        optional_env=("SPIDERFOOT_PYTHON",),
     ),
     AdapterSpec(
         "jasonxtn/argus",
@@ -586,8 +610,8 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "Interactive Argus CLI adapter; execute mode feeds a conservative infra-category command script and parses stdout/cache output.",
         ("domain", "url", "email", "username", "phone"),
         ("argus",),
-        install_kind="pip",
-        install_command=("python", "-m", "pip", "install", "argus-recon"),
+        install_kind="pipx",
+        install_command=("pipx", "install", "argus-recon"),
         install_note="Argus is interactive. The adapter feeds commands through stdin; broader categories and API-backed modules remain operator-controlled.",
         docs_url="https://github.com/jasonxtn/argus",
         optional_env=(
@@ -789,6 +813,13 @@ def _dedupe_strings(values: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(deduped)
 
 
+def _static_executable_value(value: str) -> str:
+    return {
+        "{blackbird_python}": _blackbird_python_value(),
+        "{spiderfoot_python}": _spiderfoot_python_value(),
+    }.get(value, value)
+
+
 def _region_code(region: str) -> str:
     return {"ru": "RU", "ua": "UA"}.get(region.lower(), "")
 
@@ -835,5 +866,13 @@ def _bbot_target_value(target: ScanTarget) -> str:
     return target.value.strip()
 
 
+def _blackbird_python_value() -> str:
+    return os.environ.get("BLACKBIRD_PYTHON", "python").strip() or "python"
+
+
 def _spiderfoot_script_value() -> str:
     return os.environ.get("SPIDERFOOT_SF_PATH", "<SPIDERFOOT_SF_PATH>").strip() or "<SPIDERFOOT_SF_PATH>"
+
+
+def _spiderfoot_python_value() -> str:
+    return os.environ.get("SPIDERFOOT_PYTHON", "python").strip() or "python"

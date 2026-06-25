@@ -50,7 +50,7 @@ python -m osint_toolkit scan username <username> --live
 - parser для Snoop stdout/CSV results: `найден!` -> `candidate`, `Увы!` -> `not_found`, `блок`/ошибки -> `error`;
 - executable adapter для `qeeqbox/social-analyzer`: `node <SOCIAL_ANALYZER_APP_JS> --username <username> --output json --mode fast --method all --filter good,maybe --profiles detected [--countries ru|ua]`;
 - parser для Social Analyzer JSON `detected`/`unknown`/`failed`: `detected` -> `candidate`, `unknown` -> `not_found`, `failed` -> `error`, с сохранением rate/status, site, profile URL, checked URL и public metadata;
-- executable adapter для `p1ngul1n0/blackbird`: `python blackbird.py --username <username> --json --no-update --timeout 30` из `BLACKBIRD_DIR`;
+- executable adapter для `p1ngul1n0/blackbird`: `<BLACKBIRD_PYTHON|python> blackbird.py --username <username> --json --no-update --timeout 30` из `BLACKBIRD_DIR`;
 - parser для Blackbird JSON exports/stdout found-lines: `FOUND` -> `candidate`, `NOT-FOUND` -> `not_found`, `ERROR` -> `error`, с сохранением site/category/profile URL/platform domain и extracted metadata;
 - executable adapter для `sherlock-project/sherlock`: при `--execute` добавляются `--no-color --print-all --csv --txt --folderoutput <tempdir>`;
 - parser для Sherlock stdout и CSV/TXT reports: `Claimed` -> `candidate`, `Available` -> `not_found`, `Unknown`/`WAF` -> `error`, `Illegal` -> `skipped`;
@@ -80,7 +80,7 @@ Gap до полного 1:1:
 - username permutation/alias strategy уже покрывает common given-name aliases, handle suffixes и operator-provided alias dictionaries, но пока нет bundled historical alias datasets и platform-specific alias scoring;
 - content-based confidence пока частичный: нет полного набора marker rules из upstream datasets;
 - Maigret подключён hybrid: sanitized site rules импортированы native, а web UI, PDF/HTML/XMind reports, recursive policy tuning, proxies/Tor/I2P и AI mode пока не перенесены в native UI;
-- Snoop подключён adapter-first, но локальная установка/обновление Snoop пока остаются операторским действием;
+- Snoop подключён adapter-first; Windows release binary может быть установлен user-local, но обновление остаётся upstream/operator-managed действием;
 - Social Analyzer подключён adapter-first через фактический upstream Node app.js и JSON output; локальная установка, Node >= 20.18.1, web/API UI, screenshots/OCR, slow/special modes и полный metadata/screenshot pipeline остаются операторским/upstream слоем;
 - Blackbird подключён adapter-first через фактический upstream checkout `BLACKBIRD_DIR`; JSON exports и stdout hits нормализуются, но upstream AI profiling, PDF/CSV/DUMP exports, proxy/permutation options и enhanced Instagram session metadata пока не вынесены в отдельные native UI-параметры;
 - нет сохранения истории запусков.
@@ -117,7 +117,8 @@ Gap до полного 1:1:
 - parser для h8mail upstream JSON `{targets: [{target, pwn_num, data}]}`: breach count, related emails, usernames, source labels и paste URLs нормализуются в `Finding`/entities, password/hash/token-like values редактируются и не попадают в evidence;
 - executable target-specific adapter для `kaifcodec/user-scanner`: `user-scanner -e <email> -f json`;
 - parser для `user-scanner` JSON/verbose results: `Registered`/`Found` -> `candidate`, `Available`/`Not Found`/`Not Registered` -> `not_found`, `Error` -> `error`.
-- executable target-specific adapter для `p1ngul1n0/blackbird`: `python blackbird.py --email <email> --json --no-update --timeout 30`;
+- executable adapter для `thewhiteh4t/pwnedOrNot`: `pwnedornot -e <email> -n`, чтобы по умолчанию не запрашивать password dump payloads;
+- executable target-specific adapter для `p1ngul1n0/blackbird`: `<BLACKBIRD_PYTHON|python> blackbird.py --email <email> --json --no-update --timeout 30`;
 - parser для Blackbird email JSON exports/stdout found-lines: found account URLs, site/category, platform domains и extracted metadata нормализуются в `Finding`/entities.
 
 Gap:
@@ -283,7 +284,7 @@ Gap:
 - parser для theHarvester generated JSON/stdout output: `emails`, `hosts`, `vhosts`, `interesting_urls`, `trello_urls`, `ips`, `asns` и people fields нормализуются в `Finding`/entities/graph signals;
 - executable adapter target для `blacklanternsecurity/bbot`: `bbot -t <target> -p subdomain-enum -rf passive --output <tempdir> --name osint-toolkit`;
 - parser для BBOT generated JSON/NDJSON/stdout events: `DNS_NAME`, `EMAIL_ADDRESS`, `URL`, `IP_ADDRESS`, `OPEN_TCP_PORT`, `TECHNOLOGY`, `FINDING` и `VULNERABILITY` нормализуются в `Finding`/entities/graph signals;
-- executable adapter target для `smicallef/spiderfoot`: `python <SPIDERFOOT_SF_PATH> -s <target> -u passive -o json -q`;
+- executable adapter target для `smicallef/spiderfoot`: `<SPIDERFOOT_PYTHON|python> <SPIDERFOOT_SF_PATH> -s <target> -u passive -o json -q`;
 - parser для SpiderFoot JSON/stdout events: `INTERNET_NAME`, `DOMAIN_NAME`, `EMAILADDR`, `WEBLINK`, `IP_ADDRESS`, `TCP_PORT_OPEN`, `PHONE_NUMBER`, `HUMAN_NAME`, `TECHNOLOGY`, ASN и vulnerability/finding events нормализуются в `Finding`/entities/graph signals;
 - executable interactive adapter target для `jasonxtn/argus`: `argus` со stdin-сценарием `set target <target>`, `runall infra`, `viewout`, `exit`;
 - parser для Argus stdout/cache-like output: URL, email, phone, host/subdomain, IP, port и technology signals нормализуются в `Finding`/entities/graph signals;
@@ -348,12 +349,12 @@ python -m osint_toolkit adapter-setup <repository>
 - adapter profile `domain-recon` for passive domain/web upstream adapters;
 - adapter profile `broad-recon` for broad recon suites BBOT/SpiderFoot/Argus;
 - install/config/readiness metadata in `AdapterSpec`;
-- `wrong_executable` readiness for known executable-name collisions, currently ProjectDiscovery `httpx` vs unrelated `httpx` binaries;
+- `wrong_executable` readiness for known executable-name collisions through declarative probes for Subfinder, ProjectDiscovery `httpx`, Amass, theHarvester, BBOT and PhoneInfoga;
 - `adapter-setup` command for setup plans, docs URLs, PATH/env readiness.
 
 Gap:
 
-- нет автоматической установки upstream CLI;
+- нет встроенной CLI-команды `install adapters`, но текущая dev/toolbox машина может быть приведена к `all-safe` ready через user-local `pipx`, Go binaries, portable image tools и venv-backed manual checkouts;
 - нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, Social Analyzer JSON, Blackbird JSON/stdout, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.

@@ -382,9 +382,14 @@ class InvestigationTests(unittest.TestCase):
             stderr="",
         )
 
+        def fake_run(args, **kwargs):
+            if tuple(args) == ("subfinder", "-h"):
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="subfinder\n  -d\n  -silent\n", stderr="")
+            return completed
+
         with patch("osint_toolkit.adapter_runner.shutil.which", return_value="subfinder"), patch(
             "osint_toolkit.adapter_runner.subprocess.run",
-            return_value=completed,
+            side_effect=fake_run,
         ):
             result = run_investigation(
                 (ScanTarget(kind="domain", value="example.com"),),
@@ -408,6 +413,8 @@ class InvestigationTests(unittest.TestCase):
 
     def test_execute_theharvester_adapter_adds_entities_and_edges(self):
         def fake_run(args, **kwargs):
+            if tuple(args) == ("theHarvester", "-h"):
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="theHarvester\n  -d\n  -b\n", stderr="")
             output_file = Path(args[args.index("-f") + 1])
             output_file.parent.mkdir(parents=True, exist_ok=True)
             output_file.write_text(
@@ -445,6 +452,8 @@ class InvestigationTests(unittest.TestCase):
 
     def test_execute_bbot_adapter_adds_entities_and_edges(self):
         def fake_run(args, **kwargs):
+            if tuple(args) == ("bbot", "-h"):
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="bbot usage\n  -t TARGET\n  -p PRESET\n", stderr="")
             output_dir = Path(args[args.index("--output") + 1])
             scan_dir = output_dir / "osint-toolkit"
             scan_dir.mkdir(parents=True, exist_ok=True)

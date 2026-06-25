@@ -1187,6 +1187,8 @@ class AdapterParserTests(unittest.TestCase):
 
     def test_run_theharvester_adapter_reads_generated_json_report_after_execution(self):
         def fake_run(args, **kwargs):
+            if tuple(args) == ("theHarvester", "-h"):
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="theHarvester\n  -d\n  -b\n", stderr="")
             self.assertEqual(args[:5], ["theHarvester", "-d", "example.com", "-b", "all"])
             output_file = Path(args[args.index("-f") + 1])
             output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1363,6 +1365,8 @@ class AdapterParserTests(unittest.TestCase):
 
     def test_run_bbot_adapter_reads_generated_json_events_after_execution(self):
         def fake_run(args, **kwargs):
+            if tuple(args) == ("bbot", "-h"):
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="bbot usage\n  -t TARGET\n  -p PRESET\n", stderr="")
             self.assertEqual(args[:7], ["bbot", "-t", "example.com", "-p", "subdomain-enum", "-rf", "passive"])
             output_dir = Path(args[args.index("--output") + 1])
             scan_dir = output_dir / "osint-toolkit"

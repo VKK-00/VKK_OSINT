@@ -16,41 +16,39 @@ def probe_adapter_executable(
     adapter: AdapterSpec,
     executable_paths: tuple[str, ...],
     *,
-    timeout: float = 2.0,
+    timeout: float | None = None,
 ) -> ExecutableProbeResult:
-    if adapter.repository == "projectdiscovery/httpx":
-        return _probe_projectdiscovery_httpx(executable_paths, timeout=timeout)
-    return ExecutableProbeResult()
-
-
-def _probe_projectdiscovery_httpx(
-    executable_paths: tuple[str, ...],
-    *,
-    timeout: float,
-) -> ExecutableProbeResult:
+    if not adapter.executable_probe_required:
+        return ExecutableProbeResult()
     executable = next((path for path in executable_paths if path), "")
     if not executable:
         return ExecutableProbeResult()
+    probe_args = adapter.executable_probe_args or ("--help",)
+    probe_timeout = adapter.executable_probe_timeout if timeout is None else timeout
     try:
         completed = subprocess.run(
-            (executable, "-h"),
+            (executable, *probe_args),
             capture_output=True,
             text=True,
-            timeout=timeout,
+            timeout=probe_timeout,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return ExecutableProbeResult(
             readiness="wrong_executable",
-            note=f"Could not verify ProjectDiscovery httpx executable: {exc}",
+            note=f"Could not verify {adapter.repository} executable: {exc}",
         )
     output = f"{completed.stdout}\n{completed.stderr}".lower()
-    if "-tech-detect" in output and "-status-code" in output:
+    missing_markers = tuple(
+        marker for marker in adapter.executable_probe_required if marker.lower() not in output
+    )
+    if not missing_markers:
         return ExecutableProbeResult()
     return ExecutableProbeResult(
         readiness="wrong_executable",
         note=(
-            "PATH resolves httpx, but its help output does not look like ProjectDiscovery httpx "
-            "with -tech-detect and -status-code flags."
+            f"PATH resolves {adapter.executable_names()[0] if adapter.executable_names() else 'the executable'}, "
+            f"but its probe output does not look like {adapter.repository}. "
+            f"Missing expected marker(s): {', '.join(missing_markers)}."
         ),
     )
