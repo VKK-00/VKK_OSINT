@@ -11,6 +11,7 @@ from osint_toolkit.search import (
     classify_target,
     find_search_profile,
     load_search_profiles,
+    parse_search_profiles,
     ready_adapter_repositories,
 )
 
@@ -127,6 +128,23 @@ class SearchPlanTests(unittest.TestCase):
             self.assertIn("alpkeskin/mosint", sources)
             self.assertIn("p1ngul1n0/blackbird", sources)
             self.assertEqual(sources["megadose/holehe"].status, "excluded")
+
+    def test_parse_search_profiles_validates_ui_payloads(self):
+        profiles = parse_search_profiles(
+            {
+                "profiles": [
+                    {
+                        "name": "case-email-safe",
+                        "target_kinds": ["email"],
+                        "native_kinds": ["email"],
+                        "adapter_profiles": ["email-safe"],
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(profiles[0].name, "case-email-safe")
+        self.assertEqual(profiles[0].target_kinds, ("email",))
 
     def test_custom_profile_file_rejects_builtin_override(self):
         with tempfile.TemporaryDirectory() as tmpdir:

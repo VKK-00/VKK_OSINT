@@ -311,6 +311,94 @@ class ToolboxServerTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_profile_editor_can_save_update_and_delete_profile(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = ToolboxJobRunner(cwd=tmpdir, auth="test-auth")
+            server = create_toolbox_server(host="127.0.0.1", port=0, runner=runner)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base_url = f"http://{server.server_address[0]}:{server.server_address[1]}"
+            try:
+                profile_payload = {
+                    "profile_file": "profiles/case_profiles.json",
+                    "profile": {
+                        "name": "case-email-safe",
+                        "title": "Case email safe",
+                        "target_kinds": ["email"],
+                        "native_kinds": ["email"],
+                        "adapter_profiles": ["email-safe"],
+                    },
+                }
+                saved = self._request_json(
+                    f"{base_url}/api/profiles/save",
+                    method="POST",
+                    auth="test-auth",
+                    payload=profile_payload,
+                )
+                self.assertTrue(Path(tmpdir, "profiles", "case_profiles.json").exists())
+                self.assertTrue(saved["saved"])
+                self.assertEqual(saved["custom_count"], 1)
+                self.assertEqual(saved["profile"]["name"], "case-email-safe")
+
+                profile_payload["profile"]["description"] = "Updated profile"
+                updated = self._request_json(
+                    f"{base_url}/api/profiles/save",
+                    method="POST",
+                    auth="test-auth",
+                    payload=profile_payload,
+                )
+                custom_profiles = [
+                    profile for profile in updated["profiles"]
+                    if profile["name"] == "case-email-safe"
+                ]
+                self.assertEqual(len(custom_profiles), 1)
+                self.assertEqual(custom_profiles[0]["description"], "Updated profile")
+
+                data = self._request_json(
+                    f"{base_url}/api/search",
+                    method="POST",
+                    auth="test-auth",
+                    payload={
+                        "target_kind": "email",
+                        "target_value": "person@example.com",
+                        "profile": "case-email-safe",
+                        "profile_file": "profiles/case_profiles.json",
+                        "execute_adapters": False,
+                        "format": "json",
+                    },
+                )
+                job = self._wait_for_job(base_url, data["job"]["id"])
+                self.assertEqual(job["status"], "completed", job)
+                self.assertIn("case-email-safe", job["stdout"])
+
+                deleted = self._request_json(
+                    f"{base_url}/api/profiles/delete",
+                    method="POST",
+                    auth="test-auth",
+                    payload={
+                        "profile_file": "profiles/case_profiles.json",
+                        "profile": "case-email-safe",
+                    },
+                )
+                self.assertTrue(deleted["deleted"])
+                self.assertEqual(deleted["custom_count"], 0)
+
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    self._request_json(
+                        f"{base_url}/api/profiles/save",
+                        method="POST",
+                        auth="test-auth",
+                        payload={
+                            "profile_file": "../outside.json",
+                            "profile": profile_payload["profile"],
+                        },
+                    )
+                self.assertEqual(raised.exception.code, 400)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_case_endpoints_reject_db_outside_working_directory(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = ToolboxJobRunner(cwd=tmpdir, auth="test-auth")

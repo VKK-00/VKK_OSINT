@@ -51,6 +51,15 @@ TOOLBOX_INPUTS: tuple[ToolboxInput, ...] = (
     ToolboxInput("region", "Регион", "ua"),
     ToolboxInput("profile_file", "Profile file", r"profiles\case_profiles.json"),
     ToolboxInput("custom_profile", "Custom profile", "case-email-safe"),
+    ToolboxInput("profile_title", "Profile title", "Case email safe"),
+    ToolboxInput("profile_description", "Profile description", "Case-specific safe email profile"),
+    ToolboxInput("profile_target_kinds", "Profile targets", "email"),
+    ToolboxInput("profile_native_kinds", "Profile native", "email"),
+    ToolboxInput("profile_adapter_profiles", "Profile adapter groups", "email-safe"),
+    ToolboxInput("profile_repositories", "Profile repositories", "p1ngul1n0/blackbird"),
+    ToolboxInput("profile_local_tools", "Profile local tools", "powershell-file-baseline"),
+    ToolboxInput("profile_excluded", "Profile excluded repos", "megadose/holehe"),
+    ToolboxInput("profile_note", "Profile note", "Case scope reviewed"),
     ToolboxInput("adapter_limit", "Лимит adapters", "3", "number"),
     ToolboxInput("case_db", "SQLite case DB", "cases.sqlite"),
     ToolboxInput("case_id", "Case ID", "case-001"),
@@ -1086,6 +1095,8 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
           <div class="copy-row">
             <button type="button" id="runUnifiedSearch">Запустить search</button>
             <button type="button" class="secondary" id="listProfiles">Профили</button>
+            <button type="button" class="secondary" id="saveProfile">Save profile</button>
+            <button type="button" class="secondary" id="deleteProfile">Delete profile</button>
             <button type="button" class="secondary" id="refreshJobs">Обновить jobs</button>
           </div>
           <div id="backendJobs" class="backend-jobs"></div>
@@ -1307,6 +1318,57 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       setBackendLog(JSON.stringify(data, null, 2));
     }}
 
+    function csvList(name) {{
+      return readValue(name)
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }}
+
+    function profileEditorPayload() {{
+      const profileFile = readValue("profile_file");
+      const name = readValue("custom_profile");
+      const targetKinds = csvList("profile_target_kinds");
+      if (!profileFile) throw new Error("Укажи Profile file.");
+      if (!name) throw new Error("Укажи Custom profile.");
+      if (!targetKinds.length) throw new Error("Укажи Profile targets.");
+      const profile = {{
+        name,
+        target_kinds: targetKinds
+      }};
+      const title = readValue("profile_title");
+      const description = readValue("profile_description");
+      const note = readValue("profile_note");
+      const nativeKinds = csvList("profile_native_kinds");
+      const adapterProfiles = csvList("profile_adapter_profiles");
+      const repositories = csvList("profile_repositories");
+      const localTools = csvList("profile_local_tools");
+      const excluded = csvList("profile_excluded");
+      if (title) profile.title = title;
+      if (description) profile.description = description;
+      if (nativeKinds.length) profile.native_kinds = nativeKinds;
+      if (adapterProfiles.length) profile.adapter_profiles = adapterProfiles;
+      if (repositories.length) profile.adapter_repositories = repositories;
+      if (localTools.length) profile.local_tools = localTools;
+      if (excluded.length) profile.excluded_repositories = excluded;
+      if (note) profile.note = note;
+      return {{profile_file: profileFile, profile}};
+    }}
+
+    async function saveSearchProfile() {{
+      const data = await postBackendJson("/api/profiles/save", profileEditorPayload());
+      setBackendLog(JSON.stringify(data, null, 2));
+    }}
+
+    async function deleteSearchProfile() {{
+      const profileFile = readValue("profile_file");
+      const profile = readValue("custom_profile");
+      if (!profileFile) throw new Error("Укажи Profile file.");
+      if (!profile) throw new Error("Укажи Custom profile.");
+      const data = await postBackendJson("/api/profiles/delete", {{profile_file: profileFile, profile}});
+      setBackendLog(JSON.stringify(data, null, 2));
+    }}
+
     function caseUrl(path, params) {{
       const query = new URLSearchParams(params || {{}});
       return `${{backendConfig.url}}${{path}}?${{query.toString()}}`;
@@ -1324,7 +1386,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       return JSON.parse(text);
     }}
 
-    async function postCaseJson(path, payload) {{
+    async function postBackendJson(path, payload) {{
       if (!backendAvailable()) {{
         throw new Error("Backend недоступен. Запусти: python -m osint_toolkit toolbox --serve --open");
       }}
@@ -1690,7 +1752,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       if (!payload.title && !payload.scope_note) {{
         throw new Error("Укажи новое название кейса и/или Scope note.");
       }}
-      const data = await postCaseJson(`/api/cases/${{encodeURIComponent(caseId)}}/update`, payload);
+      const data = await postBackendJson(`/api/cases/${{encodeURIComponent(caseId)}}/update`, payload);
       currentCasePayload = data;
       currentGraphAnalysis = null;
       currentGraphMode = "case";
@@ -1706,7 +1768,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       if (confirm !== caseId) {{
         throw new Error("Для удаления поле Delete confirm должно точно совпадать с Case ID.");
       }}
-      const data = await postCaseJson(`/api/cases/${{encodeURIComponent(caseId)}}/delete`, {{
+      const data = await postBackendJson(`/api/cases/${{encodeURIComponent(caseId)}}/delete`, {{
         case_db: caseDbValue(),
         confirm
       }});
@@ -1813,6 +1875,14 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       loadBackendProfiles().catch((error) => setBackendLog(String(error)));
     }});
 
+    document.getElementById("saveProfile").addEventListener("click", () => {{
+      saveSearchProfile().catch((error) => setBackendLog(String(error)));
+    }});
+
+    document.getElementById("deleteProfile").addEventListener("click", () => {{
+      deleteSearchProfile().catch((error) => setBackendLog(String(error)));
+    }});
+
     document.addEventListener("click", (event) => {{
       const button = event.target.closest("[data-report-job]");
       if (!button) return;
@@ -1878,6 +1948,8 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
     }} else {{
       document.getElementById("runUnifiedSearch").disabled = true;
       document.getElementById("listProfiles").disabled = true;
+      document.getElementById("saveProfile").disabled = true;
+      document.getElementById("deleteProfile").disabled = true;
       document.getElementById("refreshJobs").disabled = true;
       document.getElementById("loadCases").disabled = true;
       document.getElementById("showCase").disabled = true;

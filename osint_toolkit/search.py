@@ -319,6 +319,10 @@ def load_search_profiles(path: str | Path | None) -> tuple[SearchProfile, ...]:
     except json.JSONDecodeError as exc:
         raise ValueError(f"Invalid search profile JSON in {profile_path}: {exc}") from exc
 
+    return parse_search_profiles(raw)
+
+
+def parse_search_profiles(raw: object) -> tuple[SearchProfile, ...]:
     if isinstance(raw, dict):
         profiles_raw = raw.get("profiles")
     else:

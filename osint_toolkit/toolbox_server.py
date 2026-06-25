@@ -16,7 +16,14 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from .case_store import CaseStore, CaseStoreError
 from .graph import analyze_case_graph, analyze_cross_case_network, analyze_cross_case_path
-from .search import TARGET_KINDS, SearchProfile, find_search_profile, list_search_profiles, load_search_profiles
+from .search import (
+    TARGET_KINDS,
+    SearchProfile,
+    find_search_profile,
+    list_search_profiles,
+    load_search_profiles,
+    parse_search_profiles,
+)
 from .toolbox import render_toolbox_html, write_toolbox
 
 
@@ -117,6 +124,66 @@ class ToolboxJobRunner:
             "profile_file": str(profile_file_path) if profile_file_path else "",
             "custom_count": len(custom_profiles),
             "profiles": [profile.to_dict() for profile in profiles],
+        }
+
+    def save_profile(self, payload: dict[str, Any]) -> dict[str, object]:
+        profile_file = str(payload.get("profile_file", "")).strip()
+        if not profile_file:
+            raise ValueError("profile_file is required.")
+        profile_payload = payload.get("profile")
+        if not isinstance(profile_payload, dict):
+            raise ValueError("profile must be a JSON object.")
+
+        profile_file_path = self._profile_file_path(profile_file, allow_create=True)
+        existing_profiles = (
+            load_search_profiles(profile_file_path)
+            if profile_file_path.exists()
+            else ()
+        )
+        parsed_profile = parse_search_profiles({"profiles": [profile_payload]})
+        if not parsed_profile:
+            raise ValueError("profile must define a custom search profile, not a built-in no-op export.")
+        profile = parsed_profile[0]
+
+        replacement = profile.to_dict()
+        next_profiles: list[dict[str, object]] = [
+            existing.to_dict()
+            for existing in existing_profiles
+            if existing.name.lower() != profile.name.lower()
+        ]
+        next_profiles.append(replacement)
+        validated_profiles = parse_search_profiles({"profiles": next_profiles})
+        _write_profile_file(profile_file_path, validated_profiles)
+        return {
+            "saved": True,
+            "profile_file": str(profile_file_path),
+            "profile": profile.to_dict(),
+            "custom_count": len(validated_profiles),
+            "profiles": [item.to_dict() for item in list_search_profiles(validated_profiles)],
+        }
+
+    def delete_profile(self, payload: dict[str, Any]) -> dict[str, object]:
+        profile_file = str(payload.get("profile_file", "")).strip()
+        profile_name = str(payload.get("profile", "")).strip()
+        if not profile_file:
+            raise ValueError("profile_file is required.")
+        if not profile_name:
+            raise ValueError("profile is required.")
+
+        profile_file_path = self._profile_file_path(profile_file, allow_create=False)
+        custom_profiles = load_search_profiles(profile_file_path)
+        remaining_profiles = tuple(
+            profile for profile in custom_profiles if profile.name.lower() != profile_name.lower()
+        )
+        if len(remaining_profiles) == len(custom_profiles):
+            raise ValueError(f"custom profile not found: {profile_name}")
+        _write_profile_file(profile_file_path, remaining_profiles)
+        return {
+            "deleted": True,
+            "profile_file": str(profile_file_path),
+            "profile": profile_name,
+            "custom_count": len(remaining_profiles),
+            "profiles": [item.to_dict() for item in list_search_profiles(remaining_profiles)],
         }
 
     def list_cases(
@@ -373,18 +440,27 @@ class ToolboxJobRunner:
         normalized = value.strip()
         if not normalized:
             return (), None
-        profile_file_path = self._input_file_path(normalized, label="Profile file")
+        profile_file_path = self._profile_file_path(normalized, allow_create=False)
         return load_search_profiles(profile_file_path), profile_file_path
 
-    def _input_file_path(self, value: str, *, label: str) -> Path:
-        path = Path(value)
+    def _profile_file_path(self, value: str, *, allow_create: bool) -> Path:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Profile file is required.")
+        if Path(normalized).suffix.lower() != ".json":
+            raise ValueError("Profile file must use a .json extension.")
+        path = Path(normalized)
         if not path.is_absolute():
             path = self.cwd / path
         resolved = path.resolve()
         if not resolved.is_relative_to(self.cwd):
-            raise ValueError(f"{label} path must stay inside {self.cwd}: {value}")
-        if not resolved.is_file():
-            raise ValueError(f"{label} not found: {value}")
+            raise ValueError(f"Profile file path must stay inside {self.cwd}: {value}")
+        if not resolved.exists():
+            if not allow_create:
+                raise ValueError(f"Profile file not found: {value}")
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+        if resolved.exists() and not resolved.is_file():
+            raise ValueError(f"Profile file is not a file: {value}")
         return resolved
 
     def _case_db_path(self, value: str) -> Path:
@@ -397,6 +473,11 @@ class ToolboxJobRunner:
             raise ValueError(f"Case DB path must stay inside {self.cwd}: {normalized}")
         resolved.parent.mkdir(parents=True, exist_ok=True)
         return resolved
+
+
+def _write_profile_file(path: Path, profiles: tuple[SearchProfile, ...]) -> None:
+    payload = {"profiles": [profile.to_dict() for profile in profiles]}
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def create_toolbox_server(
@@ -578,6 +659,12 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
                 payload = self._read_json()
                 job = self._runner().submit_search(payload)
                 self._send_json(202, {"job": job.to_dict()})
+                return
+            if path == "/api/profiles/save":
+                self._send_json(200, self._runner().save_profile(self._read_json()))
+                return
+            if path == "/api/profiles/delete":
+                self._send_json(200, self._runner().delete_profile(self._read_json()))
                 return
             case_id, case_route = self._case_route(path)
             if case_id and case_route in {"update", "delete"}:

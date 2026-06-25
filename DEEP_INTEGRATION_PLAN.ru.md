@@ -569,6 +569,7 @@ Notes:
 16. Done: add bounded cross-case network analysis through `case-network`, `/api/case-network` and toolbox Network view.
 17. Done: add safe saved-case management through filtered `cases`, `case-update`, `case-delete`, `/api/cases/<id>/update`, `/api/cases/<id>/delete` and toolbox Case Browser controls.
 18. Done: add guarded custom search profiles in served toolbox through `Profile file`, `Custom profile`, `/api/profiles` and `/api/search --profile-file` command construction.
+19. Done: add minimal served toolbox profile editor through `/api/profiles/save`, `/api/profiles/delete`, structured profile fields and canonical validated JSON writes.
 
 ## Definition of done
 

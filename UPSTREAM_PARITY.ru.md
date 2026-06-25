@@ -403,7 +403,7 @@ python -m osint_toolkit case-delete --case-db cases.sqlite case-001 --yes
 - cross-case weighted shortest path between two saved entities with per-hop case/relation/source provenance;
 - bounded cross-case network view with aggregated edges, degree/case_count and kind/relation filters;
 - basic safe case management: filtered case list by workflow/profile/scope, title/scope_note update and explicit confirmed delete;
-- served toolbox custom search profiles: guarded profile-file loading, `/api/profiles` listing and `/api/search` execution with typed custom profile names;
+- served toolbox custom search profiles: guarded profile-file loading, `/api/profiles` listing, `/api/profiles/save|delete` minimal editor and `/api/search` execution with typed custom profile names;
 - parsed executed adapter outputs can enter investigation entities, graph edges and case store;
 - static local `toolbox` HTML command window with OSINT directions, seed fields, image metadata/OCR/QR/reverse-search routes, cases/graph/index routes and adapter profile buttons;
 - served toolbox Case Browser for saved cases, case detail, safe title/scope update, typed-confirm delete, clickable bounded SVG case graph, graph summary/focus and cross-case index through token-protected allowlisted endpoints;
@@ -412,7 +412,7 @@ python -m osint_toolkit case-delete --case-db cases.sqlite case-001 --yes
 Gap:
 
 - graph edges пока базовые, без advanced cross-case graph layout/filter UI;
-- есть custom search profiles через `search/tools --profile-file`, CLI management `profiles list/show/export` и guarded served toolbox profile-file loading; saved cases persist workflow/profile/adapter/scope policy metadata, но adapter profiles в `adapters.py` остаются статическим manifest-layer и нет browser editor/enforcement для per-case policy;
+- есть custom search profiles через `search/tools --profile-file`, CLI management `profiles list/show/export` и guarded served toolbox profile editor; saved cases persist workflow/profile/adapter/scope policy metadata, но adapter profiles в `adapters.py` остаются статическим manifest-layer и нет enforcement для per-case policy;
 - нет продвинутого graph exploration UI; `toolbox --serve` уже умеет запускать unified search, передавать scope note/custom profile file, читать/filter/update/delete saved cases, graph/index/path/network, рисовать clickable bounded SVG case/cross-case graph и делать focus-neighbor запрос кликом по узлу, но static `toolbox --out` остаётся command/portal window и не делает face-ID.
 
 ## Adapter doctor
