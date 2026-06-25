@@ -630,6 +630,29 @@ class CliTests(unittest.TestCase):
                 self.assertIn("manifest.json", archive.namelist())
                 self.assertIn("findings.csv", archive.namelist())
 
+            bulk_export_dir = Path(tmpdir) / "bulk-export"
+            bulk_export_result = self.run_cli(
+                "cases-export",
+                "--case-db",
+                str(db_path),
+                "--out",
+                str(bulk_export_dir),
+                "--workflow",
+                "investigate",
+                "--zip",
+                "--format",
+                "json",
+            )
+            self.assertEqual(bulk_export_result.returncode, 0, bulk_export_result.stderr)
+            bulk_payload = json.loads(bulk_export_result.stdout)
+            self.assertEqual(bulk_payload["case_count"], 1)
+            self.assertTrue((bulk_export_dir / "case-1" / "case.json").exists())
+            self.assertTrue((bulk_export_dir / "bulk_manifest.json").exists())
+            self.assertTrue(Path(bulk_payload["zip_path"]).exists())
+            with zipfile.ZipFile(Path(bulk_payload["zip_path"])) as archive:
+                self.assertIn("bulk_manifest.json", archive.namelist())
+                self.assertIn("case-1/findings.csv", archive.namelist())
+
             focus_result = self.run_cli(
                 "case-graph",
                 "--case-db",

@@ -548,6 +548,18 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     badges=("sqlite", "list"),
                 ),
                 ToolboxCommand(
+                    "Экспорт списка кейсов",
+                    "Пишет bulk handoff-пакет по workflow/profile/scope filters.",
+                    (
+                        "python -m osint_toolkit cases-export --case-db {case_db} "
+                        "--out reports/cases-export --zip "
+                        '[[--workflow {workflow_filter}]] [[--profile {profile_filter}]] '
+                        '[[--scope-query "{scope_query}"]]'
+                    ),
+                    required_inputs=("case_db",),
+                    badges=("case", "bulk export"),
+                ),
+                ToolboxCommand(
                     "Обновить кейс",
                     "Меняет title и/или scope_note без изменения findings/entities.",
                     (
@@ -1153,6 +1165,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
           <p>Читает saved cases из SQLite через локальный backend: список, detail, graph, update/delete и cross-case index.</p>
           <div class="copy-row">
             <button type="button" id="loadCases">Cases</button>
+            <button type="button" class="secondary" id="exportCases">Export list</button>
             <button type="button" class="secondary" id="showCase">Case detail</button>
             <button type="button" class="secondary" id="updateCase">Update</button>
             <button type="button" class="secondary" id="deleteCase">Delete</button>
@@ -1970,6 +1983,18 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       setCaseLog(JSON.stringify(data, null, 2));
     }}
 
+    async function exportFilteredCases() {{
+      const data = await postBackendJson("/api/cases/export", {{
+        case_db: caseDbValue(),
+        workflow: readValue("workflow_filter"),
+        profile: readValue("profile_filter"),
+        scope_query: readValue("scope_query"),
+        limit: 100,
+        zip: true
+      }});
+      setCaseLog(JSON.stringify(data, null, 2));
+    }}
+
     async function showCaseIndex() {{
       const params = {{
         case_db: caseDbValue(),
@@ -2088,6 +2113,10 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       loadCases().catch((error) => setCaseLog(String(error)));
     }});
 
+    document.getElementById("exportCases").addEventListener("click", () => {{
+      exportFilteredCases().catch((error) => setCaseLog(String(error)));
+    }});
+
     document.getElementById("showCase").addEventListener("click", () => {{
       showCase().catch((error) => setCaseLog(String(error)));
     }});
@@ -2163,6 +2192,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       document.getElementById("deleteProfile").disabled = true;
       document.getElementById("refreshJobs").disabled = true;
       document.getElementById("loadCases").disabled = true;
+      document.getElementById("exportCases").disabled = true;
       document.getElementById("showCase").disabled = true;
       document.getElementById("updateCase").disabled = true;
       document.getElementById("deleteCase").disabled = true;

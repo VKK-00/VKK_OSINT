@@ -420,6 +420,7 @@ python -m osint_toolkit case-show --case-db cases.sqlite case-001
 python -m osint_toolkit case-show --case-db cases.sqlite case-001 --format csv
 python -m osint_toolkit case-sources --case-db cases.sqlite case-001
 python -m osint_toolkit case-export --case-db cases.sqlite case-001 --out reports/case-001-export --zip
+python -m osint_toolkit cases-export --case-db cases.sqlite --workflow search --out reports/search-cases-export --zip
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001 --entity-kind email --entity-value person@example.com
 python -m osint_toolkit case-index --case-db cases.sqlite --kind domain --min-cases 2
@@ -452,6 +453,7 @@ python -m osint_toolkit case-delete --case-db cases.sqlite case-001 --yes
 - flat saved-case findings export through `case-show --format csv`, including `case_id`, collection and `metadata_json` provenance;
 - saved-case source summary through CLI `case-sources`, served `/api/cases/<id>/sources` and toolbox `Sources`, including per-source counts, status/confidence/signal mix and adapter/local-tool execution provenance when present;
 - saved-case handoff package through CLI `case-export`, served `/api/cases/<id>/export` and toolbox `Export`, including JSON/Markdown, CSV findings/sources/targets/entities/edges, graph summary, manifest checksums and optional zip;
+- filtered bulk handoff package through CLI `cases-export`, served `/api/cases/export` and toolbox `Export list`, including one directory per matched case, `bulk_manifest.json` and optional zip;
 - saved graph summary: node/edge counts, relation counts, entity kind counts and top connected nodes;
 - focus-neighbor query for one saved entity;
 - cross-case entity index and exact saved-case lookup by entity;
@@ -462,7 +464,7 @@ python -m osint_toolkit case-delete --case-db cases.sqlite case-001 --yes
 - served toolbox profile tool readiness: `/api/tools` doctor/install/env views from the same selected profile and guarded profile file;
 - parsed executed adapter outputs can enter investigation entities, graph edges and case store;
 - static local `toolbox` HTML command window with OSINT directions, seed fields, image metadata/OCR/QR/reverse-search routes, cases/graph/index routes and adapter profile buttons;
-- served toolbox Case Browser for saved cases, case detail, source summaries, export packages, safe title/scope update, typed-confirm delete, clickable bounded SVG case graph, graph summary/focus and cross-case index through token-protected allowlisted endpoints;
+- served toolbox Case Browser for saved cases, case detail, source summaries, single/bulk export packages, safe title/scope update, typed-confirm delete, clickable bounded SVG case graph, graph summary/focus and cross-case index through token-protected allowlisted endpoints;
 - served toolbox graph exploration filters for entity kind/value, relation and free-text `Graph contains` over the bounded SVG case/cross-case graph;
 - review checklist in every Markdown report.
 

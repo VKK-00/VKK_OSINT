@@ -600,6 +600,7 @@ Notes:
 48. Done: add saved-case source summaries through CLI `case-sources`, served endpoint `/api/cases/<id>/sources` and toolbox `Sources`, reusing saved findings to show per-source counts, status/confidence/signal mix and adapter/local-tool provenance.
 49. Done: add `case-show --format csv` as flat saved-case findings export with `case_id`, collection, source/status/confidence/evidence and `metadata_json` provenance.
 50. Done: add `case-export` handoff packages and served toolbox `Export`, writing case JSON/Markdown, CSV findings/sources/targets/entities/edges, metadata, graph summary, manifest SHA-256 checksums and optional zip.
+51. Done: add `cases-export` bulk handoff packages and served toolbox `Export list`, applying workflow/profile/scope filters and writing per-case folders, `bulk_manifest.json` and optional zip.
 
 ## Definition of done
 

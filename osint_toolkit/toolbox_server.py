@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .case_export import export_case_package
+from .case_export import export_case_package, export_cases_package
 from .case_store import CaseStore, CaseStoreError
 from .environment import refresh_runtime_environment
 from .graph import analyze_case_graph, analyze_cross_case_network, analyze_cross_case_path
@@ -339,6 +339,27 @@ class ToolboxJobRunner:
         default_out = f"reports/case-exports/{normalized_case_id}"
         output_dir = self._output_path(str(payload.get("out", "")).strip(), default_out)
         result = export_case_package(case_payload, output_dir, create_zip=bool(payload.get("zip", False)))
+        return result.to_dict()
+
+    def export_cases(self, payload: dict[str, Any]) -> dict[str, object]:
+        case_db = str(payload.get("case_db", "cases.sqlite"))
+        limit = _int_from_payload(payload, "limit", default=100, minimum=1, maximum=1000)
+        workflow = str(payload.get("workflow", "")).strip()
+        profile = str(payload.get("profile", "")).strip()
+        scope_query = str(payload.get("scope_query", "")).strip()
+        store = CaseStore(self._case_db_path(case_db))
+        records = store.list_cases(
+            limit=limit,
+            workflow=workflow,
+            profile=profile,
+            scope_query=scope_query,
+        )
+        if not records:
+            raise ValueError("No cases matched export filters.")
+        case_payloads = tuple(store.load_case(record.case_id) for record in records)
+        default_out = f"reports/case-exports/bulk-{int(time.time())}"
+        output_dir = self._output_path(str(payload.get("out", "")).strip(), default_out)
+        result = export_cases_package(case_payloads, output_dir, create_zip=bool(payload.get("zip", False)))
         return result.to_dict()
 
     def case_index(
@@ -783,6 +804,9 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
             if path == "/api/tools/install":
                 self._send_json(200, self._runner().profile_tools_install(self._read_json()))
                 return
+            if path == "/api/cases/export":
+                self._send_json(200, self._runner().export_cases(self._read_json()))
+                return
             case_id, case_route = self._case_route(path)
             if case_id and case_route in {"update", "delete", "export"}:
                 payload = self._read_json()
@@ -888,6 +912,24 @@ def _choice(
     value = str(payload.get(key, default) or default).strip()
     if value not in choices:
         raise ValueError(f"{key} must be one of: {', '.join(choices)}")
+    return value
+
+
+def _int_from_payload(
+    payload: dict[str, Any],
+    key: str,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    raw = payload.get(key, default)
+    try:
+        value = int(str(raw))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{key} must be an integer.") from exc
+    if value < minimum or value > maximum:
+        raise ValueError(f"{key} must be between {minimum} and {maximum}.")
     return value
 
 

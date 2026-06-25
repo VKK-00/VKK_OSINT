@@ -10,7 +10,12 @@ from .adapter_runner import run_adapter_findings
 from .adapter_setup import build_adapter_setups
 from .adapters import expand_adapter_repositories, filter_adapters, find_adapter, list_adapter_profiles
 from .case_store import CaseStore, CaseStoreError
-from .case_export import export_case_package, format_case_export_result
+from .case_export import (
+    export_case_package,
+    export_cases_package,
+    format_case_export_result,
+    format_cases_export_result,
+)
 from .catalog import Catalog, CatalogError
 from .doctor import inspect_adapters
 from .engine import RunConfig, ScanTarget
@@ -297,6 +302,17 @@ def build_parser() -> argparse.ArgumentParser:
     cases.add_argument("--scope-query", default="", help="Case-insensitive substring filter over scope_note metadata.")
     cases.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     cases.set_defaults(handler=handle_cases)
+
+    cases_export = subparsers.add_parser("cases-export", help="Export filtered saved cases as handoff packages.")
+    cases_export.add_argument("--case-db", required=True, help="SQLite database path.")
+    cases_export.add_argument("--out", required=True, help="Output directory for the bulk export package.")
+    cases_export.add_argument("--limit", type=int, default=100)
+    cases_export.add_argument("--workflow", default="", help="Filter by saved workflow metadata, for example search.")
+    cases_export.add_argument("--profile", default="", help="Filter by requested/search profile metadata.")
+    cases_export.add_argument("--scope-query", default="", help="Case-insensitive substring filter over scope_note metadata.")
+    cases_export.add_argument("--zip", action="store_true", help="Also write a zip archive next to the output directory.")
+    cases_export.add_argument("--format", choices=("table", "markdown", "json"), default="table")
+    cases_export.set_defaults(handler=handle_cases_export)
 
     case_show = subparsers.add_parser("case-show", help="Show one saved investigation case.")
     case_show.add_argument("--case-db", required=True, help="SQLite database path.")
@@ -849,6 +865,22 @@ def handle_cases(args: argparse.Namespace) -> int:
         scope_query=args.scope_query,
     )
     print(format_cases(records, output_format=args.format))
+    return 0
+
+
+def handle_cases_export(args: argparse.Namespace) -> int:
+    store = CaseStore(args.case_db)
+    records = store.list_cases(
+        limit=args.limit,
+        workflow=args.workflow,
+        profile=args.profile,
+        scope_query=args.scope_query,
+    )
+    if not records:
+        raise ValueError("No cases matched export filters.")
+    payloads = tuple(store.load_case(record.case_id) for record in records)
+    result = export_cases_package(payloads, args.out, create_zip=args.zip)
+    print(format_cases_export_result(result, output_format=args.format))
     return 0
 
 

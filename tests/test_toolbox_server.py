@@ -256,6 +256,18 @@ class ToolboxServerTests(unittest.TestCase):
                 self.assertTrue((export_dir / "edges.csv").exists())
                 self.assertTrue(Path(exported["zip_path"]).exists())
 
+                bulk_exported = self._request_json(
+                    f"{base_url}/api/cases/export",
+                    method="POST",
+                    auth="test-auth",
+                    payload={"case_db": "cases.sqlite", "workflow": "search", "zip": True},
+                )
+                self.assertEqual(bulk_exported["case_count"], 2)
+                bulk_dir = Path(bulk_exported["output_dir"])
+                self.assertTrue((bulk_dir / "bulk_manifest.json").exists())
+                self.assertTrue((bulk_dir / "email-1" / "case.json").exists())
+                self.assertTrue(Path(bulk_exported["zip_path"]).exists())
+
                 index = self._request_json(
                     f"{base_url}/api/case-index?case_db=cases.sqlite&kind=domain&min_cases=1",
                     auth="test-auth",
