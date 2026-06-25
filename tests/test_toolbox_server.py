@@ -1,4 +1,9 @@
 import json
+import os
+import re
+import socket
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -14,6 +19,96 @@ from osint_toolkit.toolbox_server import ToolboxJobRunner, create_toolbox_server
 
 
 class ToolboxServerTests(unittest.TestCase):
+    def test_cli_toolbox_serve_process_runs_search_job_end_to_end(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.bind(("127.0.0.1", 0))
+                port = sock.getsockname()[1]
+
+            repo_root = Path(__file__).resolve().parents[1]
+            env = os.environ.copy()
+            env["PYTHONPATH"] = (
+                str(repo_root)
+                if not env.get("PYTHONPATH")
+                else os.pathsep.join((str(repo_root), env["PYTHONPATH"]))
+            )
+            env["PYTHONUNBUFFERED"] = "1"
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "osint_toolkit",
+                    "toolbox",
+                    "--serve",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    str(port),
+                    "--out",
+                    "toolbox.html",
+                ],
+                cwd=tmpdir,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            base_url = f"http://127.0.0.1:{port}"
+            try:
+                html = self._wait_for_toolbox_root(base_url, process)
+                token_match = re.search(r'auth:\s*"([^"]+)"', html)
+                self.assertIsNotNone(token_match)
+                token = token_match.group(1)
+
+                submitted = self._request_json(
+                    f"{base_url}/api/search",
+                    method="POST",
+                    auth=token,
+                    payload={
+                        "target_kind": "phone",
+                        "target_value": "+380441234567",
+                        "profile": "phone-full",
+                        "execute_adapters": True,
+                        "adapter_limit": 0,
+                        "out": "reports/phone.md",
+                        "case_db": "cases.sqlite",
+                        "case_id": "cli-smoke-phone",
+                        "scope_note": "cli toolbox smoke",
+                        "format": "markdown",
+                    },
+                )
+                job_id = submitted["job"]["id"]
+                job = self._wait_for_job(base_url, job_id, auth=token)
+                self.assertEqual(job["status"], "completed", job)
+                self.assertEqual(job["returncode"], 0)
+                self.assertTrue(job["report_available"])
+
+                report = self._request_text(f"{base_url}/api/jobs/{job_id}/report", auth=token)
+                self.assertIn("## Phone Sources", report)
+                self.assertIn("| Source | Findings | Statuses | Confidence | Signals |", report)
+
+                cases = self._request_json(f"{base_url}/api/cases?case_db=cases.sqlite", auth=token)
+                self.assertIn("cli-smoke-phone", {record["case_id"] for record in cases["cases"]})
+                case = self._request_json(
+                    f"{base_url}/api/cases/cli-smoke-phone?case_db=cases.sqlite",
+                    auth=token,
+                )
+                self.assertEqual(case["metadata"]["scope_note"], "cli toolbox smoke")
+                self.assertTrue(Path(tmpdir, "toolbox.html").exists())
+                self.assertTrue(Path(tmpdir, "reports", "phone.md").exists())
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=10)
+                if process.stdout:
+                    process.stdout.close()
+                if process.stderr:
+                    process.stderr.close()
+
     def test_runner_rejects_outputs_outside_working_directory(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = ToolboxJobRunner(cwd=tmpdir, auth="test-auth")
@@ -527,10 +622,25 @@ class ToolboxServerTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
-    def _wait_for_job(self, base_url: str, job_id: str) -> dict[str, object]:
+    def _wait_for_toolbox_root(self, base_url: str, process: subprocess.Popen[str]) -> str:
+        last_error = ""
+        for _ in range(120):
+            if process.poll() is not None:
+                stdout, stderr = process.communicate(timeout=5)
+                self.fail(f"toolbox server exited early: stdout={stdout!r} stderr={stderr!r}")
+            try:
+                html = self._request_text(f"{base_url}/")
+                if "Unified Search Runner" in html:
+                    return html
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+                last_error = str(exc)
+            time.sleep(0.25)
+        self.fail(f"Toolbox root did not become ready: {last_error}")
+
+    def _wait_for_job(self, base_url: str, job_id: str, *, auth: str = "test-auth") -> dict[str, object]:
         last_job: dict[str, object] | None = None
         for _ in range(180):
-            job = self._request_json(f"{base_url}/api/jobs/{job_id}", auth="test-auth")
+            job = self._request_json(f"{base_url}/api/jobs/{job_id}", auth=auth)
             last_job = job
             if job["status"] in {"completed", "failed"}:
                 return job
