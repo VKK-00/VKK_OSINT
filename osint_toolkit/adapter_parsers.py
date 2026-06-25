@@ -4010,10 +4010,11 @@ def _maigret_record_finding(
         or ""
     ).strip()
     url = str(status_data.get("url") or record.get("url_user") or record.get("url") or "").strip()
-    site_url = str(record.get("url_main") or "").strip()
+    site_data = record.get("site") if isinstance(record.get("site"), dict) else {}
+    site_url = _first_present_scalar(record.get("url_main"), site_data.get("url_main"), site_data.get("urlMain"))
     identity = str(status_data.get("username") or record.get("username") or target.value).strip()
     http_status = str(record.get("http_status") or "").strip()
-    ids = status_data.get("ids") or record.get("ids_data") or record.get("ids") or {}
+    ids = _maigret_ids(status_data, record)
     tags = status_data.get("tags") or record.get("tags") or []
 
     if not raw_status and not site_name and not url:
@@ -4038,6 +4039,18 @@ def _maigret_record_finding(
         http_status=http_status,
         ids=ids,
         tags=tags,
+        url_probe=_first_present_scalar(record.get("url_probe"), site_data.get("url_probe"), site_data.get("urlProbe")),
+        rank=_first_present_scalar(
+            record.get("rank"), site_data.get("rank"), site_data.get("alexa_rank"), site_data.get("alexaRank")
+        ),
+        is_similar=_first_present_scalar(
+            record.get("is_similar"),
+            site_data.get("is_similar"),
+            site_data.get("similar_search"),
+            site_data.get("similarSearch"),
+        ),
+        parsing_enabled=_first_present_scalar(record.get("parsing_enabled")),
+        site_data=site_data,
     )
     return Finding(
         module="external-adapter-parser",
@@ -4077,6 +4090,11 @@ def _maigret_metadata(
     http_status: str,
     ids: object,
     tags: object,
+    url_probe: str,
+    rank: str,
+    is_similar: str,
+    parsing_enabled: str,
+    site_data: dict[Any, Any],
 ) -> dict[str, str]:
     metadata = {
         "repository": repository,
@@ -4098,6 +4116,11 @@ def _maigret_metadata(
         metadata["site_url"] = site_url
     if http_status:
         metadata["http_status"] = http_status
+    _set_metadata(metadata, "url_probe", url_probe)
+    _set_metadata(metadata, "rank", rank)
+    _set_metadata(metadata, "is_similar", is_similar)
+    _set_metadata(metadata, "parsing_enabled", parsing_enabled)
+    _merge_maigret_site_data(metadata, site_data)
 
     tag_values = _string_list(tags)
     if tag_values:
@@ -4111,29 +4134,212 @@ def _maigret_metadata(
     return metadata
 
 
+def _maigret_ids(status_data: dict[str, Any], record: dict[str, Any]) -> dict[Any, Any]:
+    merged: dict[Any, Any] = {}
+    for candidate in (record.get("ids"), record.get("ids_data"), status_data.get("ids")):
+        if isinstance(candidate, dict):
+            merged.update(candidate)
+    return merged
+
+
+def _first_present_scalar(*values: object) -> str:
+    for value in values:
+        if value is None or value == "":
+            continue
+        scalar = _first_scalar(value)
+        if scalar:
+            return scalar
+    return ""
+
+
+def _merge_maigret_site_data(metadata: dict[str, str], site_data: dict[Any, Any]) -> None:
+    if not site_data:
+        return
+    for source_key, metadata_key in (
+        ("engine", "site_engine"),
+        ("checkType", "site_check_type"),
+        ("check_type", "site_check_type"),
+        ("type", "site_id_type"),
+        ("disabled", "site_disabled"),
+        ("alexaRank", "site_alexa_rank"),
+        ("alexa_rank", "site_alexa_rank"),
+        ("url", "site_url_template"),
+        ("urlProbe", "site_url_probe_template"),
+        ("url_probe", "site_url_probe_template"),
+    ):
+        _set_metadata(metadata, metadata_key, _first_scalar(site_data.get(source_key)))
+    site_tags = _metadata_list_text(site_data.get("tags"))
+    if site_tags and "site_tags" not in metadata:
+        metadata["site_tags"] = site_tags
+
+
 def _merge_maigret_ids(metadata: dict[str, str], ids: dict[Any, Any]) -> None:
     mapped_keys = {
         "fullname": "name",
         "full_name": "name",
         "name": "name",
+        "display_name": "name",
+        "screenname": "name",
         "location": "location",
+        "city": "location",
         "country": "country",
+        "country_code": "country_code",
+        "locale": "locale",
+        "region": "location",
         "email": "email",
+        "emails": "emails",
         "phone": "phone",
+        "phones": "phones",
         "username": "username",
+        "usernames": "related_usernames",
+        "bio": "bio",
+        "about": "bio",
+        "description": "bio",
+        "gender": "gender",
+        "birthday": "birthday",
+        "birth_date": "birthday",
+        "date_of_birth": "birthday",
+        "created_at": "created_at",
+        "created_time": "created_at",
+        "last_online": "last_seen",
+        "latest_activity_at": "last_seen",
+        "updated_at": "last_seen",
+        "followers": "followers",
+        "followers_total": "followers",
+        "following": "following",
+        "following_total": "following",
+        "repos": "public_repos",
+        "public_repos": "public_repos",
+        "videos": "videos",
+        "videos_total": "videos",
+        "posts": "posts",
+        "company": "organization",
+        "organization": "organization",
+        "occupation": "occupation",
+        "website": "external_urls",
+        "website_url": "external_urls",
+        "homepage": "external_urls",
+        "url": "external_urls",
+        "links": "external_urls",
+        "image": "profile_image_url",
+        "avatar": "profile_image_url",
+        "photo": "profile_image_url",
+        "picture": "profile_image_url",
+        "profile_image": "profile_image_url",
+        "profile_image_url": "profile_image_url",
+        "profile_picture": "profile_image_url",
     }
+    ids_count = 0
     for raw_key, raw_value in ids.items():
         key = _metadata_key(str(raw_key))
-        value = _first_scalar(raw_value)
+        value = _maigret_id_text(raw_value)
         if not value:
             continue
+        ids_count += 1
         mapped = mapped_keys.get(key)
-        if mapped and mapped not in metadata:
-            metadata[mapped] = value
+        if mapped == "email":
+            _maigret_merge_emails(metadata, raw_value)
+        elif mapped == "emails":
+            _maigret_merge_emails(metadata, raw_value)
+        elif mapped == "phone":
+            _maigret_merge_phones(metadata, raw_value)
+        elif mapped == "phones":
+            _maigret_merge_phones(metadata, raw_value)
+        elif mapped == "external_urls":
+            _maigret_merge_urls(metadata, "external_urls", raw_value)
+        elif mapped == "profile_image_url":
+            _maigret_merge_urls(metadata, "profile_image_url", raw_value, first_only=True)
+        elif mapped == "username":
+            _maigret_merge_related_usernames(metadata, raw_value)
+        elif mapped == "related_usernames":
+            _maigret_merge_related_usernames(metadata, raw_value)
+        elif mapped and mapped not in metadata:
+            metadata[mapped] = _short(value, limit=220) if mapped in {"bio", "organization", "occupation"} else value
         elif mapped:
             continue
         else:
-            metadata[f"extra_{key}"] = value
+            metadata[f"extra_{key}"] = _short(value, limit=220)
+    if ids_count:
+        metadata["maigret_ids_count"] = str(ids_count)
+
+
+def _maigret_id_text(value: object) -> str:
+    values = _maigret_id_values(value)
+    return "|".join(_dedupe_text(values))
+
+
+def _maigret_id_values(value: object) -> list[str]:
+    if isinstance(value, (str, int, float, bool)):
+        scalar = str(value).strip()
+        return [scalar] if scalar else []
+    if isinstance(value, (list, tuple, set)):
+        values: list[str] = []
+        for item in value:
+            values.extend(_maigret_id_values(item))
+        return values
+    if isinstance(value, dict):
+        for preferred_key in ("value", "url", "uri", "link", "username", "name", "label", "text", "id"):
+            if preferred_key in value:
+                values = _maigret_id_values(value[preferred_key])
+                if values:
+                    return values
+        values = []
+        for nested in value.values():
+            values.extend(_maigret_id_values(nested))
+        return values
+    return []
+
+
+def _maigret_merge_emails(metadata: dict[str, str], value: object) -> None:
+    emails: list[str] = []
+    for item in _maigret_id_values(value):
+        emails.extend(email.lower() for email in EMAIL_RE.findall(item))
+    _merge_metadata_values(metadata, "emails", emails)
+    if emails and "email" not in metadata:
+        metadata["email"] = emails[0].lower()
+
+
+def _maigret_merge_phones(metadata: dict[str, str], value: object) -> None:
+    phones: list[str] = []
+    for item in _maigret_id_values(value):
+        phones.extend(PHONE_RE.findall(item))
+    _merge_metadata_values(metadata, "phones", phones)
+    if phones and "phone" not in metadata:
+        metadata["phone"] = phones[0]
+
+
+def _maigret_merge_urls(metadata: dict[str, str], key: str, value: object, *, first_only: bool = False) -> None:
+    urls: list[str] = []
+    for item in _maigret_id_values(value):
+        urls.extend(url.rstrip(".,;") for url in URL_RE.findall(item))
+    if first_only:
+        if urls and key not in metadata:
+            metadata[key] = urls[0]
+        return
+    _merge_metadata_values(metadata, key, urls)
+
+
+def _maigret_merge_related_usernames(metadata: dict[str, str], value: object) -> None:
+    current = metadata.get("username", "").strip().lstrip("@").lower()
+    usernames = []
+    for item in _maigret_id_values(value):
+        username = item.strip().lstrip("@")
+        if username and username.lower() != current:
+            usernames.append(username)
+    _merge_metadata_values(metadata, "related_usernames", usernames)
+
+
+def _merge_metadata_values(metadata: dict[str, str], key: str, values: list[str]) -> None:
+    merged = list(_split_maigret_metadata_values(metadata.get(key, "")))
+    merged.extend(values)
+    deduped = _dedupe_text(merged)
+    if deduped:
+        metadata[key] = "|".join(deduped)
+
+
+def _split_maigret_metadata_values(value: str) -> tuple[str, ...]:
+    parts = [part.strip() for part in value.replace("|", ",").split(",")]
+    return tuple(part for part in parts if part)
 
 
 def _maigret_evidence(site_name: str, raw_status: str, tags: object) -> str:

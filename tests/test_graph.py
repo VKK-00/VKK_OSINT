@@ -320,6 +320,37 @@ class GraphAnalysisTests(unittest.TestCase):
         self.assertIn(("instagram", "https://www.instagram.com/exampleuser/", "linked_external_url", "url", "https://example.com"), edge_keys)
         self.assertIn(("url", "https://www.instagram.com/exampleuser/", "instagram_url_for", "instagram", "@exampleuser"), edge_keys)
 
+    def test_related_username_metadata_edges(self):
+        target = ScanTarget(kind="username", value="bellingcat")
+        findings = (
+            Finding(
+                module="external-adapter-parser",
+                source="soxoj/maigret",
+                target="bellingcat",
+                status="candidate",
+                url="https://github.com/bellingcat",
+                confidence="high",
+                evidence="Maigret GitHub: Claimed",
+                metadata={
+                    "parser": "maigret",
+                    "related_usernames": "bellcat|bcat",
+                },
+            ),
+        )
+
+        entities = merge_entities(entities_from_targets((target,)), entities_from_findings(findings))
+        entity_keys = {(entity.kind, entity.value.lower()) for entity in entities}
+        self.assertIn(("username", "bellcat"), entity_keys)
+        self.assertIn(("username", "bcat"), entity_keys)
+
+        edges = graph_edges_from_case((target,), findings, entities)
+        edge_keys = {
+            (edge.source_kind, edge.source_value, edge.relation, edge.target_kind, edge.target_value)
+            for edge in edges
+        }
+        self.assertIn(("username", "bellingcat", "related_username", "username", "bellcat"), edge_keys)
+        self.assertIn(("username", "bellingcat", "related_username", "username", "bcat"), edge_keys)
+
     def test_social_profile_metadata_edges(self):
         target = ScanTarget(kind="social", value="vk:exampleuser")
         findings = (

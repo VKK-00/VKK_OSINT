@@ -548,6 +548,56 @@ class AdapterParserTests(unittest.TestCase):
         self.assertEqual(findings[0].metadata["country"], "Ukraine")
         self.assertEqual(findings[0].metadata["region"], "UA")
 
+    def test_parse_maigret_richer_dossier_fields(self):
+        findings = parse_adapter_output(
+            "soxoj/maigret",
+            ScanTarget(kind="username", value="bellingcat"),
+            """
+            {"sitename":"GitHub","url_main":"https://github.com","url_user":"https://github.com/bellingcat","url_probe":"https://api.github.com/users/bellingcat","http_status":200,"rank":123,"is_similar":false,"parsing_enabled":true,"site":{"engine":"github","checkType":"message","type":"username","disabled":false,"alexaRank":42,"url":"https://github.com/{username}","urlProbe":"https://api.github.com/users/{username}","tags":["coding","us"]},"status":{"username":"bellingcat","site_name":"GitHub","url":"https://github.com/bellingcat","status":"Claimed","ids":{"fullname":"Bellingcat","city":"Amsterdam","country_code":"NL","locale":"en-NL","bio":"Open source investigations and verification.","gender":"unknown","created_at":"2014-07-15T12:00:00Z","latest_activity_at":"2026-06-20T08:00:00Z","followers_total":12345,"following_total":12,"public_repos":3,"company":"Bellingcat","occupation":"Investigative newsroom","website":"https://www.bellingcat.com","image":"https://avatars.githubusercontent.com/u/123","username":["bellingcat","bellcat"],"emails":["tips@bellingcat.com"],"phones":["+31201234567"]},"tags":["coding","global"]}}
+            """,
+        )
+
+        self.assertEqual(len(findings), 1)
+        github = findings[0]
+        self.assertEqual(github.metadata["url_probe"], "https://api.github.com/users/bellingcat")
+        self.assertEqual(github.metadata["rank"], "123")
+        self.assertEqual(github.metadata["is_similar"], "False")
+        self.assertEqual(github.metadata["parsing_enabled"], "True")
+        self.assertEqual(github.metadata["site_engine"], "github")
+        self.assertEqual(github.metadata["site_check_type"], "message")
+        self.assertEqual(github.metadata["site_id_type"], "username")
+        self.assertEqual(github.metadata["site_disabled"], "False")
+        self.assertEqual(github.metadata["site_alexa_rank"], "42")
+        self.assertEqual(github.metadata["site_url_probe_template"], "https://api.github.com/users/{username}")
+        self.assertEqual(github.metadata["site_tags"], "coding, us")
+        self.assertEqual(github.metadata["name"], "Bellingcat")
+        self.assertEqual(github.metadata["location"], "Amsterdam")
+        self.assertEqual(github.metadata["country_code"], "NL")
+        self.assertEqual(github.metadata["locale"], "en-NL")
+        self.assertEqual(github.metadata["bio"], "Open source investigations and verification.")
+        self.assertEqual(github.metadata["gender"], "unknown")
+        self.assertEqual(github.metadata["created_at"], "2014-07-15T12:00:00Z")
+        self.assertEqual(github.metadata["last_seen"], "2026-06-20T08:00:00Z")
+        self.assertEqual(github.metadata["followers"], "12345")
+        self.assertEqual(github.metadata["following"], "12")
+        self.assertEqual(github.metadata["public_repos"], "3")
+        self.assertEqual(github.metadata["organization"], "Bellingcat")
+        self.assertEqual(github.metadata["occupation"], "Investigative newsroom")
+        self.assertEqual(github.metadata["external_urls"], "https://www.bellingcat.com")
+        self.assertEqual(github.metadata["profile_image_url"], "https://avatars.githubusercontent.com/u/123")
+        self.assertEqual(github.metadata["emails"], "tips@bellingcat.com")
+        self.assertEqual(github.metadata["phones"], "+31201234567")
+        self.assertEqual(github.metadata["related_usernames"], "bellcat")
+        self.assertEqual(github.metadata["maigret_ids_count"], "18")
+
+        entities = {(entity.kind, entity.value.lower()) for entity in entities_from_findings(findings)}
+        self.assertIn(("email", "tips@bellingcat.com"), entities)
+        self.assertIn(("phone", "+31201234567"), entities)
+        self.assertIn(("url", "https://www.bellingcat.com"), entities)
+        self.assertIn(("url", "https://avatars.githubusercontent.com/u/123"), entities)
+        self.assertIn(("username", "bellcat"), entities)
+        self.assertIn(("country-code", "nl"), entities)
+
     def test_parse_maigret_csv_report(self):
         findings = parse_adapter_output(
             "soxoj/maigret",

@@ -77,6 +77,10 @@ def entities_from_findings(findings: tuple[Finding, ...]) -> tuple[Entity, ...]:
                     if PHONE_RE.fullmatch(phone):
                         entities.append(Entity("phone", phone, source, finding.confidence, "metadata:phones"))
                 continue
+            if key == "related_usernames":
+                for username in _split_metadata_values(value):
+                    entities.append(Entity("username", username, source, finding.confidence, "metadata:related_usernames"))
+                continue
             if key in {
                 "crawled_urls",
                 "discovered_urls",

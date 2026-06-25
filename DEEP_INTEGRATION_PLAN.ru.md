@@ -411,9 +411,12 @@ Profile fields:
 
 Приоритет 2:
 
-- Maigret richer dossier fields.
 - BBOT broader passive presets with explicit profile.
 - theHarvester API-source attribution.
+
+Done:
+
+- Maigret richer dossier fields: site metadata, probe URL, rank/similarity flags, extracted contact/profile fields, activity counters, external/profile image URLs and related usernames now normalize into unified metadata/entities/graph signals.
 
 ## Unified output model
 

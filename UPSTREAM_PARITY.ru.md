@@ -44,7 +44,7 @@ python -m osint_toolkit scan username <username> --live
 - единый результат `Finding`;
 - RU-фильтр для VK/OK/Habr и глобальных платформ.
 - executable adapter для `soxoj/maigret`: `maigret <username> --json ndjson [--tags ru|ua]`;
-- parser для Maigret NDJSON/simple JSON/CSV reports: `Claimed` -> `candidate`, `Available` -> `not_found`, `Unknown` -> `error`, `Illegal` -> `skipped`;
+- parser для Maigret NDJSON/simple JSON/CSV reports: `Claimed` -> `candidate`, `Available` -> `not_found`, `Unknown` -> `error`, `Illegal` -> `skipped`; site metadata, probe URL, rank/similarity flags, tags и `ids` dossier fields нормализуются в unified metadata/entities/graph;
 - executable target-specific adapter для `kaifcodec/user-scanner`: `user-scanner -u <username> -f json`;
 - executable RU/UA-aware adapter для `snooppr/snoop`: `snoop --no-func --found-print [--include RU|UA] <username>`;
 - parser для Snoop stdout/CSV results: `найден!` -> `candidate`, `Увы!` -> `not_found`, `блок`/ошибки -> `error`;
@@ -83,7 +83,7 @@ Gap до полного 1:1:
 - per-site rules покрывают username syntax/length, часть title/body content markers и Sherlock response-url `errorUrl`; есть базовый retry/backoff, но ещё не вся WAF/error-handling логика и site-specific rate-limit tuning;
 - username permutation/alias strategy уже покрывает common given-name aliases, handle suffixes и operator-provided alias dictionaries, но пока нет bundled historical alias datasets и platform-specific alias scoring;
 - content-based confidence пока частичный: нет полного набора marker rules из upstream datasets;
-- Maigret подключён hybrid: sanitized site rules импортированы native, а web UI, PDF/HTML/XMind reports, recursive policy tuning, proxies/Tor/I2P и AI mode пока не перенесены в native UI;
+- Maigret подключён hybrid: sanitized site rules импортированы native, NDJSON/simple JSON/CSV dossier parser покрывает site metadata и основные `ids` profile/contact fields, а web UI, PDF/HTML/XMind reports, recursive policy tuning, proxies/Tor/I2P и AI mode пока не перенесены в native UI;
 - Snoop подключён adapter-first; Windows release binary может быть установлен user-local, но обновление остаётся upstream/operator-managed действием;
 - Social Analyzer подключён adapter-first через фактический upstream Node app.js и JSON output; локальная установка, Node >= 20.18.1, web/API UI, screenshots/OCR, slow/special modes и полный metadata/screenshot pipeline остаются операторским/upstream слоем;
 - Blackbird подключён adapter-first через фактический upstream checkout `BLACKBIRD_DIR`; JSON exports и stdout hits нормализуются, но upstream AI profiling, PDF/CSV/DUMP exports, proxy/permutation options и enhanced Instagram session metadata пока не вынесены в отдельные native UI-параметры;
@@ -370,7 +370,7 @@ python -m osint_toolkit adapter-setup <repository>
 Gap:
 
 - нет встроенной CLI-команды `install adapters`, но текущая dev/toolbox машина может быть приведена к `all-safe` ready через user-local `pipx`, Go binaries, portable image tools и venv-backed manual checkouts;
-- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, pwnedOrNot stdout, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, Social Analyzer JSON, Socialscan generated JSON, Blackbird JSON/stdout, DetectDee generated result/stdout, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events, SpiderFoot events, Argus stdout/cache-like output, Yark generated `yark.json` archive output, ExifTool JSON local image metadata, Tesseract OCR text и zbarimg QR/barcode payloads;
+- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, pwnedOrNot stdout, Maigret JSON/CSV dossier fields, `user-scanner` JSON/verbose, Snoop stdout/CSV, Social Analyzer JSON, Socialscan generated JSON, Blackbird JSON/stdout, DetectDee generated result/stdout, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events, SpiderFoot events, Argus stdout/cache-like output, Yark generated `yark.json` archive output, ExifTool JSON local image metadata, Tesseract OCR text и zbarimg QR/barcode payloads;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.
 
