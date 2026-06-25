@@ -8,6 +8,8 @@
 
 Под 1:1 здесь понимается не безусловное копирование исходников, а воспроизведение поведения: такой же класс входов, сопоставимый результат, единая нормализация в `Finding`, понятные confidence/status и явно описанный gap, если upstream-поведение ещё не покрыто. Внешний adapter считается рабочим способом 1:1 parity, когда он запускает реальный upstream CLI/API и нормализует его вывод. Буквальный перенос кода возможен только после проверки лицензии и совместимости.
 
+Операционная цель следующего слоя описана в `DEEP_INTEGRATION_PLAN.ru.md`: один seed должен автоматически разворачиваться в полный fan-out по совместимым native-модулям и upstream tools, без ручного запуска каждого сервиса отдельно.
+
 ## Что делает проект
 
 Проект хранит датированные CSV/Markdown/JSON-срезы GitHub OSINT-проектов и предоставляет Python CLI/engine поверх этих данных.
@@ -80,6 +82,7 @@ CLI работает в четырёх режимах:
 - `osint_toolkit/resources/THIRD_PARTY_NOTICES.txt` — notice по скопированному upstream dataset.
 - `tests/` — unittest-тесты.
 - `README.md` — пользовательская инструкция.
+- `DEEP_INTEGRATION_PLAN.ru.md` — дорожная карта глубокой интеграции: unified `search`, profiles, install/readiness layer, fan-out execution и acceptance criteria.
 - `pyproject.toml` — упаковка и console script.
 
 ## Ключевые файлы, модули, классы и функции
@@ -562,6 +565,7 @@ osint-toolkit stats
 - При изменении SQLite-схемы обновлять `case_store.py`, schema version, тесты сохранения и документацию.
 - При изменении cross-case индекса обновлять `case_store.py`, `output.py`, CLI-тесты и README.
 - При изменении toolbox-направлений или шаблонов команд обновлять `toolbox.py`, CLI-тесты, README и этот анализ.
+- При изменении целевой модели unified search/fan-out обновлять `DEEP_INTEGRATION_PLAN.ru.md`, README и этот анализ.
 - При добавлении команд обновлять `README.md` и этот анализ.
 - При изменении safety-границ обновлять `README.md`, `workflows.py` и тесты brief/recommend.
 - При новом snapshot обновлять дату в `catalog.py` или добавить явный выбор snapshot.
@@ -621,3 +625,4 @@ osint-toolkit stats
 - 2026-06-25: добавлен `p1ngul1n0/blackbird` external adapter: runner поддерживает upstream checkout working directory через `BLACKBIRD_DIR`, читает только свежие/изменённые JSON exports из `results/`, а parser нормализует Blackbird username/email account hits в entities/graph signals.
 - 2026-06-25: добавлен `toolbox` HTML-пульт: одно локальное окно для seed-полей, направлений OSINT, фото-зацепок без face-ID, cases/graph/index и adapter profiles с copy-ready CLI-командами.
 - 2026-06-25: photo-раздел `toolbox` расширен локальными image routes: PowerShell baseline/hash, ExifTool metadata, ImageMagick identify, Tesseract OCR, zbarimg QR/barcodes и reverse image search portals для source/context search.
+- 2026-06-25: добавлен `DEEP_INTEGRATION_PLAN.ru.md` — план перехода от отдельных `scan`/`run-adapter` маршрутов к unified `search`, где один phone/email/username/person/domain/url/image/social seed запускает все совместимые native-модули и adapters в единый отчёт.

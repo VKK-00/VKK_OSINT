@@ -13,6 +13,8 @@
 
 Рабочая карта parity: [UPSTREAM_PARITY.ru.md](UPSTREAM_PARITY.ru.md).
 
+План глубокой интеграции “один ввод -> все подходящие сервисы -> единый отчёт”: [DEEP_INTEGRATION_PLAN.ru.md](DEEP_INTEGRATION_PLAN.ru.md).
+
 Текущий первый слой уже умеет:
 
 - искать по каталогу top-100 OSINT-репозиториев;
