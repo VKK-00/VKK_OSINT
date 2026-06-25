@@ -370,10 +370,11 @@ python -m osint_toolkit adapter-setup <repository>
 - `wrong_executable` readiness for known executable-name collisions through declarative probes for Subfinder, ProjectDiscovery `httpx`, Amass, theHarvester, BBOT and PhoneInfoga;
 - `runtime_error` readiness for installed executables that pass help probes but fail a non-network startup probe, currently used for BBOT Scanner startup on native Windows/POSIX dependency failures;
 - `adapter-setup` command for setup plans, docs URLs, PATH/env readiness.
+- `tools install <profile>` dry-run/`--execute` installer layer for allowlisted missing tools (`pipx`, `go`, `winget`, `choco`) without auto-running config/runtime/manual/restricted steps.
 
 Gap:
 
-- нет встроенной CLI-команды `install adapters`, но текущая dev/toolbox машина может быть приведена к `all-safe` ready через user-local `pipx`, Go binaries, portable image tools и venv-backed manual checkouts;
+- нет full auto-installer для manual checkout/venv/API-key flows; `tools install <profile>` покрывает только allowlisted missing commands, а текущая dev/toolbox машина может быть приведена к `all-safe` ready через user-local `pipx`, Go binaries, portable image tools и venv-backed manual checkouts;
 - нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, pwnedOrNot stdout, Maigret JSON/CSV dossier fields, `user-scanner` JSON/verbose, Snoop stdout/CSV, Social Analyzer JSON, Socialscan generated JSON, Blackbird JSON/stdout, DetectDee generated result/stdout, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester с source attribution для поддержанных JSON shapes, BBOT events, SpiderFoot events, Argus stdout/cache-like output, Yark generated `yark.json` archive output, ExifTool JSON local image metadata, Tesseract OCR text и zbarimg QR/barcode payloads;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.

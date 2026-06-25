@@ -62,7 +62,7 @@ CLI работает в пяти режимах:
 - Windows runtime env refresh: CLI и served toolbox перечитывают user/machine `PATH` и известные OSINT env variable names, чтобы newly installed user-local tools были видны без рестарта терминала;
 - adapter profiles: готовые группы upstream adapters для типовых расследований;
 - adapter doctor: проверка фактической доступности upstream CLI в `PATH`;
-- profile tools workflow: `tools doctor/install-plan/env --profile ...` показывает readiness, install/config actions и env variable names без значений;
+- profile tools workflow: `tools doctor/install-plan/env --profile ...` показывает readiness, install/config actions и env variable names без значений; `tools install <profile>` добавляет dry-run/`--execute` слой для allowlisted missing tools;
 - custom search profiles: `--profile-file` загружает JSON profiles с валидацией target kinds, adapter profiles, repositories и local tools;
 - unified search planner/executor: `search` классифицирует один seed, выбирает default/full или custom profile, строит план native/adapters/local-tools, показывает readiness/missing/config/restricted/excluded статусы, запускает ready non-restricted adapters и выполняет local image tools при `--execute-adapters`;
 - investigation runner: один кейс, несколько seed-типов, entity summary, graph edges, единый Markdown/JSON отчёт;
@@ -258,7 +258,7 @@ CLI работает в пяти режимах:
   - `CaseStore.delete_case()` — удаляет один кейс через SQLite cascade.
   - `CaseStore.load_case()`/`load_cases()` — возвращают case payloads для CLI/API/graph analytics.
 - `osint_toolkit/cli.py`
-  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `search`, `profiles`, `adapters`, `adapter-profiles`, `adapter-setup`, `doctor`, `run-adapter`, `toolbox`, `investigate`, `cases`, `case-show`, `case-update`, `case-delete`, `case-graph`, `case-index`, `case-path`, `case-network`, `recommend`, `brief`.
+  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `search`, `profiles`, `adapters`, `adapter-profiles`, `adapter-setup`, `doctor`, `tools doctor/install-plan/install/env`, `run-adapter`, `toolbox`, `investigate`, `cases`, `case-show`, `case-update`, `case-delete`, `case-graph`, `case-index`, `case-path`, `case-network`, `recommend`, `brief`.
 
 ## Как система работает end-to-end
 
@@ -454,6 +454,7 @@ External adapters должны подключать upstream CLI/API без ко
 - `profiles export <profile> --out <path> [--profile-file]` — экспорт одного profile в reusable JSON-wrapper `{"profiles": [...]}`.
 - `tools doctor --profile [--profile-file]` — readiness по adapters и local tools search-профиля.
 - `tools install-plan --profile [--profile-file]` — install/config actions по missing/config tools без автоматической установки; excluded/restricted adapters не выдаются как обычные install actions.
+- `tools install <profile> [--profile-file] [--execute]` — profile-aware installer layer: dry-run по умолчанию; `--execute` запускает только allowlisted install commands из manifest (`pipx`, `go`, `winget`, `choco`) для `missing`, а `config_missing`/`runtime_error`/manual/restricted steps остаются ручными действиями.
 - `tools env --profile [--profile-file]` — только имена required/optional env variables, без значений.
 - Windows runtime env refresh — при запуске CLI и при toolbox `/api/tools` перечитываются user/machine `PATH` и известные OSINT env variable names; значения текущего процесса остаются приоритетными для явных override.
 - `scan --live` — явное разрешение сетевых проверок.
@@ -530,6 +531,7 @@ python -m osint_toolkit profiles export email-full --out profiles\email-full.jso
 python -m osint_toolkit tools doctor --profile all-safe --format markdown
 python -m osint_toolkit tools doctor --profile case-email-safe --profile-file profiles\case_profiles.json --format markdown
 python -m osint_toolkit tools install-plan --profile image-full --format markdown
+python -m osint_toolkit tools install all-safe --format markdown
 python -m osint_toolkit tools env --profile email-full --format json
 python -m osint_toolkit catalog --kind people --direct-only --limit 10
 python -m osint_toolkit scan person "Ivan Petrenko" --limit 10
@@ -661,7 +663,7 @@ osint-toolkit stats
 - Case management intentionally narrow: `case-update` и `/api/cases/<id>/update` меняют только title/scope_note, а `case-delete` и `/api/cases/<id>/delete` требуют явного подтверждения; нет bulk delete, raw SQL editor или редактирования saved findings/entities/edges из UI.
 - `search --execute-adapters` запускает только ready non-restricted external adapters. Для image targets он запускает ready local tools и маршрутизирует derived seeds; face recognition и identity-by-face matching не реализуются.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
-- Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
+- Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установка вынесена в отдельный `tools install <profile>` слой и не смешивается с запуском расследования.
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL. Для BBOT readiness дополнительно делает non-network dry-run runtime probe, потому что help/version могут работать даже когда Scanner startup падает на native Windows из-за POSIX-only зависимостей вроде `fcntl`.
 - Adapter manifest теперь включает generated CSV/TXT folder template для `sherlock-project/sherlock`, isolated workdir TXT ingestion для `thewhiteh4t/nexfil`, generated JSON-file templates для `alpkeskin/mosint`, `h8mail`, `iojw/socialscan` и `laramies/theHarvester`, generated JSON-report folder template для `soxoj/maigret`, generated JSON/NDJSON output folder templates для `blacklanternsecurity/bbot` и `blacklanternsecurity/bbot-passive-web`, generated Yark archive workdir template для `Owez/yark`, required-env Python script template для `smicallef/spiderfoot`, interactive stdin template для `jasonxtn/argus`, target-specific executable templates для `user-scanner`, region-aware template для `snooppr/snoop`, required-env Node template для `qeeqbox/social-analyzer`, checkout/results template для `p1ngul1n0/blackbird`, DetectDee output-file template с `DETECTDEE_DATA`, safe pwnedOrNot `-n` template и executable template для `sundowndev/phoneinfoga`; более сложные adapters могут потребовать richer per-mode config.
 - Adapter parser покрывает общие URL/email/phone/key-value patterns, Sherlock stdout/CSV/TXT reports, Nexfil stdout/TXT reports, Mosint JSON reports, h8mail JSON reports, pwnedOrNot stdout, Maigret JSON/CSV reports с richer dossier/site metadata, `user-scanner` JSON/verbose output, Snoop stdout/CSV output, Social Analyzer JSON output, Socialscan generated JSON availability/usage output, Blackbird JSON/stdout output, PhoneInfoga CLI/API output, domain-recon adapters Subfinder/httpx/passive Amass/theHarvester с сохранением source attribution для поддержанных JSON shapes, BBOT baseline/passive-web events, SpiderFoot events включая phone/email/username target fixtures, DetectDee generated result/stdout, Argus stdout/cache-like output включая domain/email/phone/username target fixtures и Yark generated `yark.json` archive output; сложные JSON/CSV/HTML exports остальных upstream ещё не разобраны.
@@ -767,6 +769,7 @@ osint-toolkit stats
 - 2026-06-25: ExifTool local image route переведён на JSON output; parser извлекает camera/GPS/date/source metadata, contact/profile clues и derived seeds для unified search.
 - 2026-06-25: Tesseract OCR stdout и zbarimg raw payloads получили local image parsers: decoded text/QR clues нормализуются в structured findings и derived seeds.
 - 2026-06-25: добавлен `tools doctor/install-plan/env --profile`: profile-level readiness, install/config actions и безопасный вывод env variable names без значений.
+- 2026-06-25: добавлен `tools install <profile>`: dry-run installer view и explicit `--execute` для allowlisted missing tools (`pipx`, `go`, `winget`, `choco`), без автозапуска config/runtime/manual/restricted steps.
 - 2026-06-25: добавлен `toolbox --serve`: локальный token-protected backend для запуска queued unified `search` jobs из HTML-пульта, с logs/status/report endpoints и ограничением output paths рабочей папкой backend.
 - 2026-06-25: добавлен `--profile-file` для `search` и `tools doctor/install-plan/env`: custom search profiles загружаются из JSON, валидируются и участвуют в fan-out planning/readiness без изменения built-in profiles.
 - 2026-06-25: добавлена команда `profiles list/show/export`: built-in и custom search profiles можно просматривать и экспортировать в reusable JSON без чтения кода.

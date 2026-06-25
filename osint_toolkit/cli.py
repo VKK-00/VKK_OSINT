@@ -57,8 +57,10 @@ from .search import (
 from .toolbox import write_toolbox
 from .tools import (
     build_profile_tool_readiness,
+    build_tool_install_results,
     format_env_plan,
     format_install_plan,
+    format_tool_install_results,
     format_tool_readiness,
 )
 from .workflows import TASK_PROFILES, recommend_projects, render_brief, render_recommendation, write_brief
@@ -168,6 +170,14 @@ def build_parser() -> argparse.ArgumentParser:
     tools_install.add_argument("--profile-file", help="JSON file with custom search profiles.")
     tools_install.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     tools_install.set_defaults(handler=handle_tools_install_plan)
+
+    tools_install_run = tools_subparsers.add_parser("install", help="Install missing allowlisted tools for a search profile.")
+    tools_install_run.add_argument("profile")
+    tools_install_run.add_argument("--profile-file", help="JSON file with custom search profiles.")
+    tools_install_run.add_argument("--execute", action="store_true", help="Actually run allowlisted install commands. Default is dry-run.")
+    tools_install_run.add_argument("--timeout", type=float, default=300.0)
+    tools_install_run.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
+    tools_install_run.set_defaults(handler=handle_tools_install)
 
     tools_env = tools_subparsers.add_parser("env", help="Show required and optional env variable names for a search profile.")
     tools_env.add_argument("--profile", required=True)
@@ -441,6 +451,16 @@ def handle_tools_install_plan(args: argparse.Namespace) -> int:
     custom_profiles = load_search_profiles(args.profile_file)
     rows = build_profile_tool_readiness(args.profile, custom_profiles=custom_profiles)
     print(format_install_plan(rows, output_format=args.format))
+    return 0
+
+
+def handle_tools_install(args: argparse.Namespace) -> int:
+    custom_profiles = load_search_profiles(args.profile_file)
+    rows = build_profile_tool_readiness(args.profile, custom_profiles=custom_profiles)
+    results = build_tool_install_results(rows, execute=args.execute, timeout=args.timeout)
+    print(format_tool_install_results(results, output_format=args.format))
+    if args.execute and any(result.status == "failed" for result in results):
+        return 1
     return 0
 
 

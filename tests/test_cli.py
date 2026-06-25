@@ -1193,6 +1193,15 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("megadose/ignorant", result.stdout)
 
+    def test_tools_install_profile_is_dry_run(self):
+        result = self.run_cli("tools", "install", "phone-full", "--format", "json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+
+        self.assertIsInstance(payload, list)
+        self.assertFalse(any(row["name"] == "megadose/ignorant" for row in payload))
+        self.assertFalse(any(row["status"] == "installed" for row in payload))
+
     def test_tools_env_profile_shows_names_only(self):
         result = self.run_cli("tools", "env", "--profile", "email-full", "--format", "json")
         self.assertEqual(result.returncode, 0, result.stderr)

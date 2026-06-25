@@ -4,11 +4,17 @@ import csv
 import io
 import json
 import shutil
+import shlex
+import subprocess
 from dataclasses import dataclass
 
 from .adapter_setup import build_adapter_setup
 from .adapters import expand_adapter_repositories, find_adapter
 from .search import LOCAL_TOOLS, SearchProfile, find_search_profile
+
+INSTALLABLE_READINESS = {"missing"}
+SKIPPED_READINESS = {"ready", "excluded", "restricted"}
+ALLOWED_INSTALL_EXECUTABLES = {"pipx", "go", "winget", "choco"}
 
 
 @dataclass(frozen=True)
@@ -42,6 +48,34 @@ class ToolReadiness:
             "missing_env": list(self.missing_env),
             "optional_env": list(self.optional_env),
             "readiness_note": self.readiness_note,
+        }
+
+
+@dataclass(frozen=True)
+class ToolInstallResult:
+    kind: str
+    name: str
+    readiness: str
+    action: str
+    status: str
+    command: str = ""
+    note: str = ""
+    returncode: int | None = None
+    docs_url: str = ""
+    required_env: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "kind": self.kind,
+            "name": self.name,
+            "readiness": self.readiness,
+            "action": self.action,
+            "status": self.status,
+            "command": self.command,
+            "note": self.note,
+            "returncode": self.returncode,
+            "docs_url": self.docs_url,
+            "required_env": list(self.required_env),
         }
 
 
@@ -97,6 +131,84 @@ def build_profile_tool_readiness(
             )
         )
     return tuple(rows)
+
+
+def build_tool_install_results(
+    rows: tuple[ToolReadiness, ...],
+    *,
+    execute: bool = False,
+    timeout: float = 300.0,
+) -> tuple[ToolInstallResult, ...]:
+    results = tuple(_tool_install_result(row) for row in rows if row.readiness not in SKIPPED_READINESS)
+    if not execute:
+        return results
+    executed: list[ToolInstallResult] = []
+    for result in results:
+        if result.status != "planned":
+            executed.append(result)
+            continue
+        executed.append(_execute_install_result(result, timeout=timeout))
+    return tuple(executed)
+
+
+def format_tool_install_results(
+    results: tuple[ToolInstallResult, ...],
+    *,
+    output_format: str = "table",
+) -> str:
+    if output_format == "json":
+        return json.dumps([row.to_dict() for row in results], ensure_ascii=False, indent=2)
+    if output_format == "csv":
+        buffer = io.StringIO()
+        writer = csv.DictWriter(
+            buffer,
+            fieldnames=(
+                "kind",
+                "name",
+                "readiness",
+                "action",
+                "status",
+                "command",
+                "note",
+                "returncode",
+                "required_env",
+                "docs_url",
+            ),
+            lineterminator="\n",
+        )
+        writer.writeheader()
+        for row in results:
+            payload = row.to_dict()
+            payload["required_env"] = ", ".join(row.required_env)
+            writer.writerow(payload)
+        return buffer.getvalue().strip()
+    if output_format == "markdown":
+        lines = [
+            "| Kind | Name | Readiness | Action | Status | Command | Note |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for row in results:
+            lines.append(
+                f"| {row.kind} | {_escape(row.name)} | {row.readiness} | {row.action} | {row.status} | "
+                f"{_escape(row.command or '-')} | {_escape(row.note or '-')} |"
+            )
+        return "\n".join(lines)
+    if output_format == "table":
+        return _table(
+            ("Kind", "Name", "Ready", "Action", "Status", "Command / note"),
+            [
+                (
+                    row.kind,
+                    _short(row.name, 34),
+                    row.readiness,
+                    row.action,
+                    row.status,
+                    _short(row.command or row.note or "-", 76),
+                )
+                for row in results
+            ],
+        )
+    raise ValueError(f"Unsupported output format: {output_format}")
 
 
 def format_tool_readiness(rows: tuple[ToolReadiness, ...], *, output_format: str = "table") -> str:
@@ -278,6 +390,128 @@ def _install_row(row: ToolReadiness) -> dict[str, str]:
 
 def _tool_action(row: ToolReadiness) -> str:
     return row.readiness_note or row.install_command or row.install_note or row.install_kind or "Review upstream docs."
+
+
+def _tool_install_result(row: ToolReadiness) -> ToolInstallResult:
+    if row.readiness in INSTALLABLE_READINESS and row.install_command:
+        command_args = _command_args(row.install_command)
+        if command_args and command_args[0].lower() in ALLOWED_INSTALL_EXECUTABLES:
+            return ToolInstallResult(
+                kind=row.kind,
+                name=row.name,
+                readiness=row.readiness,
+                action="install",
+                status="planned",
+                command=row.install_command,
+                note="Dry-run. Add --execute to run this allowlisted install command.",
+                docs_url=row.docs_url,
+                required_env=row.required_env,
+            )
+        return ToolInstallResult(
+            kind=row.kind,
+            name=row.name,
+            readiness=row.readiness,
+            action="manual-install",
+            status="manual",
+            command=row.install_command,
+            note="Install command is not in the allowlist; review upstream docs before running it.",
+            docs_url=row.docs_url,
+            required_env=row.required_env,
+        )
+    if row.readiness == "config_missing":
+        return ToolInstallResult(
+            kind=row.kind,
+            name=row.name,
+            readiness=row.readiness,
+            action="configure-env",
+            status="manual",
+            note=f"Set required environment variable name(s): {', '.join(row.missing_env or row.required_env)}",
+            docs_url=row.docs_url,
+            required_env=row.required_env,
+        )
+    if row.readiness in {"wrong_executable", "runtime_error"}:
+        note = row.readiness_note or row.install_note or "Executable is present but is not currently runnable."
+        return ToolInstallResult(
+            kind=row.kind,
+            name=row.name,
+            readiness=row.readiness,
+            action="fix-runtime",
+            status="skipped",
+            note=_short(note, 500),
+            docs_url=row.docs_url,
+            required_env=row.required_env,
+        )
+    return ToolInstallResult(
+        kind=row.kind,
+        name=row.name,
+        readiness=row.readiness,
+        action="review",
+        status="manual",
+        command=row.install_command,
+        note=_tool_action(row),
+        docs_url=row.docs_url,
+        required_env=row.required_env,
+    )
+
+
+def _execute_install_result(result: ToolInstallResult, *, timeout: float) -> ToolInstallResult:
+    args = _command_args(result.command)
+    if not args:
+        return _replace_install_result(result, status="failed", note="Install command could not be parsed.", returncode=2)
+    try:
+        completed = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return _replace_install_result(result, status="failed", note=f"Install command failed to start: {exc}", returncode=2)
+    if completed.returncode == 0:
+        return _replace_install_result(
+            result,
+            status="installed",
+            note="Install command completed. Re-run tools doctor to verify readiness.",
+            returncode=0,
+        )
+    output = _short(" ".join(part for part in (completed.stdout, completed.stderr) if part), 500)
+    return _replace_install_result(
+        result,
+        status="failed",
+        note=output or "Install command failed without output.",
+        returncode=completed.returncode,
+    )
+
+
+def _replace_install_result(
+    result: ToolInstallResult,
+    *,
+    status: str,
+    note: str,
+    returncode: int | None,
+) -> ToolInstallResult:
+    return ToolInstallResult(
+        kind=result.kind,
+        name=result.name,
+        readiness=result.readiness,
+        action=result.action,
+        status=status,
+        command=result.command,
+        note=note,
+        returncode=returncode,
+        docs_url=result.docs_url,
+        required_env=result.required_env,
+    )
+
+
+def _command_args(command: str) -> tuple[str, ...]:
+    if not command.strip():
+        return ()
+    try:
+        return tuple(shlex.split(command, posix=False))
+    except ValueError:
+        return ()
 
 
 def _rows_csv(rows: tuple[ToolReadiness, ...]) -> str:

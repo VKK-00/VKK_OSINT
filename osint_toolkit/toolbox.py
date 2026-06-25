@@ -659,6 +659,13 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     note="Команда ничего не устанавливает автоматически.",
                 ),
                 ToolboxCommand(
+                    "Profile install dry-run",
+                    "Показывает, какие allowlisted install commands можно выполнить для missing tools.",
+                    "python -m osint_toolkit tools install all-safe --format markdown",
+                    badges=("tools", "install"),
+                    note="Для реального запуска добавь --execute; runtime_error/config/manual steps не запускаются автоматически.",
+                ),
+                ToolboxCommand(
                     "Profile env names",
                     "Показывает required/optional env variable names без значений.",
                     "python -m osint_toolkit tools env --profile all-safe --format markdown",

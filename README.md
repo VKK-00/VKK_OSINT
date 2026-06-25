@@ -148,6 +148,7 @@ python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full 
 python -m osint_toolkit search phone +380441234567 --profile phone-full --include-restricted --plan-only --format json
 python -m osint_toolkit tools doctor --profile all-safe --format markdown
 python -m osint_toolkit tools install-plan --profile image-full --format markdown
+python -m osint_toolkit tools install all-safe --format markdown
 python -m osint_toolkit tools env --profile email-full --format json
 ```
 
@@ -205,7 +206,7 @@ python -m osint_toolkit tools install-plan --profile phone-full --format markdow
 python -m osint_toolkit tools env --profile email-full --format json
 ```
 
-`tools doctor` показывает readiness adapters и local tools по профилю. `tools install-plan` генерирует install/config actions для missing/config tools, но ничего не устанавливает автоматически и не предлагает excluded/restricted adapters как обычную установку. `tools env` выводит только имена required/optional env variables, без значений.
+`tools doctor` показывает readiness adapters и local tools по профилю. `tools install-plan` генерирует install/config actions для missing/config tools, но ничего не устанавливает автоматически и не предлагает excluded/restricted adapters как обычную установку. `tools install <profile>` делает такой же profile-aware проход, по умолчанию показывает dry-run, а с `--execute` запускает только allowlisted install commands из manifest (`pipx`, `go`, `winget`, `choco`) для статуса `missing`; `config_missing`, `runtime_error`, manual и restricted steps остаются ручными действиями. `tools env` выводит только имена required/optional env variables, без значений.
 
 На Windows CLI и served toolbox автоматически перечитывают user/machine `PATH` и известные OSINT env variable names из системного окружения. Это нужно, чтобы только что установленные через `pipx`, Go или portable folders инструменты не отображались как `missing` в уже открытом терминале.
 
