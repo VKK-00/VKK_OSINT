@@ -454,6 +454,8 @@ class InvestigationTests(unittest.TestCase):
         def fake_run(args, **kwargs):
             if tuple(args) == ("bbot", "-h"):
                 return subprocess.CompletedProcess(args=args, returncode=0, stdout="bbot usage\n  -t TARGET\n  -p PRESET\n", stderr="")
+            if tuple(args) == ("bbot", "-t", "example.com", "-p", "subdomain-enum", "-rf", "passive", "--dry-run", "-y"):
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="dry run ok\n", stderr="")
             output_dir = Path(args[args.index("--output") + 1])
             scan_dir = output_dir / "osint-toolkit"
             scan_dir.mkdir(parents=True, exist_ok=True)

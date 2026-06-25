@@ -215,7 +215,16 @@ SEARCH_PROFILES: tuple[SearchProfile, ...] = (
         description="All currently non-restricted native modules, adapter profiles and local image tools.",
         target_kinds=TARGET_KINDS,
         native_kinds=("person", "username", "email", "phone", "domain", "url", "telegram", "instagram", "social", "ru-ua"),
-        adapter_profiles=("username-full", "username-ru-ua", "email-safe", "phone-safe", "url-archive", "domain-recon", "broad-recon"),
+        adapter_profiles=(
+            "username-full",
+            "username-ru-ua",
+            "email-safe",
+            "phone-safe",
+            "url-archive",
+            "domain-recon",
+            "bbot-passive-web",
+            "broad-recon",
+        ),
         adapter_repositories=("Yvesssn/DetectDee",),
         local_tools=("powershell-file-baseline", "exiftool", "imagemagick-identify", "tesseract-ocr", "zbarimg"),
         derived_target_kinds=("domain", "username"),
@@ -284,7 +293,7 @@ SEARCH_PROFILES: tuple[SearchProfile, ...] = (
         description="Domain/URL native recon plus passive and broad recon adapters.",
         target_kinds=("domain", "url"),
         native_kinds=("domain", "url"),
-        adapter_profiles=("domain-recon", "broad-recon", "url-archive"),
+        adapter_profiles=("domain-recon", "bbot-passive-web", "broad-recon", "url-archive"),
         derived_target_kinds=("domain",),
     ),
     SearchProfile(
@@ -894,6 +903,8 @@ def _adapter_reason(setup: AdapterSetup) -> str:
         return "Adapter executable is available but required environment variables are missing."
     if setup.readiness == "wrong_executable":
         return setup.readiness_note or "Executable is available but does not match the expected upstream CLI."
+    if setup.readiness == "runtime_error":
+        return setup.readiness_note or "Executable is available but failed a non-network runtime probe."
     if setup.readiness == "restricted":
         return "Adapter is restricted and is not part of normal fan-out execution."
     return "Adapter has no executable command configured yet."

@@ -434,6 +434,17 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     required_inputs=("domain", "adapter_limit", "out"),
                     badges=("broad-recon", "scope review"),
                 ),
+                ToolboxCommand(
+                    "BBOT passive web",
+                    "BBOT subdomain-enum + web-basic, но только passive modules и без active/deadly/portscan/screenshots.",
+                    (
+                        "python -m osint_toolkit investigate --domain {domain} "
+                        "--include-adapters --adapter-profile bbot-passive-web "
+                        "--adapter-limit {adapter_limit} --out {out}"
+                    ),
+                    required_inputs=("domain", "adapter_limit", "out"),
+                    badges=("bbot-passive-web", "passive"),
+                ),
             ),
         ),
         ToolboxSection(

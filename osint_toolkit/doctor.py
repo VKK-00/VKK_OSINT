@@ -21,8 +21,8 @@ def _adapter_to_finding(adapter: AdapterSpec) -> Finding:
         status = "not_configured"
         confidence = "high"
         evidence = setup.install_note or "No executable command template is configured yet."
-    elif setup.readiness == "wrong_executable":
-        status = "wrong_executable"
+    elif setup.readiness in {"wrong_executable", "runtime_error"}:
+        status = setup.readiness
         confidence = "high"
         setup_hint = setup.install_command or setup.install_note
         install_hint = f" Setup: {setup_hint}" if setup_hint else ""

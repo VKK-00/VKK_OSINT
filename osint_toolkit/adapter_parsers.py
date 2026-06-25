@@ -67,6 +67,7 @@ PARSER_REPOSITORIES = {
     "owasp-amass/amass",
     "laramies/theHarvester",
     "blacklanternsecurity/bbot",
+    "blacklanternsecurity/bbot-passive-web",
     "smicallef/spiderfoot",
     "jasonxtn/argus",
     "Owez/yark",
@@ -134,7 +135,7 @@ def parse_adapter_output(
         return _amass_findings(repository, target, text)
     if repository == "laramies/theHarvester":
         return _theharvester_findings(repository, target, text)
-    if repository == "blacklanternsecurity/bbot":
+    if repository in {"blacklanternsecurity/bbot", "blacklanternsecurity/bbot-passive-web"}:
         return _bbot_findings(repository, target, text)
     if repository == "smicallef/spiderfoot":
         return _spiderfoot_findings(repository, target, text)

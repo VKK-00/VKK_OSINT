@@ -411,12 +411,12 @@ Profile fields:
 
 Приоритет 2:
 
-- BBOT broader passive presets with explicit profile.
 - theHarvester API-source attribution.
 
 Done:
 
 - Maigret richer dossier fields: site metadata, probe URL, rank/similarity flags, extracted contact/profile fields, activity counters, external/profile image URLs and related usernames now normalize into unified metadata/entities/graph signals.
+- BBOT broader passive preset: added explicit `bbot-passive-web` profile and `blacklanternsecurity/bbot-passive-web` adapter variant for `subdomain-enum web-basic` constrained by `-rf passive` and `-ef active aggressive deadly portscan web-screenshots`.
 
 ## Unified output model
 

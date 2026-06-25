@@ -258,6 +258,9 @@ class SearchPlanTests(unittest.TestCase):
         self.assertEqual(sources["derive domain"].target_value, "sub.example.com")
         self.assertEqual(sources["scan domain"].target_value, "sub.example.com")
         self.assertIn("projectdiscovery/subfinder", sources)
+        self.assertIn("blacklanternsecurity/bbot-passive-web", sources)
+        self.assertIn("web-basic", sources["blacklanternsecurity/bbot-passive-web"].command)
+        self.assertIn("-rf passive", sources["blacklanternsecurity/bbot-passive-web"].command)
         self.assertIn("url", native_kinds_for_plan(plan))
         self.assertIn("domain", native_kinds_for_plan(plan))
 

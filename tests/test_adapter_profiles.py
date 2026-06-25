@@ -27,6 +27,8 @@ class AdapterProfileTests(unittest.TestCase):
         self.assertIn("laramies/theHarvester", profiles["domain-recon"].repositories)
         self.assertIn("blacklanternsecurity/bbot", profiles["domain-recon"].repositories)
         self.assertIn("smicallef/spiderfoot", profiles["domain-recon"].repositories)
+        self.assertIn("bbot-passive-web", profiles)
+        self.assertIn("blacklanternsecurity/bbot-passive-web", profiles["bbot-passive-web"].repositories)
         self.assertIn("blacklanternsecurity/bbot", profiles["broad-recon"].repositories)
         self.assertIn("smicallef/spiderfoot", profiles["broad-recon"].repositories)
         self.assertIn("jasonxtn/argus", profiles["broad-recon"].repositories)

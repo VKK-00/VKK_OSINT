@@ -982,6 +982,18 @@ class AdapterParserTests(unittest.TestCase):
         self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings))
         self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings))
 
+    def test_parse_bbot_passive_web_alias_uses_bbot_parser(self):
+        findings = parse_adapter_output(
+            "blacklanternsecurity/bbot-passive-web",
+            ScanTarget(kind="domain", value="example.com"),
+            '{"type":"URL","data":"https://www.example.com/login","module":"httpx","scope_description":"in-scope"}',
+        )
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].url, "https://www.example.com/login")
+        self.assertEqual(findings[0].metadata["parser"], "bbot")
+        self.assertEqual(findings[0].metadata["repository"], "blacklanternsecurity/bbot-passive-web")
+
     def test_parse_spiderfoot_json_events(self):
         findings = parse_adapter_output(
             "smicallef/spiderfoot",
@@ -1875,6 +1887,8 @@ class AdapterParserTests(unittest.TestCase):
         def fake_run(args, **kwargs):
             if tuple(args) == ("bbot", "-h"):
                 return subprocess.CompletedProcess(args=args, returncode=0, stdout="bbot usage\n  -t TARGET\n  -p PRESET\n", stderr="")
+            if tuple(args) == ("bbot", "-t", "example.com", "-p", "subdomain-enum", "-rf", "passive", "--dry-run", "-y"):
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="dry run ok\n", stderr="")
             self.assertEqual(args[:7], ["bbot", "-t", "example.com", "-p", "subdomain-enum", "-rf", "passive"])
             output_dir = Path(args[args.index("--output") + 1])
             scan_dir = output_dir / "osint-toolkit"
@@ -1903,6 +1917,74 @@ class AdapterParserTests(unittest.TestCase):
         self.assertTrue(any(finding.metadata.get("parser") == "bbot" for finding in findings[1:]))
         self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
         self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings[1:]))
+        self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings[1:]))
+
+    def test_run_bbot_passive_web_adapter_uses_broader_passive_command(self):
+        def fake_run(args, **kwargs):
+            if tuple(args) == ("bbot", "-h"):
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="bbot usage\n  -t TARGET\n  -p PRESET\n  -rf FLAG\n  -ef FLAG\n", stderr="")
+            if tuple(args) == (
+                "bbot",
+                "-t",
+                "example.com",
+                "-p",
+                "subdomain-enum",
+                "web-basic",
+                "-rf",
+                "passive",
+                "-ef",
+                "active",
+                "aggressive",
+                "deadly",
+                "portscan",
+                "web-screenshots",
+                "--dry-run",
+                "-y",
+            ):
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="dry run ok\n", stderr="")
+            self.assertEqual(
+                args[:15],
+                [
+                    "bbot",
+                    "-t",
+                    "example.com",
+                    "-p",
+                    "subdomain-enum",
+                    "web-basic",
+                    "-rf",
+                    "passive",
+                    "-ef",
+                    "active",
+                    "aggressive",
+                    "deadly",
+                    "portscan",
+                    "web-screenshots",
+                    "--output",
+                ],
+            )
+            output_dir = Path(args[args.index("--output") + 1])
+            scan_dir = output_dir / "osint-toolkit"
+            scan_dir.mkdir(parents=True, exist_ok=True)
+            (scan_dir / "output.json").write_text(
+                '{"type":"URL","data":"https://www.example.com/login","module":"httpx","scope_description":"in-scope"}\n',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="Scan complete\n", stderr="")
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="bbot"), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            findings = run_adapter_findings(
+                "blacklanternsecurity/bbot-passive-web",
+                ScanTarget(kind="domain", value="example.com"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertIn("web-basic", findings[0].metadata["command"])
+        self.assertIn("-ef active aggressive deadly portscan web-screenshots", findings[0].metadata["command"])
+        self.assertTrue(any(finding.metadata.get("parser") == "bbot" for finding in findings[1:]))
         self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings[1:]))
 
     def test_run_user_scanner_adapter_adds_parsed_json_results_after_execution(self):

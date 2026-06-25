@@ -239,6 +239,7 @@ class AdapterSetupTests(unittest.TestCase):
         amass = find_adapter("owasp-amass/amass")
         theharvester = find_adapter("laramies/theHarvester")
         bbot = find_adapter("blacklanternsecurity/bbot")
+        bbot_passive_web = find_adapter("blacklanternsecurity/bbot-passive-web")
         spiderfoot = find_adapter("smicallef/spiderfoot")
         argus = find_adapter("jasonxtn/argus")
 
@@ -269,8 +270,30 @@ class AdapterSetupTests(unittest.TestCase):
             bbot.render_command(ScanTarget(kind="username", value="@example_user")),
             ("bbot", "-t", "USER:example_user", "-p", "subdomain-enum", "-rf", "passive"),
         )
+        self.assertEqual(
+            bbot_passive_web.render_command(ScanTarget(kind="domain", value="example.com")),
+            (
+                "bbot",
+                "-t",
+                "example.com",
+                "-p",
+                "subdomain-enum",
+                "web-basic",
+                "-rf",
+                "passive",
+                "-ef",
+                "active",
+                "aggressive",
+                "deadly",
+                "portscan",
+                "web-screenshots",
+            ),
+        )
+        self.assertEqual(bbot_passive_web.render_command(ScanTarget(kind="username", value="@example_user")), ())
         self.assertEqual(bbot.render_output_dir_args("C:\\tmp\\bbot"), ("--output", "C:\\tmp\\bbot", "--name", "osint-toolkit"))
         self.assertEqual(bbot.generated_output_patterns, ("*.json",))
+        self.assertEqual(bbot_passive_web.render_output_dir_args("C:\\tmp\\bbot"), ("--output", "C:\\tmp\\bbot", "--name", "osint-toolkit"))
+        self.assertEqual(bbot_passive_web.generated_output_patterns, ("*.json",))
 
         with patch.dict(os.environ, {"SPIDERFOOT_SF_PATH": "C:\\tools\\spiderfoot\\sf.py"}):
             self.assertEqual(
@@ -337,6 +360,13 @@ class AdapterSetupTests(unittest.TestCase):
         self.assertEqual(bbot_setup.readiness, "missing")
         self.assertEqual(bbot_setup.install_kind, "pipx")
         self.assertEqual(bbot_setup.install_command, "pipx install bbot")
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
+            bbot_passive_web_setup = build_adapter_setup(find_adapter("blacklanternsecurity/bbot-passive-web"))
+
+        self.assertEqual(bbot_passive_web_setup.readiness, "missing")
+        self.assertEqual(bbot_passive_web_setup.install_kind, "pipx")
+        self.assertEqual(bbot_passive_web_setup.install_command, "pipx install bbot")
 
         with patch.dict(os.environ, {}, clear=True), patch("osint_toolkit.adapter_setup.shutil.which", return_value="C:\\Python\\python.exe"):
             spiderfoot_missing_config = build_adapter_setup(spiderfoot)
@@ -480,7 +510,61 @@ class AdapterSetupTests(unittest.TestCase):
             setup = build_adapter_setup(adapter)
 
         self.assertEqual(setup.readiness, "ready")
+        self.assertEqual(run_probe.call_count, 2)
         self.assertEqual(run_probe.call_args.kwargs["timeout"], 15.0)
+
+    def test_runtime_probe_reports_bbot_startup_failure(self):
+        adapter = find_adapter("blacklanternsecurity/bbot")
+        bbot_help = subprocess.CompletedProcess(
+            args=("bbot", "-h"),
+            returncode=0,
+            stdout="usage: bbot\n  -t TARGET\n  -p PRESET\n",
+            stderr="",
+        )
+        bbot_dry_run_failure = subprocess.CompletedProcess(
+            args=("bbot", "-t", "example.com", "-p", "subdomain-enum", "-rf", "passive", "--dry-run", "-y"),
+            returncode=1,
+            stdout="",
+            stderr="ModuleNotFoundError: No module named 'fcntl'",
+        )
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value="C:\\tools\\bbot.exe"), patch(
+            "osint_toolkit.adapter_probe.subprocess.run",
+            side_effect=(bbot_help, bbot_dry_run_failure),
+        ):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "runtime_error")
+        self.assertIn("non-network dry-run probe", setup.readiness_note)
+        self.assertIn("fcntl", setup.readiness_note)
+
+    def test_bbot_execute_stops_when_runtime_probe_fails(self):
+        bbot_help = subprocess.CompletedProcess(
+            args=("bbot", "-h"),
+            returncode=0,
+            stdout="usage: bbot\n  -t TARGET\n  -p PRESET\n",
+            stderr="",
+        )
+        bbot_dry_run_failure = subprocess.CompletedProcess(
+            args=("bbot", "-t", "example.com", "-p", "subdomain-enum", "-rf", "passive", "--dry-run", "-y"),
+            returncode=1,
+            stdout="",
+            stderr="ModuleNotFoundError: No module named 'fcntl'",
+        )
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="bbot"), patch(
+            "osint_toolkit.adapter_probe.subprocess.run",
+            side_effect=(bbot_help, bbot_dry_run_failure),
+        ):
+            findings = run_adapter_findings(
+                "blacklanternsecurity/bbot",
+                ScanTarget(kind="domain", value="example.com"),
+                execute=True,
+            )
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].status, "runtime_error")
+        self.assertIn("fcntl", findings[0].evidence)
 
     def test_detectdee_setup_uses_target_specific_commands_and_data_file(self):
         adapter = find_adapter("Yvesssn/DetectDee")
@@ -546,6 +630,31 @@ class AdapterSetupTests(unittest.TestCase):
         self.assertEqual(sherlock.status, "missing")
         self.assertIn("pipx install sherlock-project", sherlock.evidence)
         self.assertEqual(sherlock.metadata["install_kind"], "pipx")
+
+    def test_doctor_reports_runtime_error_when_probe_fails(self):
+        bbot_help = subprocess.CompletedProcess(
+            args=("bbot", "-h"),
+            returncode=0,
+            stdout="usage: bbot\n  -t TARGET\n  -p PRESET\n",
+            stderr="",
+        )
+        bbot_dry_run_failure = subprocess.CompletedProcess(
+            args=("bbot", "-t", "example.com", "-p", "subdomain-enum", "-rf", "passive", "--dry-run", "-y"),
+            returncode=1,
+            stdout="",
+            stderr="ModuleNotFoundError: No module named 'fcntl'",
+        )
+
+        with patch("osint_toolkit.doctor.ADAPTERS", (find_adapter("blacklanternsecurity/bbot"),)), patch(
+            "osint_toolkit.adapter_setup.shutil.which",
+            return_value="C:\\tools\\bbot.exe",
+        ), patch("osint_toolkit.adapter_probe.subprocess.run", side_effect=(bbot_help, bbot_dry_run_failure)):
+            findings = inspect_adapters("planned")
+
+        bbot = next(finding for finding in findings if finding.source == "blacklanternsecurity/bbot")
+        self.assertEqual(bbot.status, "runtime_error")
+        self.assertIn("fcntl", bbot.evidence)
+        self.assertEqual(bbot.metadata["setup_readiness"], "runtime_error")
 
 
 if __name__ == "__main__":

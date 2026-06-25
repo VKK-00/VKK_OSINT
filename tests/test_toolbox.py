@@ -23,6 +23,7 @@ class ToolboxTests(unittest.TestCase):
         self.assertIn("username-full", html)
         self.assertIn("email-safe", html)
         self.assertIn("domain-recon", html)
+        self.assertIn("bbot-passive-web", html)
         self.assertIn("python -m osint_toolkit search phone", html)
         self.assertIn("python -m osint_toolkit search email", html)
         self.assertIn("python -m osint_toolkit search image", html)

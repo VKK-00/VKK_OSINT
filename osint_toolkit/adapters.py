@@ -36,6 +36,8 @@ class AdapterSpec:
     generated_output_subdir: str = ""
     executable_probe_args: tuple[str, ...] = ()
     executable_probe_required: tuple[str, ...] = ()
+    executable_runtime_probe_args: tuple[str, ...] = ()
+    executable_runtime_probe_required: tuple[str, ...] = ()
     executable_probe_timeout: float = 2.0
 
     def to_dict(self) -> dict[str, str]:
@@ -66,6 +68,8 @@ class AdapterSpec:
             "generated_output_subdir": self.generated_output_subdir,
             "executable_probe_args": " ".join(self.executable_probe_args),
             "executable_probe_required": ", ".join(self.executable_probe_required),
+            "executable_runtime_probe_args": " ".join(self.executable_runtime_probe_args),
+            "executable_runtime_probe_required": ", ".join(self.executable_runtime_probe_required),
             "executable_probe_timeout": str(self.executable_probe_timeout),
         }
 
@@ -464,6 +468,59 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         generated_output_patterns=("*.json",),
         executable_probe_args=("-h",),
         executable_probe_required=("bbot", "-t", "-p"),
+        executable_runtime_probe_args=("-t", "example.com", "-p", "subdomain-enum", "-rf", "passive", "--dry-run", "-y"),
+        executable_probe_timeout=15.0,
+    ),
+    AdapterSpec(
+        "blacklanternsecurity/bbot-passive-web",
+        "broader passive BBOT web and subdomain preset",
+        "external_cli",
+        "GPL-3.0",
+        "planned",
+        "bbot -t <target> -p subdomain-enum web-basic -rf passive -ef active aggressive deadly portscan web-screenshots --output <dir> --name osint-toolkit",
+        "Explicit broader BBOT profile that combines subdomain-enum and web-basic while requiring passive modules and excluding active/aggressive/deadly/portscan/screenshot flags.",
+        ("domain", "url"),
+        (
+            "bbot",
+            "-t",
+            "{bbot_target}",
+            "-p",
+            "subdomain-enum",
+            "web-basic",
+            "-rf",
+            "passive",
+            "-ef",
+            "active",
+            "aggressive",
+            "deadly",
+            "portscan",
+            "web-screenshots",
+        ),
+        install_kind="pipx",
+        install_command=("pipx", "install", "bbot"),
+        install_note="Configure third-party API keys in upstream ~/.config/bbot/bbot.yml; this profile remains passive and excludes deadly/active modules.",
+        docs_url="https://www.blacklanternsecurity.com/bbot/",
+        generated_output_dir_args=("--output", "{output_dir}", "--name", "osint-toolkit"),
+        generated_output_patterns=("*.json",),
+        executable_probe_args=("-h",),
+        executable_probe_required=("bbot", "-t", "-p", "-rf", "-ef"),
+        executable_runtime_probe_args=(
+            "-t",
+            "example.com",
+            "-p",
+            "subdomain-enum",
+            "web-basic",
+            "-rf",
+            "passive",
+            "-ef",
+            "active",
+            "aggressive",
+            "deadly",
+            "portscan",
+            "web-screenshots",
+            "--dry-run",
+            "-y",
+        ),
         executable_probe_timeout=15.0,
     ),
     AdapterSpec(
@@ -768,6 +825,14 @@ ADAPTER_PROFILES: tuple[AdapterProfile, ...] = (
             "smicallef/spiderfoot",
         ),
         note="Default profile stays passive; active/bruteforce Amass, broader BBOT/SpiderFoot use cases and screenshot/API endpoint scans are separate scope decisions.",
+    ),
+    AdapterProfile(
+        name="bbot-passive-web",
+        title="BBOT passive web preset",
+        description="Broader BBOT subdomain and basic web preset constrained to passive modules.",
+        target_kinds=("domain", "url"),
+        repositories=("blacklanternsecurity/bbot-passive-web",),
+        note="Uses subdomain-enum plus web-basic, requires passive modules and excludes active/aggressive/deadly/portscan/screenshot flags.",
     ),
     AdapterProfile(
         name="broad-recon",
