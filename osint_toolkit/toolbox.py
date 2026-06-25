@@ -52,6 +52,7 @@ TOOLBOX_INPUTS: tuple[ToolboxInput, ...] = (
     ToolboxInput("adapter_limit", "Лимит adapters", "3", "number"),
     ToolboxInput("case_db", "SQLite case DB", "cases.sqlite"),
     ToolboxInput("case_id", "Case ID", "case-001"),
+    ToolboxInput("scope_note", "Scope note", "internal validation scope"),
     ToolboxInput("entity_kind", "Entity kind", "domain"),
     ToolboxInput("entity_value", "Entity value", "example.com"),
     ToolboxInput("out", "Файл отчета", "reports/case.md"),
@@ -85,7 +86,8 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     (
                         'python -m osint_toolkit search image "{image_path}" '
                         "--profile image-full --execute-adapters --adapter-limit {adapter_limit} "
-                        "--out {out} --case-db {case_db} --case-id {case_id}"
+                        "--out {out} --case-db {case_db} --case-id {case_id} "
+                        '[[--scope-note "{scope_note}"]]'
                     ),
                     required_inputs=("image_path", "adapter_limit", "out", "case_db", "case_id"),
                     badges=("execute", "image-full", "local-tools"),
@@ -219,7 +221,8 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                         'python -m osint_toolkit search person "{person}" '
                         "--profile person-full --region {region} --execute-adapters "
                         "--adapter-limit {adapter_limit} --out {out} "
-                        "--case-db {case_db} --case-id {case_id}"
+                        "--case-db {case_db} --case-id {case_id} "
+                        '[[--scope-note "{scope_note}"]]'
                     ),
                     required_inputs=("person", "region", "adapter_limit", "out", "case_db", "case_id"),
                     badges=("execute", "ready-only"),
@@ -242,7 +245,8 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                         "python -m osint_toolkit search username {username} "
                         "--profile username-full --region {region} --execute-adapters "
                         "--adapter-limit {adapter_limit} --out {out} "
-                        "--case-db {case_db} --case-id {case_id}"
+                        "--case-db {case_db} --case-id {case_id} "
+                        '[[--scope-note "{scope_note}"]]'
                     ),
                     required_inputs=("username", "region", "adapter_limit", "out", "case_db", "case_id"),
                     badges=("execute", "ready-only"),
@@ -305,7 +309,8 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                         "python -m osint_toolkit search email {email} "
                         "--profile email-full --execute-adapters "
                         "--adapter-limit {adapter_limit} --out {out} "
-                        "--case-db {case_db} --case-id {case_id}"
+                        "--case-db {case_db} --case-id {case_id} "
+                        '[[--scope-note "{scope_note}"]]'
                     ),
                     required_inputs=("email", "adapter_limit", "out", "case_db", "case_id"),
                     badges=("execute", "ready-only"),
@@ -328,7 +333,8 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                         "python -m osint_toolkit search phone {phone} "
                         "--profile phone-full --execute-adapters "
                         "--adapter-limit {adapter_limit} --out {out} "
-                        "--case-db {case_db} --case-id {case_id}"
+                        "--case-db {case_db} --case-id {case_id} "
+                        '[[--scope-note "{scope_note}"]]'
                     ),
                     required_inputs=("phone", "adapter_limit", "out", "case_db", "case_id"),
                     badges=("execute", "ready-only"),
@@ -358,7 +364,8 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                         "python -m osint_toolkit search domain {domain} "
                         "--profile passive-recon --execute-adapters "
                         "--adapter-limit {adapter_limit} --out {out} "
-                        "--case-db {case_db} --case-id {case_id}"
+                        "--case-db {case_db} --case-id {case_id} "
+                        '[[--scope-note "{scope_note}"]]'
                     ),
                     required_inputs=("domain", "adapter_limit", "out", "case_db", "case_id"),
                     badges=("execute", "ready-only"),
@@ -380,7 +387,8 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                         "python -m osint_toolkit search url {url} "
                         "--profile web-full --execute-adapters "
                         "--adapter-limit {adapter_limit} --out {out} "
-                        "--case-db {case_db} --case-id {case_id}"
+                        "--case-db {case_db} --case-id {case_id} "
+                        '[[--scope-note "{scope_note}"]]'
                     ),
                     required_inputs=("url", "adapter_limit", "out", "case_db", "case_id"),
                     badges=("execute", "ready-only"),
@@ -440,7 +448,8 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                         "python -m osint_toolkit search username {username} "
                         "--profile ru-ua-full --region {region} --execute-adapters "
                         "--adapter-limit {adapter_limit} --out {out} "
-                        "--case-db {case_db} --case-id {case_id}"
+                        "--case-db {case_db} --case-id {case_id} "
+                        '[[--scope-note "{scope_note}"]]'
                     ),
                     required_inputs=("username", "region", "adapter_limit", "out", "case_db", "case_id"),
                     badges=("execute", "ru-ua-full"),
@@ -466,7 +475,8 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                         "python -m osint_toolkit search social {social} "
                         "--profile social-full --region {region} --execute-adapters "
                         "--adapter-limit {adapter_limit} --out {out} "
-                        "--case-db {case_db} --case-id {case_id}"
+                        "--case-db {case_db} --case-id {case_id} "
+                        '[[--scope-note "{scope_note}"]]'
                     ),
                     required_inputs=("social", "region", "adapter_limit", "out", "case_db", "case_id"),
                     badges=("execute", "social-full"),
@@ -488,6 +498,7 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                         '[[--telegram {telegram}]] [[--instagram {instagram}]] '
                         '[[--social {social}]] [[--ru-ua {ruua}]] [[--region {region}]] '
                         "--case-db {case_db} --case-id {case_id} "
+                        '[[--scope-note "{scope_note}"]] '
                         "--include-adapters --adapter-profile username-full "
                         "--adapter-limit {adapter_limit} --out {out}"
                     ),
@@ -834,6 +845,69 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       padding: 8px;
       background: #f8fafc;
     }}
+    .case-graph-summary {{
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      font-size: 12px;
+    }}
+    .graph-pill {{
+      border: 1px solid #c8d2df;
+      border-radius: 999px;
+      padding: 3px 7px;
+      background: #f8fafc;
+      color: #263448;
+    }}
+    .case-graph-visual {{
+      position: relative;
+      min-height: 280px;
+      margin-top: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+      overflow: hidden;
+    }}
+    .case-graph-visual svg {{
+      display: block;
+      width: 100%;
+      height: 280px;
+    }}
+    .case-graph-empty {{
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    .case-graph-legend {{
+      margin-top: 8px;
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }}
+    .graph-edge {{
+      stroke: #9aa8b9;
+      stroke-width: 1.4;
+      opacity: 0.72;
+    }}
+    .graph-node circle {{
+      stroke: #ffffff;
+      stroke-width: 2;
+      filter: drop-shadow(0 1px 2px rgba(13, 28, 45, 0.24));
+    }}
+    .graph-node text {{
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10px;
+      fill: #162033;
+      text-anchor: middle;
+      pointer-events: none;
+    }}
+    .hidden {{ display: none; }}
     section {{
       margin: 0 0 18px;
       scroll-margin-top: 72px;
@@ -958,6 +1032,12 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
             <button type="button" class="secondary" id="showCaseIndex">Index</button>
           </div>
           <div id="caseList" class="case-list"></div>
+          <div id="caseGraphSummary" class="case-graph-summary"></div>
+          <div id="caseGraphVisual" class="case-graph-visual">
+            <svg id="caseGraphSvg" viewBox="0 0 760 440" role="img" aria-label="Case graph visualization"></svg>
+            <div id="caseGraphEmpty" class="case-graph-empty">Открой кейс или граф, чтобы увидеть связи entities.</div>
+          </div>
+          <div id="caseGraphLegend" class="case-graph-legend"></div>
           <pre id="caseLog" class="backend-log"></pre>
         </div>
       </aside>
@@ -971,6 +1051,8 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       url: {backend_url_js},
       auth: {backend_auth_js}
     }};
+    let currentCasePayload = null;
+    let currentGraphAnalysis = null;
 
     function readValue(name) {{
       const element = document.querySelector(`[data-field="${{name}}"]`);
@@ -1065,7 +1147,8 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
         adapter_limit: Number(readValue("adapter_limit") || "20"),
         out: readValue("out"),
         case_db: readValue("case_db"),
-        case_id: readValue("case_id")
+        case_id: readValue("case_id"),
+        scope_note: readValue("scope_note")
       }};
     }}
 
@@ -1181,6 +1264,229 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       }}
     }}
 
+    function graphKey(kind, value) {{
+      return String(kind || "") + "\\u001f" + String(value || "").toLowerCase();
+    }}
+
+    function addGraphNode(nodeMap, kind, value) {{
+      const normalizedKind = String(kind || "").trim();
+      const normalizedValue = String(value || "").trim();
+      if (!normalizedKind || !normalizedValue) return;
+      const key = graphKey(normalizedKind, normalizedValue);
+      if (!nodeMap.has(key)) {{
+        nodeMap.set(key, {{key, kind: normalizedKind, value: normalizedValue, degree: 0, x: 0, y: 0}});
+      }}
+    }}
+
+    function shortText(value, limit) {{
+      const text = String(value || "");
+      return text.length > limit ? text.slice(0, Math.max(0, limit - 1)) + "..." : text;
+    }}
+
+    function graphColor(kind) {{
+      const colors = {{
+        email: "#1f77b4",
+        domain: "#2ca02c",
+        url: "#9467bd",
+        username: "#ff7f0e",
+        person: "#8c564b",
+        phone: "#d62728",
+        telegram: "#17becf",
+        instagram: "#e377c2",
+        "social-profile": "#bcbd22",
+        ip: "#7f7f7f",
+        technology: "#0b6f85"
+      }};
+      return colors[kind] || "#4b647f";
+    }}
+
+    function collectGraph(casePayload) {{
+      const nodeMap = new Map();
+      const rawEdges = Array.isArray(casePayload && casePayload.edges) ? casePayload.edges : [];
+      const rawEntities = Array.isArray(casePayload && casePayload.entities) ? casePayload.entities : [];
+      for (const entity of rawEntities) {{
+        addGraphNode(nodeMap, entity.kind, entity.value);
+      }}
+      for (const edge of rawEdges) {{
+        addGraphNode(nodeMap, edge.source_kind, edge.source_value);
+        addGraphNode(nodeMap, edge.target_kind, edge.target_value);
+      }}
+      const degree = new Map();
+      for (const edge of rawEdges) {{
+        const sourceKey = graphKey(edge.source_kind, edge.source_value);
+        const targetKey = graphKey(edge.target_kind, edge.target_value);
+        degree.set(sourceKey, (degree.get(sourceKey) || 0) + 1);
+        degree.set(targetKey, (degree.get(targetKey) || 0) + 1);
+      }}
+      const nodes = Array.from(nodeMap.values());
+      for (const node of nodes) {{
+        node.degree = degree.get(node.key) || 0;
+      }}
+      nodes.sort((left, right) => {{
+        if (right.degree !== left.degree) return right.degree - left.degree;
+        const leftLabel = left.kind + ":" + left.value.toLowerCase();
+        const rightLabel = right.kind + ":" + right.value.toLowerCase();
+        return leftLabel.localeCompare(rightLabel);
+      }});
+      const maxNodes = 42;
+      const visibleNodes = nodes.slice(0, maxNodes);
+      const selectedKeys = new Set(visibleNodes.map((node) => node.key));
+      const visibleEdges = rawEdges
+        .filter((edge) => selectedKeys.has(graphKey(edge.source_kind, edge.source_value)) && selectedKeys.has(graphKey(edge.target_kind, edge.target_value)))
+        .slice(0, 90);
+      return {{
+        nodes: visibleNodes,
+        edges: visibleEdges,
+        hiddenNodes: Math.max(0, nodes.length - visibleNodes.length),
+        hiddenEdges: Math.max(0, rawEdges.length - visibleEdges.length)
+      }};
+    }}
+
+    function svgElement(name, attrs) {{
+      const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+      for (const [key, value] of Object.entries(attrs || {{}})) {{
+        element.setAttribute(key, String(value));
+      }}
+      return element;
+    }}
+
+    function clearElement(element) {{
+      while (element.firstChild) element.removeChild(element.firstChild);
+    }}
+
+    function renderGraphSummary(casePayload, analysis, hiddenNodes, hiddenEdges) {{
+      const summary = document.getElementById("caseGraphSummary");
+      const legend = document.getElementById("caseGraphLegend");
+      summary.innerHTML = "";
+      legend.innerHTML = "";
+      const pills = [];
+      if (analysis) {{
+        pills.push("nodes " + analysis.node_count);
+        pills.push("edges " + analysis.edge_count);
+        if (analysis.focus) pills.push("focus " + analysis.focus.kind + ":" + shortText(analysis.focus.value, 28));
+      }} else if (casePayload) {{
+        pills.push("entities " + ((casePayload.entities || []).length));
+        pills.push("edges " + ((casePayload.edges || []).length));
+      }}
+      if (hiddenNodes) pills.push("hidden nodes " + hiddenNodes);
+      if (hiddenEdges) pills.push("hidden edges " + hiddenEdges);
+      for (const text of pills) {{
+        const item = document.createElement("span");
+        item.className = "graph-pill";
+        item.textContent = text;
+        summary.appendChild(item);
+      }}
+      if (analysis && analysis.relation_counts) {{
+        const relations = Object.entries(analysis.relation_counts)
+          .sort((left, right) => right[1] - left[1])
+          .slice(0, 6);
+        for (const [relation, count] of relations) {{
+          const row = document.createElement("div");
+          row.textContent = relation + ": " + count;
+          legend.appendChild(row);
+        }}
+      }}
+      if (analysis && Array.isArray(analysis.neighbors) && analysis.neighbors.length) {{
+        const row = document.createElement("div");
+        row.textContent = "focus neighbors: " + analysis.neighbors.length;
+        legend.appendChild(row);
+      }}
+    }}
+
+    function renderCaseGraph(casePayload, analysis) {{
+      const svg = document.getElementById("caseGraphSvg");
+      const empty = document.getElementById("caseGraphEmpty");
+      clearElement(svg);
+      if (!casePayload) {{
+        renderGraphSummary(null, null, 0, 0);
+        svg.classList.add("hidden");
+        empty.textContent = "Открой кейс или граф, чтобы увидеть связи entities.";
+        empty.classList.remove("hidden");
+        return;
+      }}
+      const graph = collectGraph(casePayload);
+      renderGraphSummary(casePayload, analysis, graph.hiddenNodes, graph.hiddenEdges);
+      if (!graph.nodes.length) {{
+        svg.classList.add("hidden");
+        empty.textContent = "В кейсе пока нет entities/edges для визуализации.";
+        empty.classList.remove("hidden");
+        return;
+      }}
+      svg.classList.remove("hidden");
+      empty.classList.add("hidden");
+
+      const defs = svgElement("defs", {{}});
+      const marker = svgElement("marker", {{
+        id: "caseGraphArrow",
+        markerWidth: "10",
+        markerHeight: "10",
+        refX: "8",
+        refY: "3",
+        orient: "auto",
+        markerUnits: "strokeWidth"
+      }});
+      marker.appendChild(svgElement("path", {{d: "M0,0 L0,6 L9,3 z", fill: "#9aa8b9"}}));
+      defs.appendChild(marker);
+      svg.appendChild(defs);
+
+      const centerX = 380;
+      const centerY = 220;
+      const radiusX = 300;
+      const radiusY = 150;
+      graph.nodes.forEach((node, index) => {{
+        if (index === 0) {{
+          node.x = centerX;
+          node.y = centerY;
+          return;
+        }}
+        const total = Math.max(1, graph.nodes.length - 1);
+        const angle = -Math.PI / 2 + (2 * Math.PI * (index - 1)) / total;
+        node.x = centerX + Math.cos(angle) * radiusX;
+        node.y = centerY + Math.sin(angle) * radiusY;
+      }});
+      const nodesByKey = new Map(graph.nodes.map((node) => [node.key, node]));
+
+      for (const edge of graph.edges) {{
+        const source = nodesByKey.get(graphKey(edge.source_kind, edge.source_value));
+        const target = nodesByKey.get(graphKey(edge.target_kind, edge.target_value));
+        if (!source || !target) continue;
+        const line = svgElement("line", {{
+          class: "graph-edge",
+          x1: source.x,
+          y1: source.y,
+          x2: target.x,
+          y2: target.y,
+          "marker-end": "url(#caseGraphArrow)"
+        }});
+        const title = svgElement("title", {{}});
+        title.textContent = (edge.relation || "edge") + " · " + (edge.confidence || "") + " · " + (edge.source || "");
+        line.appendChild(title);
+        svg.appendChild(line);
+      }}
+
+      for (const node of graph.nodes) {{
+        const group = svgElement("g", {{class: "graph-node"}});
+        group.appendChild(svgElement("circle", {{
+          cx: node.x,
+          cy: node.y,
+          r: node.degree > 1 ? 18 : 15,
+          fill: graphColor(node.kind)
+        }}));
+        const label = svgElement("text", {{x: node.x, y: node.y + 32}});
+        const kind = svgElement("tspan", {{x: node.x, dy: "0"}});
+        kind.textContent = shortText(node.kind, 18);
+        const value = svgElement("tspan", {{x: node.x, dy: "12"}});
+        value.textContent = shortText(node.value, 28);
+        label.appendChild(kind);
+        label.appendChild(value);
+        const title = svgElement("title", {{}});
+        title.textContent = node.kind + ":" + node.value + " · degree " + node.degree;
+        group.appendChild(title);
+        group.appendChild(label);
+        svg.appendChild(group);
+      }}
+    }}
+
     async function loadCases() {{
       const data = await fetchCaseJson("/api/cases", {{
         case_db: caseDbValue(),
@@ -1196,6 +1502,9 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       const data = await fetchCaseJson(`/api/cases/${{encodeURIComponent(caseId)}}`, {{
         case_db: caseDbValue()
       }});
+      currentCasePayload = data;
+      currentGraphAnalysis = null;
+      renderCaseGraph(currentCasePayload, currentGraphAnalysis);
       setCaseLog(JSON.stringify(data, null, 2));
     }}
 
@@ -1212,8 +1521,15 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
         params.entity_kind = entityKind;
         params.entity_value = entityValue;
       }}
-      const data = await fetchCaseJson(`/api/cases/${{encodeURIComponent(caseId)}}/graph`, params);
-      setCaseLog(JSON.stringify(data, null, 2));
+      const caseParams = {{case_db: caseDbValue()}};
+      const [caseData, graphData] = await Promise.all([
+        fetchCaseJson(`/api/cases/${{encodeURIComponent(caseId)}}`, caseParams),
+        fetchCaseJson(`/api/cases/${{encodeURIComponent(caseId)}}/graph`, params)
+      ]);
+      currentCasePayload = caseData;
+      currentGraphAnalysis = graphData;
+      renderCaseGraph(currentCasePayload, currentGraphAnalysis);
+      setCaseLog(JSON.stringify({{case: caseData, graph: graphData}}, null, 2));
     }}
 
     async function showCaseIndex() {{

@@ -43,6 +43,7 @@ class ToolboxServerTests(unittest.TestCase):
                     "out": "reports/email.md",
                     "case_db": "cases.sqlite",
                     "case_id": "email-1",
+                    "scope_note": "server scope",
                     "format": "markdown",
                 }
                 data = self._request_json(
@@ -56,6 +57,7 @@ class ToolboxServerTests(unittest.TestCase):
 
                 self.assertEqual(job["status"], "completed", job)
                 self.assertEqual(job["returncode"], 0)
+                self.assertIn("--scope-note", job["command_preview"])
                 self.assertTrue(Path(tmpdir, "reports", "email.md").exists())
                 self.assertTrue(Path(tmpdir, "cases.sqlite").exists())
                 self.assertIn("Search Execution Report: email", Path(tmpdir, "reports", "email.md").read_text(encoding="utf-8"))
@@ -86,6 +88,7 @@ class ToolboxServerTests(unittest.TestCase):
                     "adapter_limit": 0,
                     "case_db": "cases.sqlite",
                     "case_id": "email-1",
+                    "scope_note": "server scope",
                     "format": "json",
                 }
                 data = self._request_json(
@@ -108,6 +111,7 @@ class ToolboxServerTests(unittest.TestCase):
                 )
                 self.assertEqual(case["metadata"]["workflow"], "search")
                 self.assertEqual(case["metadata"]["requested_profile"], "email-full")
+                self.assertEqual(case["metadata"]["scope_note"], "server scope")
 
                 graph = self._request_json(
                     f"{base_url}/api/cases/email-1/graph?case_db=cases.sqlite",

@@ -216,6 +216,7 @@ class ToolboxJobRunner:
         include_restricted = bool(payload.get("include_restricted", False))
         adapter_limit = _int_value(payload, "adapter_limit", default=20, minimum=0, maximum=500)
         derived_limit = _int_value(payload, "derived_limit", default=20, minimum=0, maximum=500)
+        scope_note = str(payload.get("scope_note", "")).strip()
         timeout = _float_value(payload, "timeout", default=10.0, minimum=0.1, maximum=3600.0)
         adapter_timeout = _float_value(
             payload,
@@ -260,6 +261,8 @@ class ToolboxJobRunner:
             report_path = self._output_path(str(payload.get("out", "")).strip(), default_report)
             case_db = self._output_path(str(payload.get("case_db", "")).strip(), "cases.sqlite")
             command.extend(["--out", str(report_path), "--case-db", str(case_db), "--case-id", case_id])
+            if scope_note:
+                command.extend(["--scope-note", scope_note])
         else:
             command.append("--plan-only")
         return command, report_path, case_db, case_id

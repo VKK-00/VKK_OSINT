@@ -67,8 +67,8 @@ CLI работает в пяти режимах:
 - SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges, findings и workflow/profile/scope policy metadata;
 - saved case graph analysis: счётчики связей/типов сущностей, top connected nodes и focus-запрос соседей сущности;
 - cross-case entity index: поиск повторяющихся email/domain/telegram/instagram/url и других сущностей между сохранёнными кейсами;
-- local toolbox: один HTML-пульт с seed-полями и направлениями для фото-зацепок, OCR, EXIF/metadata, QR/barcodes, reverse image portals, person/username/social, email/phone, domain/url, RU/UA, cases/graph/index и adapter profiles;
-- toolbox backend: `toolbox --serve` поднимает локальный token-protected HTTP server, принимает только структурированные `/api/search` payloads, ведёт job queue, logs/status/report access и read-only case endpoints для saved SQLite cases/graph/index;
+- local toolbox: один HTML-пульт с seed-полями и направлениями для фото-зацепок, OCR, EXIF/metadata, QR/barcodes, reverse image portals, person/username/social, email/phone, domain/url, RU/UA, cases/SVG graph/index и adapter profiles;
+- toolbox backend: `toolbox --serve` поднимает локальный token-protected HTTP server, принимает только структурированные `/api/search` payloads включая `scope_note`, ведёт job queue, logs/status/report access и read-only case endpoints для saved SQLite cases/graph/index;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
 
@@ -81,8 +81,8 @@ CLI работает в пяти режимах:
 - `osint_toolkit/` — Python-пакет CLI.
 - `osint_toolkit/modules/` — native scan-модули.
 - `osint_toolkit/search.py` — unified search profiles, target classifier и fan-out planner.
-- `osint_toolkit/toolbox.py` — генератор локального HTML-пульта с направлениями, шаблонами команд, optional backend runner UI и Case Browser.
-- `osint_toolkit/toolbox_server.py` — локальный backend для `toolbox --serve`: token auth, allowlisted unified search jobs, status/logs/report endpoints и read-only case endpoints.
+- `osint_toolkit/toolbox.py` — генератор локального HTML-пульта с направлениями, шаблонами команд, optional backend runner UI, Case Browser и bounded SVG-визуализацией сохранённого графа.
+- `osint_toolkit/toolbox_server.py` — локальный backend для `toolbox --serve`: token auth, allowlisted unified search jobs со `scope_note`, status/logs/report endpoints и read-only case endpoints.
 - `osint_toolkit/resources/sherlock_data.json` — встроенный snapshot Sherlock `sherlock_project/resources/data.json`, commit `206068d`, MIT license.
 - `osint_toolkit/resources/whatsmyname_wmn_data.json` — встроенный snapshot WhatsMyName `wmn-data.json`, commit `7c44595`, CC BY-SA 4.0 license.
 - `osint_toolkit/resources/maigret_sites.json` — sanitized projection Maigret `maigret/resources/data.json`, commit `2484509`, MIT license.
@@ -253,9 +253,10 @@ Toolbox-поток:
 1. Static mode: пользователь запускает `python -m osint_toolkit toolbox --out osint_toolbox.html`; CLI вызывает `write_toolbox()`, который берёт текущее описание направлений и adapter profiles.
 2. `render_toolbox_html()` создаёт самодостаточный HTML/CSS/JS без внешних assets; пользователь заполняет seed-поля один раз, а cards подставляют значения в шаблоны команд.
 3. Served mode: пользователь запускает `python -m osint_toolkit toolbox --serve --open`; CLI создаёт session token, пишет HTML с backend URL/token и поднимает локальный HTTP server.
-4. Browser отправляет только структурированный `/api/search` payload: target kind/value, profile, region, execute/plan mode, limits, report path и case DB.
+4. Browser отправляет только структурированный `/api/search` payload: target kind/value, profile, region, execute/plan mode, limits, report path, case DB и optional scope note.
 5. Backend собирает allowlisted `python -m osint_toolkit search ...`, запускает job в фоне, показывает queue/status/stdout/stderr и отдаёт report content по job id.
-6. HTML не загружает фото сам; для фото served mode запускает только тот же `search image ... --execute-adapters`, а reverse image portals остаются ручной загрузкой.
+6. Case Browser читает `/api/cases/<id>` и `/api/cases/<id>/graph`, рисует bounded SVG-граф из сохранённых `entities`/`edges` и показывает summary/focus analysis рядом с JSON.
+7. HTML не загружает фото сам; для фото served mode запускает только тот же `search image ... --execute-adapters`, а reverse image portals остаются ручной загрузкой.
 
 Search-поток:
 
@@ -606,7 +607,7 @@ osint-toolkit stats
 - Adapter manifest теперь включает generated CSV/TXT folder template для `sherlock-project/sherlock`, isolated workdir TXT ingestion для `thewhiteh4t/nexfil`, generated JSON-file templates для `alpkeskin/mosint`, `h8mail` и `laramies/theHarvester`, generated JSON-report folder template для `soxoj/maigret`, generated JSON/NDJSON output folder template для `blacklanternsecurity/bbot`, required-env Python script template для `smicallef/spiderfoot`, interactive stdin template для `jasonxtn/argus`, target-specific executable templates для `user-scanner`, region-aware template для `snooppr/snoop`, required-env Node template для `qeeqbox/social-analyzer`, checkout/results template для `p1ngul1n0/blackbird` и executable template для `sundowndev/phoneinfoga`; более сложные adapters могут потребовать richer per-mode config.
 - Adapter parser покрывает общие URL/email/phone/key-value patterns, Sherlock stdout/CSV/TXT reports, Nexfil stdout/TXT reports, Mosint JSON reports, h8mail JSON reports, Maigret JSON/CSV reports, `user-scanner` JSON/verbose output, Snoop stdout/CSV output, Social Analyzer JSON output, Blackbird JSON/stdout output, PhoneInfoga CLI/API output, domain-recon adapters Subfinder/httpx/passive Amass/theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output; сложные JSON/CSV/HTML exports остальных upstream ещё не разобраны.
 - Adapter profiles в `adapters.py` пока статические. Search-layer profiles можно расширять через `--profile-file` и управлять через `profiles list/show/export`; saved cases хранят workflow/profile/adapter/scope policy metadata, но UI-редактора профилей и enforcement per-case policy ещё нет.
-- Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> email`, `domain -> phone`, `domain -> discovered/social/sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois-server`, `domain -> ip|port|technology`, `url -> instagram`, `url -> social-profile`, `instagram -> platform/display name/account id/public URLs`, `social -> social-profile/platform/display name/account id/public URLs` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics, cross-case entity index, command toolbox и served Case Browser, но нет weighted path finding, cross-case edge graph и интерактивной визуализации графа.
+- Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> email`, `domain -> phone`, `domain -> discovered/social/sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois-server`, `domain -> ip|port|technology`, `url -> instagram`, `url -> social-profile`, `instagram -> platform/display name/account id/public URLs`, `social -> social-profile/platform/display name/account id/public URLs` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics, cross-case entity index, command toolbox, served Case Browser и bounded SVG case graph, но нет weighted path finding и full cross-case edge graph.
 - SQLite schema сейчас версии 3; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
@@ -704,3 +705,4 @@ osint-toolkit stats
 - 2026-06-25: SQLite case store расширен таблицей `case_metadata`: `search --case-db` и `investigate --case-db` сохраняют workflow/profile/adapter policy metadata, а `case-show` выводит её в JSON/Markdown/table.
 - 2026-06-25: `toolbox --serve` расширен Case Browser: HTML-пульт читает `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph` и `/api/case-index` через token-protected backend без произвольного shell.
 - 2026-06-25: `search --scope-note` и `investigate --scope-note` сохраняют текстовый scope/context в `case_metadata`, чтобы saved cases фиксировали рамки проверки рядом с profile/execution policy.
+- 2026-06-25: Case Browser в `toolbox --serve` получил bounded SVG-визуализацию saved case graph из `entities`/`edges`; `/api/search` payload теперь передаёт `scope_note` в allowlisted CLI command.
