@@ -73,6 +73,7 @@ class SearchPlanTests(unittest.TestCase):
         self.assertIn("thewhiteh4t/pwnedOrNot", sources)
         self.assertIn("kaifcodec/user-scanner", sources)
         self.assertIn("p1ngul1n0/blackbird", sources)
+        self.assertIn("Yvesssn/DetectDee", sources)
         self.assertEqual(sources["megadose/holehe"].status, "excluded")
         self.assertEqual(sources["martinvigo/email2phonenumber"].status, "excluded")
 

@@ -180,7 +180,7 @@ python -m osint_toolkit search phone +380441234567 --profile phone-full --execut
 - `sundowndev/phoneinfoga`: phone intelligence.
 - `smicallef/spiderfoot`: passive phone target mode, если `SPIDERFOOT_SF_PATH` настроен.
 - `jasonxtn/argus`: broad infra/OSINT route, если установлен.
-- `Yvesssn/DetectDee`: кандидат для phone/email/username checks после CLI mapping.
+- `Yvesssn/DetectDee`: executable detect adapter для phone/email/username checks через `DetectDee detect -p|-e|-n ... -f <DETECTDEE_DATA>`.
 - `megadose/ignorant`: только restricted profile, не default/full.
 
 Что нужно реализовать:
@@ -252,7 +252,7 @@ python -m osint_toolkit search person "Ivan Petrenko" --profile person-full --re
 - Snoop RU/UA.
 - user-scanner.
 - Instaloader for Instagram.
-- DetectDee / socialscan candidates after mapping.
+- DetectDee executable detect route and socialscan candidate after mapping.
 
 Что нужно реализовать:
 
@@ -408,7 +408,6 @@ Profile fields:
 Приоритет 1:
 
 - pwnedOrNot parser hardening.
-- DetectDee CLI mapping and parser.
 - SpiderFoot phone/email/username mode examples.
 - Argus per-target parser fixtures.
 - ExifTool JSON parser.
@@ -580,6 +579,7 @@ Notes:
 27. Done: support venv-backed manual checkout adapters through `BLACKBIRD_PYTHON` and `SPIDERFOOT_PYTHON`, while preserving `python` as the default fallback.
 28. Done: verify a user-local all-safe toolchain where pipx tools, Go tools, portable image tools and manual GitHub checkouts all report `ready` in `tools doctor --profile all-safe`.
 29. Done: add Windows runtime env refresh so CLI/toolbox readiness sees newly installed user-local `pipx`, Go, portable binaries and configured OSINT env variables without restarting the current terminal.
+30. Done: add DetectDee executable route and parser for username/email/phone profiles; readiness uses `DetectDee` in `PATH` plus `DETECTDEE_DATA`, and execution only uses upstream detect mode.
 
 ## Definition of done
 

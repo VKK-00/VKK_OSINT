@@ -145,6 +145,7 @@ class AdapterSpec:
             "instagram_profile": _instagram_profile_value(target.value),
             "bbot_target": _bbot_target_value(target),
             "blackbird_python": _blackbird_python_value(),
+            "detectdee_data": _detectdee_data_value(),
             "spiderfoot_script": _spiderfoot_script_value(),
             "spiderfoot_python": _spiderfoot_python_value(),
         }
@@ -650,11 +651,22 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
         "external_cli",
         "Apache-2.0",
         "planned",
-        "",
-        "Candidate for native-compatible checks after reviewing service definitions.",
-        install_kind="manual",
-        install_note="Review upstream service definitions and CLI usage before adding an executable command template.",
+        "DetectDee detect -n|-e|-p <value> -f <data.json> -o <output>",
+        "Runs upstream detect mode only. Screenshot, ChatGPT token and credential-stuffing flows are not used by this adapter.",
+        ("username", "email", "phone"),
+        command_templates=(
+            ("username", ("DetectDee", "detect", "-n", "{target_value}", "-f", "{detectdee_data}", "-r", "1", "--timeout", "10")),
+            ("email", ("DetectDee", "detect", "-e", "{target_value}", "-f", "{detectdee_data}", "-r", "1", "--timeout", "10")),
+            ("phone", ("DetectDee", "detect", "-p", "{target_value}", "-f", "{detectdee_data}", "-r", "1", "--timeout", "10")),
+        ),
+        install_kind="binary",
+        install_note="Download an upstream release or build the Go project locally, put DetectDee on PATH, and set DETECTDEE_DATA to upstream data.json.",
         docs_url="https://github.com/Yvesssn/DetectDee",
+        required_env=("DETECTDEE_DATA",),
+        generated_output_file_args=("-o", "{output_file}"),
+        generated_output_patterns=("*.json", "*.txt"),
+        executable_probe_args=("detect", "-h"),
+        executable_probe_required=("--name", "--email", "--phone", "--output"),
     ),
 )
 
@@ -868,6 +880,10 @@ def _bbot_target_value(target: ScanTarget) -> str:
 
 def _blackbird_python_value() -> str:
     return os.environ.get("BLACKBIRD_PYTHON", "python").strip() or "python"
+
+
+def _detectdee_data_value() -> str:
+    return os.environ.get("DETECTDEE_DATA", "<DETECTDEE_DATA>").strip() or "<DETECTDEE_DATA>"
 
 
 def _spiderfoot_script_value() -> str:

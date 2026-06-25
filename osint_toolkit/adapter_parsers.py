@@ -29,6 +29,14 @@ SNOOP_LINE_RE = re.compile(
     r"^\s*(?:\[[+\-]\]\s*)?(?P<site>[^:]{2,120}):\s*(?P<rest>.+?)\s*$",
     re.IGNORECASE,
 )
+DETECTDEE_RESULT_RE = re.compile(
+    r"^\s*(?P<identity>[^,\n]+?)\s*,\s*(?P<site>[^,\n]+?)\s*,\s*(?P<url>https?://\S+)\s*$",
+    re.IGNORECASE,
+)
+DETECTDEE_STDOUT_RE = re.compile(
+    r"\[\+\]\s*(?P<identity>\S+)\s+(?P<site>[^:]{2,120}?)\s*:\s*(?P<url>https?://\S+)",
+    re.IGNORECASE,
+)
 SHERLOCK_LINE_RE = re.compile(
     r"^\s*(?:\[(?P<marker>[+\-])\]\s*)?(?P<site>[^:]{2,120}):\s*(?P<rest>.+?)\s*$",
     re.IGNORECASE,
@@ -53,6 +61,7 @@ PARSER_REPOSITORIES = {
     "blacklanternsecurity/bbot",
     "smicallef/spiderfoot",
     "jasonxtn/argus",
+    "Yvesssn/DetectDee",
 }
 
 PHONE_KEYS = {
@@ -118,6 +127,8 @@ def parse_adapter_output(
         return _spiderfoot_findings(repository, target, text)
     if repository == "jasonxtn/argus":
         return _argus_findings(repository, target, text)
+    if repository == "Yvesssn/DetectDee":
+        return _detectdee_findings(repository, target, text)
 
     findings: list[Finding] = []
     seen: set[tuple[str, str, str]] = set()
@@ -4284,6 +4295,58 @@ def _blackbird_evidence(site_name: str, raw_status: str, url: str) -> str:
     label = site_name or "site"
     suffix = f" {url}" if url else ""
     return f"Blackbird {label}: {raw_status or 'observed'}{suffix}"
+
+
+def _detectdee_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+    for line in text.splitlines():
+        compact = " ".join(line.split())
+        if not compact:
+            continue
+        match = DETECTDEE_RESULT_RE.match(compact) or DETECTDEE_STDOUT_RE.search(compact)
+        if not match:
+            continue
+        identity = _detectdee_clean_identity(match.group("identity"))
+        site_name = " ".join(match.group("site").split())
+        url = _detectdee_clean_url(match.group("url"))
+        if not identity or not site_name or not url:
+            continue
+        key = (identity.lower(), site_name.lower(), url.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        metadata = {
+            "repository": repository,
+            "parser": "detectdee",
+            "site_name": site_name,
+            "identity": identity,
+            "profile_url": url,
+            "target_kind": target.kind,
+        }
+        if target.kind in {"username", "email", "phone"}:
+            metadata[target.kind] = identity
+        findings.append(
+            Finding(
+                module="external-adapter-parser",
+                source=repository,
+                target=target.value,
+                status="candidate",
+                url=url,
+                confidence="medium",
+                evidence=f"DetectDee found {identity} on {site_name}: {url}",
+                metadata=metadata,
+            )
+        )
+    return tuple(findings)
+
+
+def _detectdee_clean_identity(value: str) -> str:
+    return " ".join(value.strip().strip(",").split())
+
+
+def _detectdee_clean_url(value: str) -> str:
+    return value.strip().rstrip(".,;)")
 
 
 def _user_scanner_findings(repository: str, target: ScanTarget, text: str) -> tuple[Finding, ...]:

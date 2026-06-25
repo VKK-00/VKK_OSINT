@@ -96,6 +96,26 @@ class AdapterParserTests(unittest.TestCase):
         self.assertEqual(github.confidence, "high")
         self.assertEqual(github.metadata["domain"], "github.com")
 
+    def test_parse_detectdee_result_lines(self):
+        findings = parse_adapter_output(
+            "Yvesssn/DetectDee",
+            ScanTarget(kind="username", value="example_user"),
+            """
+            example_user, github, https://github.com/example_user
+            INFO[2026-06-25] [+] example_user     v2ex           : https://www.v2ex.com/member/example_user
+            example_user, github, https://github.com/example_user
+            """,
+        )
+
+        self.assertEqual(len(findings), 2)
+        urls = {finding.url for finding in findings}
+        self.assertIn("https://github.com/example_user", urls)
+        self.assertIn("https://www.v2ex.com/member/example_user", urls)
+        github = next(finding for finding in findings if finding.metadata["site_name"] == "github")
+        self.assertEqual(github.metadata["parser"], "detectdee")
+        self.assertEqual(github.metadata["username"], "example_user")
+        self.assertEqual(github.status, "candidate")
+
     def test_parse_mosint_style_key_values(self):
         findings = parse_adapter_output(
             "alpkeskin/mosint",
@@ -1417,6 +1437,41 @@ class AdapterParserTests(unittest.TestCase):
 
         self.assertEqual(findings[0].status, "completed")
         self.assertTrue(any(finding.metadata.get("site_name") == "Github" for finding in findings[1:]))
+
+    def test_run_detectdee_adapter_reads_generated_result_file_after_execution(self):
+        def fake_run(args, **kwargs):
+            if list(args[1:]) == ["detect", "-h"]:
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout="DetectDee detect [flags]\n  -n, --name\n  -e, --email\n  -p, --phone\n  -o, --output\n",
+                    stderr="",
+                )
+            self.assertEqual(args[1:4], ["detect", "-n", "example_user"])
+            self.assertIn("-f", args)
+            self.assertIn("C:\\tools\\DetectDee\\data.json", args)
+            output_file = Path(args[args.index("-o") + 1])
+            output_file.write_text(
+                "example_user, github, https://github.com/example_user\n",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="Detect completed\n", stderr="")
+
+        with patch.dict(os.environ, {"DETECTDEE_DATA": "C:\\tools\\DetectDee\\data.json"}), patch(
+            "osint_toolkit.adapter_runner.shutil.which",
+            return_value="C:\\tools\\DetectDee.exe",
+        ), patch("osint_toolkit.adapter_runner.subprocess.run", side_effect=fake_run):
+            findings = run_adapter_findings(
+                "Yvesssn/DetectDee",
+                ScanTarget(kind="username", value="example_user"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertEqual(findings[0].metadata["generated_output_files"], "1")
+        self.assertIn("-o", findings[0].metadata["command"])
+        self.assertTrue(any(finding.metadata.get("parser") == "detectdee" for finding in findings[1:]))
+        self.assertTrue(any(finding.url == "https://github.com/example_user" for finding in findings[1:]))
 
     def test_run_snoop_adapter_adds_parsed_results_after_execution(self):
         completed = subprocess.CompletedProcess(

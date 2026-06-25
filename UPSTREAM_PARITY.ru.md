@@ -52,6 +52,8 @@ python -m osint_toolkit scan username <username> --live
 - parser для Social Analyzer JSON `detected`/`unknown`/`failed`: `detected` -> `candidate`, `unknown` -> `not_found`, `failed` -> `error`, с сохранением rate/status, site, profile URL, checked URL и public metadata;
 - executable adapter для `p1ngul1n0/blackbird`: `<BLACKBIRD_PYTHON|python> blackbird.py --username <username> --json --no-update --timeout 30` из `BLACKBIRD_DIR`;
 - parser для Blackbird JSON exports/stdout found-lines: `FOUND` -> `candidate`, `NOT-FOUND` -> `not_found`, `ERROR` -> `error`, с сохранением site/category/profile URL/platform domain и extracted metadata;
+- executable adapter для `Yvesssn/DetectDee`: `DetectDee detect -n <username> -f <DETECTDEE_DATA> -o <temp>`;
+- parser для DetectDee generated result/stdout rows: identity, site и profile URL нормализуются в `candidate` findings;
 - executable adapter для `sherlock-project/sherlock`: при `--execute` добавляются `--no-color --print-all --csv --txt --folderoutput <tempdir>`;
 - parser для Sherlock stdout и CSV/TXT reports: `Claimed` -> `candidate`, `Available` -> `not_found`, `Unknown`/`WAF` -> `error`, `Illegal` -> `skipped`;
 - executable adapter для `thewhiteh4t/nexfil`: `nexfil -u <username>` запускается в isolated temporary workdir/HOME;
@@ -119,7 +121,9 @@ Gap до полного 1:1:
 - parser для `user-scanner` JSON/verbose results: `Registered`/`Found` -> `candidate`, `Available`/`Not Found`/`Not Registered` -> `not_found`, `Error` -> `error`.
 - executable adapter для `thewhiteh4t/pwnedOrNot`: `pwnedornot -e <email> -n`, чтобы по умолчанию не запрашивать password dump payloads;
 - executable target-specific adapter для `p1ngul1n0/blackbird`: `<BLACKBIRD_PYTHON|python> blackbird.py --email <email> --json --no-update --timeout 30`;
-- parser для Blackbird email JSON exports/stdout found-lines: found account URLs, site/category, platform domains и extracted metadata нормализуются в `Finding`/entities.
+- parser для Blackbird email JSON exports/stdout found-lines: found account URLs, site/category, platform domains и extracted metadata нормализуются в `Finding`/entities;
+- executable adapter для `Yvesssn/DetectDee`: `DetectDee detect -e <email> -f <DETECTDEE_DATA> -o <temp>`;
+- parser для DetectDee email result rows: identity, site и profile URL нормализуются в `Finding`/entities без использования upstream screenshot/token/credential-stuffing flows.
 
 Gap:
 
@@ -144,6 +148,7 @@ Gap:
 - `megadose/ignorant`
 - `TermuxHackz/X-osint`
 - `martinvigo/email2phonenumber`
+- `Yvesssn/DetectDee`
 
 Уже реализовано:
 
@@ -152,7 +157,9 @@ Gap:
 - базовый country-prefix signal для `+380`, `+7` и нескольких глобальных префиксов.
 - `sundowndev/phoneinfoga` как safe external adapter через `phoneinfoga scan -n <number>`;
 - parser фактического PhoneInfoga CLI stdout `Results for <scanner>` и REST/API-like JSON для `local`, `numverify`, `googlesearch`, `googlecse`, `ovh`;
-- graph/entities mapping для `normalized`, `country`, `country_code`, `carrier`, `line_type`, `location`, `number_range`, `zip_code`, Google dork URL и CSE result URL.
+- graph/entities mapping для `normalized`, `country`, `country_code`, `carrier`, `line_type`, `location`, `number_range`, `zip_code`, Google dork URL и CSE result URL;
+- `Yvesssn/DetectDee` как executable adapter через `DetectDee detect -p <number> -f <DETECTDEE_DATA> -o <temp>`;
+- parser DetectDee phone result rows: identity, site и profile URL нормализуются как account-like candidate hits.
 
 Gap:
 
@@ -160,6 +167,7 @@ Gap:
 - нет reputation lookup;
 - нет внешних API;
 - GPL-код PhoneInfoga не копируется в native Python-код; паритет делается через внешний CLI/API output ingestion, чтобы не смешивать copyleft-код с основным пакетом.
+- DetectDee подключён только в upstream `detect` mode; screenshot, ChatGPT token и credential-stuffing upstream flows не включены в adapter.
 
 План:
 
@@ -338,6 +346,7 @@ python -m osint_toolkit adapter-setup <repository>
 - adapter-specific parser for Snoop stdout and CSV report rows;
 - adapter-specific parser for Social Analyzer JSON detected/unknown/failed profile rows;
 - adapter-specific parser for Blackbird JSON exports and stdout found profile rows;
+- adapter-specific parser for DetectDee generated result/stdout profile rows;
 - adapter-specific parser for PhoneInfoga CLI sections and REST/API-like JSON scanner outputs;
 - adapter-specific parser for Subfinder JSONL/plain subdomain output;
 - adapter-specific parser for httpx JSONL/plain HTTP probe output;
@@ -355,7 +364,7 @@ python -m osint_toolkit adapter-setup <repository>
 Gap:
 
 - нет встроенной CLI-команды `install adapters`, но текущая dev/toolbox машина может быть приведена к `all-safe` ready через user-local `pipx`, Go binaries, portable image tools и venv-backed manual checkouts;
-- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, Social Analyzer JSON, Blackbird JSON/stdout, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output;
+- нет богатого parser-слоя для JSON/CSV/HTML exports каждого инструмента, кроме уже покрытых Sherlock stdout/CSV/TXT, Nexfil stdout/TXT, Mosint JSON, h8mail JSON, Maigret JSON/CSV, `user-scanner` JSON/verbose, Snoop stdout/CSV, Social Analyzer JSON, Blackbird JSON/stdout, DetectDee generated result/stdout, PhoneInfoga CLI/API output, Subfinder, httpx, passive Amass, theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output;
 - базовая нормализация `Finding` -> `Entity` уже есть, но нет full adapter-specific parsers для complex outputs;
 - per-adapter config/API key handling пока только описывается metadata, без secure secret store.
 

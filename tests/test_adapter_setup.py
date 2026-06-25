@@ -439,6 +439,56 @@ class AdapterSetupTests(unittest.TestCase):
         self.assertEqual(setup.readiness, "ready")
         self.assertEqual(run_probe.call_args.kwargs["timeout"], 15.0)
 
+    def test_detectdee_setup_uses_target_specific_commands_and_data_file(self):
+        adapter = find_adapter("Yvesssn/DetectDee")
+        help_output = subprocess.CompletedProcess(
+            args=("DetectDee", "detect", "-h"),
+            returncode=0,
+            stdout="DetectDee detect [flags]\n  -n, --name strings\n  -e, --email strings\n  -p, --phone strings\n  -o, --output string\n",
+            stderr="",
+        )
+
+        with patch.dict(os.environ, {}, clear=True), patch(
+            "osint_toolkit.adapter_setup.shutil.which",
+            return_value="C:\\tools\\DetectDee.exe",
+        ), patch("osint_toolkit.adapter_probe.subprocess.run", return_value=help_output):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "config_missing")
+        self.assertEqual(setup.missing_env, ("DETECTDEE_DATA",))
+        self.assertEqual(setup.install_kind, "binary")
+        self.assertEqual(adapter.generated_output_file_args, ("-o", "{output_file}"))
+
+        with patch.dict(os.environ, {"DETECTDEE_DATA": "C:\\tools\\DetectDee\\data.json"}), patch(
+            "osint_toolkit.adapter_setup.shutil.which",
+            return_value="C:\\tools\\DetectDee.exe",
+        ), patch("osint_toolkit.adapter_probe.subprocess.run", return_value=help_output):
+            ready = build_adapter_setup(adapter)
+            self.assertEqual(ready.readiness, "ready")
+            self.assertEqual(
+                adapter.render_command(ScanTarget(kind="username", value="example_user")),
+                (
+                    "DetectDee",
+                    "detect",
+                    "-n",
+                    "example_user",
+                    "-f",
+                    "C:\\tools\\DetectDee\\data.json",
+                    "-r",
+                    "1",
+                    "--timeout",
+                    "10",
+                ),
+            )
+            self.assertEqual(
+                adapter.render_command(ScanTarget(kind="email", value="person@example.com"))[:4],
+                ("DetectDee", "detect", "-e", "person@example.com"),
+            )
+            self.assertEqual(
+                adapter.render_command(ScanTarget(kind="phone", value="+380441234567"))[:4],
+                ("DetectDee", "detect", "-p", "+380441234567"),
+            )
+
     def test_setup_reports_not_configured_for_dataset_adapter(self):
         setup = build_adapter_setup(find_adapter("WebBreacher/WhatsMyName"))
 

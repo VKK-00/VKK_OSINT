@@ -10,6 +10,7 @@ OSINT_ENV_KEYS: tuple[str, ...] = (
     "BLACKBIRD_PYTHON",
     "CENSYS_API_ID",
     "CENSYS_API_SECRET",
+    "DETECTDEE_DATA",
     "EMAILREP_API_KEY",
     "GOOGLE_API_KEY",
     "H8MAIL_CONFIG",
