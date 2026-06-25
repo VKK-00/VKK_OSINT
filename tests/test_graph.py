@@ -6,7 +6,12 @@ from osint_toolkit.adapter_parsers import parse_adapter_output
 from osint_toolkit.case_store import CaseStore
 from osint_toolkit.entities import entities_from_findings, entities_from_targets, merge_entities
 from osint_toolkit.engine import Finding, ScanTarget
-from osint_toolkit.graph import analyze_case_graph, analyze_cross_case_path, graph_edges_from_case
+from osint_toolkit.graph import (
+    analyze_case_graph,
+    analyze_cross_case_network,
+    analyze_cross_case_path,
+    graph_edges_from_case,
+)
 from osint_toolkit.investigation import run_investigation
 
 
@@ -113,6 +118,47 @@ class GraphAnalysisTests(unittest.TestCase):
                 target_value="example.com",
                 max_depth=0,
             )
+
+    def test_analyze_cross_case_network_aggregates_visible_graph(self):
+        first = run_investigation(
+            (ScanTarget(kind="email", value="person@example.com"),),
+            title="first case",
+        )
+        second = run_investigation(
+            (
+                ScanTarget(kind="domain", value="example.com"),
+                ScanTarget(kind="url", value="https://example.com/profile"),
+            ),
+            title="second case",
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = CaseStore(Path(tmpdir) / "cases.sqlite")
+            store.save(first, case_id="case-1")
+            store.save(second, case_id="case-2")
+            payloads = store.load_cases()
+
+        network = analyze_cross_case_network(payloads, kind_filter="domain")
+
+        self.assertEqual(network.case_count, 2)
+        self.assertGreaterEqual(network.visible_node_count, 3)
+        self.assertGreaterEqual(network.visible_edge_count, 2)
+        nodes = {(node.kind, node.value.lower()): node for node in network.nodes}
+        self.assertIn(("domain", "example.com"), nodes)
+        self.assertEqual(nodes[("domain", "example.com")].case_count, 2)
+        relations = {edge.relation for edge in network.edges}
+        self.assertIn("email_domain", relations)
+        self.assertIn("url_host", relations)
+
+    def test_analyze_cross_case_network_rejects_bad_limits(self):
+        payload = {"case": {"case_id": "case-1"}, "entities": [], "edges": []}
+
+        with self.assertRaises(ValueError):
+            analyze_cross_case_network((payload,), node_limit=0)
+        with self.assertRaises(ValueError):
+            analyze_cross_case_network((payload,), edge_limit=0)
+        with self.assertRaises(ValueError):
+            analyze_cross_case_network((payload,), min_degree=-1)
 
     def test_phoneinfoga_metadata_edges(self):
         target = ScanTarget(kind="phone", value="+380441234567")

@@ -146,6 +146,102 @@ class CrossCasePathAnalysis:
 
 
 @dataclass(frozen=True)
+class CrossCaseNetworkNode:
+    kind: str
+    value: str
+    degree: int
+    case_count: int
+    cases: tuple[str, ...]
+
+    def key(self) -> tuple[str, str]:
+        return self.kind, self.value.lower()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "kind": self.kind,
+            "value": self.value,
+            "degree": self.degree,
+            "case_count": self.case_count,
+            "cases": list(self.cases),
+        }
+
+
+@dataclass(frozen=True)
+class CrossCaseNetworkEdge:
+    source_kind: str
+    source_value: str
+    relation: str
+    target_kind: str
+    target_value: str
+    count: int
+    case_ids: tuple[str, ...]
+    source: str
+    confidence: str
+    weight: float
+    note: str = ""
+
+    def key(self) -> tuple[str, str, str, str, str]:
+        return (
+            self.source_kind,
+            self.source_value.lower(),
+            self.relation,
+            self.target_kind,
+            self.target_value.lower(),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "source_kind": self.source_kind,
+            "source_value": self.source_value,
+            "relation": self.relation,
+            "target_kind": self.target_kind,
+            "target_value": self.target_value,
+            "count": self.count,
+            "case_ids": list(self.case_ids),
+            "source": self.source,
+            "confidence": self.confidence,
+            "weight": self.weight,
+            "note": self.note,
+        }
+
+
+@dataclass(frozen=True)
+class CrossCaseNetworkAnalysis:
+    case_count: int
+    node_count: int
+    edge_count: int
+    visible_node_count: int
+    visible_edge_count: int
+    kind_filter: str
+    relation_filter: str
+    min_degree: int
+    node_limit: int
+    edge_limit: int
+    relation_counts: tuple[tuple[str, int], ...]
+    kind_counts: tuple[tuple[str, int], ...]
+    nodes: tuple[CrossCaseNetworkNode, ...]
+    edges: tuple[CrossCaseNetworkEdge, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "case_count": self.case_count,
+            "node_count": self.node_count,
+            "edge_count": self.edge_count,
+            "visible_node_count": self.visible_node_count,
+            "visible_edge_count": self.visible_edge_count,
+            "kind_filter": self.kind_filter,
+            "relation_filter": self.relation_filter,
+            "min_degree": self.min_degree,
+            "node_limit": self.node_limit,
+            "edge_limit": self.edge_limit,
+            "relation_counts": dict(self.relation_counts),
+            "kind_counts": dict(self.kind_counts),
+            "nodes": [node.to_dict() for node in self.nodes],
+            "edges": [edge.to_dict() for edge in self.edges],
+        }
+
+
+@dataclass(frozen=True)
 class GraphEdge:
     source_kind: str
     source_value: str
@@ -379,6 +475,132 @@ def analyze_cross_case_path(
         edge_count=edge_count,
         max_depth=max_depth,
         steps=tuple(steps),
+    )
+
+
+def analyze_cross_case_network(
+    payloads: Iterable[Mapping[str, object]],
+    *,
+    kind_filter: str = "",
+    relation_filter: str = "",
+    min_degree: int = 1,
+    node_limit: int = 60,
+    edge_limit: int = 120,
+) -> CrossCaseNetworkAnalysis:
+    if min_degree < 0:
+        raise ValueError("min_degree cannot be negative.")
+    if node_limit < 1:
+        raise ValueError("node_limit must be greater than zero.")
+    if edge_limit < 1:
+        raise ValueError("edge_limit must be greater than zero.")
+
+    normalized_kind_filter = kind_filter.strip()
+    normalized_relation_filter = relation_filter.strip()
+    node_values: dict[tuple[str, str], GraphNode] = {}
+    node_cases: dict[tuple[str, str], set[str]] = {}
+    edge_cases: dict[tuple[str, str, str, str, str], set[str]] = {}
+    edge_counts: Counter[tuple[str, str, str, str, str]] = Counter()
+    edge_values: dict[tuple[str, str, str, str, str], GraphEdge] = {}
+    case_count = 0
+
+    for payload in payloads:
+        case_count += 1
+        case_id = _case_id(payload)
+        edges = tuple(_edge_from_mapping(row) for row in _payload_rows(payload, "edges"))
+        for node in _nodes_from_payload(payload, edges):
+            node_values.setdefault(node.key(), node)
+            node_cases.setdefault(node.key(), set()).add(case_id)
+        for edge in edges:
+            if normalized_relation_filter and edge.relation != normalized_relation_filter:
+                continue
+            if normalized_kind_filter and normalized_kind_filter not in {edge.source_kind, edge.target_kind}:
+                continue
+            source_key = _node_key(edge.source_kind, edge.source_value)
+            target_key = _node_key(edge.target_kind, edge.target_value)
+            node_values.setdefault(source_key, GraphNode(edge.source_kind, edge.source_value))
+            node_values.setdefault(target_key, GraphNode(edge.target_kind, edge.target_value))
+            node_cases.setdefault(source_key, set()).add(case_id)
+            node_cases.setdefault(target_key, set()).add(case_id)
+            key = edge.key()
+            edge_cases.setdefault(key, set()).add(case_id)
+            edge_counts[key] += 1
+            existing = edge_values.get(key)
+            if existing is None or _confidence_rank(edge.confidence) > _confidence_rank(existing.confidence):
+                edge_values[key] = edge
+
+    degrees: Counter[tuple[str, str]] = Counter()
+    for key, edge in edge_values.items():
+        count = edge_counts[key]
+        degrees[_node_key(edge.source_kind, edge.source_value)] += count
+        degrees[_node_key(edge.target_kind, edge.target_value)] += count
+
+    all_nodes = [
+        CrossCaseNetworkNode(
+            kind=node.kind,
+            value=node.value,
+            degree=degrees[node.key()],
+            case_count=len(node_cases.get(node.key(), set())),
+            cases=tuple(sorted(node_cases.get(node.key(), set()))),
+        )
+        for node in node_values.values()
+        if degrees[node.key()] >= min_degree
+    ]
+    all_nodes.sort(
+        key=lambda node: (
+            -node.degree,
+            -node.case_count,
+            node.kind,
+            node.value.lower(),
+        )
+    )
+    visible_nodes = tuple(all_nodes[:node_limit])
+    visible_keys = {node.key() for node in visible_nodes}
+
+    all_edges = [
+        _network_edge_from_aggregate(
+            edge_values[key],
+            count=edge_counts[key],
+            case_ids=tuple(sorted(edge_cases.get(key, set()))),
+        )
+        for key in edge_values
+    ]
+    all_edges.sort(
+        key=lambda edge: (
+            edge.weight,
+            -edge.count,
+            edge.source_kind,
+            edge.source_value.lower(),
+            edge.relation,
+            edge.target_kind,
+            edge.target_value.lower(),
+        )
+    )
+    visible_edges = tuple(
+        edge
+        for edge in all_edges
+        if _node_key(edge.source_kind, edge.source_value) in visible_keys
+        and _node_key(edge.target_kind, edge.target_value) in visible_keys
+    )[:edge_limit]
+
+    return CrossCaseNetworkAnalysis(
+        case_count=case_count,
+        node_count=len(all_nodes),
+        edge_count=len(all_edges),
+        visible_node_count=len(visible_nodes),
+        visible_edge_count=len(visible_edges),
+        kind_filter=normalized_kind_filter,
+        relation_filter=normalized_relation_filter,
+        min_degree=min_degree,
+        node_limit=node_limit,
+        edge_limit=edge_limit,
+        relation_counts=_count_items(
+            relation
+            for edge in all_edges
+            for relation in (edge.relation,) * edge.count
+        ),
+        kind_counts=_count_items(node.kind for node in all_nodes),
+        nodes=visible_nodes,
+        edges=visible_edges,
     )
 
 
@@ -712,6 +934,27 @@ def _path_step_from_traversal(
         source=traversal.edge.source,
         weight=traversal.weight,
         note=traversal.edge.note,
+    )
+
+
+def _network_edge_from_aggregate(
+    edge: GraphEdge,
+    *,
+    count: int,
+    case_ids: tuple[str, ...],
+) -> CrossCaseNetworkEdge:
+    return CrossCaseNetworkEdge(
+        source_kind=edge.source_kind,
+        source_value=edge.source_value,
+        relation=edge.relation,
+        target_kind=edge.target_kind,
+        target_value=edge.target_value,
+        count=count,
+        case_ids=case_ids,
+        source=edge.source,
+        confidence=edge.confidence,
+        weight=_path_edge_weight(edge.confidence),
+        note=edge.note,
     )
 
 

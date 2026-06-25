@@ -9,7 +9,7 @@ from .adapter_setup import AdapterSetup
 from .adapters import AdapterProfile, AdapterSpec
 from .case_store import CaseEntityHit, CaseEntityRecord, CaseRecord
 from .engine import Finding
-from .graph import CrossCasePathAnalysis, GraphAnalysis
+from .graph import CrossCaseNetworkAnalysis, CrossCasePathAnalysis, GraphAnalysis
 from .models import OsintProject
 from .search import SearchPlan, SearchProfile
 
@@ -739,6 +739,105 @@ def format_cross_case_path_analysis(
                 ),
             )
         )
+
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
+def format_cross_case_network_analysis(
+    analysis: CrossCaseNetworkAnalysis,
+    *,
+    output_format: str = "table",
+) -> str:
+    if output_format == "json":
+        return json.dumps(analysis.to_dict(), ensure_ascii=False, indent=2)
+
+    if output_format == "markdown":
+        lines = [
+            "# Cross-Case Network",
+            "",
+            f"- Cases loaded: {analysis.case_count}",
+            f"- Nodes: {analysis.node_count}",
+            f"- Edges: {analysis.edge_count}",
+            f"- Visible nodes: {analysis.visible_node_count}",
+            f"- Visible edges: {analysis.visible_edge_count}",
+            f"- Kind filter: `{analysis.kind_filter or 'all'}`",
+            f"- Relation filter: `{analysis.relation_filter or 'all'}`",
+            f"- Min degree: {analysis.min_degree}",
+            "",
+            "## Visible Nodes",
+            "",
+        ]
+        if analysis.nodes:
+            lines.extend(
+                [
+                    "| Entity | Degree | Cases | Case IDs |",
+                    "|---|---:|---:|---|",
+                ]
+            )
+            for node in analysis.nodes:
+                lines.append(
+                    f"| {_escape_md(node.kind + ':' + node.value)} | {node.degree} | "
+                    f"{node.case_count} | {_escape_md(', '.join(node.cases))} |"
+                )
+        else:
+            lines.append("(none)")
+        lines.extend(["", "## Visible Edges", ""])
+        if analysis.edges:
+            lines.extend(
+                [
+                    "| From | Relation | To | Count | Cases | Confidence | Source |",
+                    "|---|---|---|---:|---|---|---|",
+                ]
+            )
+            for edge in analysis.edges:
+                lines.append(
+                    f"| {_escape_md(edge.source_kind + ':' + edge.source_value)} | "
+                    f"{_escape_md(edge.relation)} | {_escape_md(edge.target_kind + ':' + edge.target_value)} | "
+                    f"{edge.count} | {_escape_md(', '.join(edge.case_ids))} | "
+                    f"{edge.confidence} | {_escape_md(edge.source)} |"
+                )
+        else:
+            lines.append("(none)")
+        return "\n".join(lines)
+
+    if output_format == "table":
+        header = [
+            "Cross-case network",
+            f"Cases loaded:  {analysis.case_count}",
+            f"Nodes:         {analysis.node_count}",
+            f"Edges:         {analysis.edge_count}",
+            f"Visible nodes: {analysis.visible_node_count}",
+            f"Visible edges: {analysis.visible_edge_count}",
+            f"Kind filter:   {analysis.kind_filter or 'all'}",
+            f"Relation:      {analysis.relation_filter or 'all'}",
+            f"Min degree:    {analysis.min_degree}",
+        ]
+        nodes = _format_table(
+            ("Entity", "Degree", "Cases", "Case IDs"),
+            [
+                (
+                    _short(f"{node.kind}:{node.value}", 46),
+                    str(node.degree),
+                    str(node.case_count),
+                    _short(", ".join(node.cases), 60),
+                )
+                for node in analysis.nodes
+            ],
+        ) if analysis.nodes else "(none)"
+        edges = _format_table(
+            ("From", "Relation", "To", "Count", "Cases"),
+            [
+                (
+                    _short(f"{edge.source_kind}:{edge.source_value}", 34),
+                    edge.relation,
+                    _short(f"{edge.target_kind}:{edge.target_value}", 34),
+                    str(edge.count),
+                    _short(", ".join(edge.case_ids), 40),
+                )
+                for edge in analysis.edges
+            ],
+        ) if analysis.edges else "(none)"
+        return "\n".join((*header, "", "Visible nodes:", nodes, "", "Visible edges:", edges))
 
     raise ValueError(f"Unsupported output format: {output_format}")
 

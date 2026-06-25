@@ -55,6 +55,7 @@ TOOLBOX_INPUTS: tuple[ToolboxInput, ...] = (
     ToolboxInput("scope_note", "Scope note", "internal validation scope"),
     ToolboxInput("entity_kind", "Entity kind", "domain"),
     ToolboxInput("entity_value", "Entity value", "example.com"),
+    ToolboxInput("relation", "Relation filter", "email_domain"),
     ToolboxInput("target_entity_kind", "Target entity kind", "url"),
     ToolboxInput("target_entity_value", "Target entity value", "https://example.com/profile"),
     ToolboxInput("out", "Файл отчета", "reports/case.md"),
@@ -552,6 +553,16 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     ),
                     required_inputs=("case_db", "entity_kind", "entity_value", "target_entity_kind", "target_entity_value"),
                     badges=("path", "weighted"),
+                ),
+                ToolboxCommand(
+                    "Cross-case network",
+                    "Показывает bounded общий граф сущностей и связей по сохранённым кейсам.",
+                    (
+                        "python -m osint_toolkit case-network --case-db {case_db} "
+                        "[[--kind {entity_kind}]] [[--relation {relation}]] --format markdown"
+                    ),
+                    required_inputs=("case_db",),
+                    badges=("network", "bounded"),
                 ),
             ),
         ),
@@ -1053,6 +1064,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
             <button type="button" class="secondary" id="showCaseGraph">Graph</button>
             <button type="button" class="secondary" id="showCaseIndex">Index</button>
             <button type="button" class="secondary" id="showCasePath">Path</button>
+            <button type="button" class="secondary" id="showCaseNetwork">Network</button>
           </div>
           <div id="caseList" class="case-list"></div>
           <div id="caseGraphSummary" class="case-graph-summary"></div>
@@ -1076,6 +1088,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
     }};
     let currentCasePayload = null;
     let currentGraphAnalysis = null;
+    let currentGraphMode = "case";
 
     function readValue(name) {{
       const element = document.querySelector(`[data-field="${{name}}"]`);
@@ -1415,12 +1428,28 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
         legend.appendChild(row);
       }}
       const hint = document.createElement("div");
-      hint.textContent = "Click a graph node to focus neighbors.";
+      hint.textContent = currentGraphMode === "network"
+        ? "Click graph nodes to set source/target for Path."
+        : "Click a graph node to focus neighbors.";
       legend.appendChild(hint);
     }}
 
     function focusGraphNode(kind, value) {{
       if (!kind || !value) return;
+      if (currentGraphMode === "network") {{
+        const sourceKind = readValue("entity_kind");
+        const sourceValue = readValue("entity_value");
+        if (!sourceKind || !sourceValue || (sourceKind === kind && sourceValue === value)) {{
+          setFieldValue("entity_kind", kind);
+          setFieldValue("entity_value", value);
+          setCaseLog(`Selected source entity: ${{kind}}:${{value}}`);
+        }} else {{
+          setFieldValue("target_entity_kind", kind);
+          setFieldValue("target_entity_value", value);
+          setCaseLog(`Selected target entity: ${{kind}}:${{value}}`);
+        }}
+        return;
+      }}
       setFieldValue("entity_kind", kind);
       setFieldValue("entity_value", value);
       showCaseGraph().catch((error) => setCaseLog(String(error)));
@@ -1576,6 +1605,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       }});
       currentCasePayload = data;
       currentGraphAnalysis = null;
+      currentGraphMode = "case";
       renderCaseGraph(currentCasePayload, currentGraphAnalysis);
       setCaseLog(JSON.stringify(data, null, 2));
     }}
@@ -1600,6 +1630,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       ]);
       currentCasePayload = caseData;
       currentGraphAnalysis = graphData;
+      currentGraphMode = "case";
       renderCaseGraph(currentCasePayload, currentGraphAnalysis);
       setCaseLog(JSON.stringify({{case: caseData, graph: graphData}}, null, 2));
     }}
@@ -1639,6 +1670,30 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       setCaseLog(JSON.stringify(data, null, 2));
     }}
 
+    async function showCaseNetwork() {{
+      const params = {{
+        case_db: caseDbValue(),
+        case_limit: "100",
+        node_limit: "60",
+        edge_limit: "120",
+        min_degree: "1"
+      }};
+      const entityKind = readValue("entity_kind");
+      const relation = readValue("relation");
+      if (entityKind) params.kind = entityKind;
+      if (relation) params.relation = relation;
+      const data = await fetchCaseJson("/api/case-network", params);
+      const graphPayload = {{
+        entities: Array.isArray(data.nodes) ? data.nodes.map((node) => ({{kind: node.kind, value: node.value}})) : [],
+        edges: Array.isArray(data.edges) ? data.edges : []
+      }};
+      currentCasePayload = graphPayload;
+      currentGraphAnalysis = data;
+      currentGraphMode = "network";
+      renderCaseGraph(currentCasePayload, currentGraphAnalysis);
+      setCaseLog(JSON.stringify(data, null, 2));
+    }}
+
     document.getElementById("runUnifiedSearch").addEventListener("click", () => {{
       runUnifiedSearch().catch((error) => setBackendLog(String(error)));
     }});
@@ -1673,6 +1728,10 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       showCasePath().catch((error) => setCaseLog(String(error)));
     }});
 
+    document.getElementById("showCaseNetwork").addEventListener("click", () => {{
+      showCaseNetwork().catch((error) => setCaseLog(String(error)));
+    }});
+
     document.addEventListener("click", (event) => {{
       const button = event.target.closest("[data-open-case]");
       if (!button) return;
@@ -1705,6 +1764,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       document.getElementById("showCaseGraph").disabled = true;
       document.getElementById("showCaseIndex").disabled = true;
       document.getElementById("showCasePath").disabled = true;
+      document.getElementById("showCaseNetwork").disabled = true;
     }}
   </script>
 </body>

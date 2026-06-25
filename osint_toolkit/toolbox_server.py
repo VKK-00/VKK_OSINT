@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .case_store import CaseStore
-from .graph import analyze_case_graph, analyze_cross_case_path
+from .graph import analyze_case_graph, analyze_cross_case_network, analyze_cross_case_path
 from .search import TARGET_KINDS, list_search_profiles
 from .toolbox import render_toolbox_html, write_toolbox
 
@@ -175,6 +175,27 @@ class ToolboxJobRunner:
             target_kind=target_kind,
             target_value=target_value,
             max_depth=max_depth,
+        ).to_dict()
+
+    def case_network(
+        self,
+        case_db: str,
+        *,
+        kind: str = "",
+        relation: str = "",
+        case_limit: int = 100,
+        node_limit: int = 60,
+        edge_limit: int = 120,
+        min_degree: int = 1,
+    ) -> dict[str, object]:
+        store = CaseStore(self._case_db_path(case_db))
+        return analyze_cross_case_network(
+            store.load_cases(limit=case_limit),
+            kind_filter=kind,
+            relation_filter=relation,
+            min_degree=min_degree,
+            node_limit=node_limit,
+            edge_limit=edge_limit,
         ).to_dict()
 
     def _run_job(self, job: ToolboxJob) -> None:
@@ -414,6 +435,21 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
                         target_value=_query_string(query, "to_value", default=""),
                         case_limit=_query_int(query, "case_limit", default=100, minimum=1, maximum=1000),
                         max_depth=_query_int(query, "max_depth", default=6, minimum=1, maximum=20),
+                    ),
+                )
+                return
+            if path == "/api/case-network":
+                self._require_token()
+                self._send_json(
+                    200,
+                    self._runner().case_network(
+                        _query_string(query, "case_db", default="cases.sqlite"),
+                        kind=_query_string(query, "kind", default=""),
+                        relation=_query_string(query, "relation", default=""),
+                        case_limit=_query_int(query, "case_limit", default=100, minimum=1, maximum=1000),
+                        node_limit=_query_int(query, "node_limit", default=60, minimum=1, maximum=500),
+                        edge_limit=_query_int(query, "edge_limit", default=120, minimum=1, maximum=1000),
+                        min_degree=_query_int(query, "min_degree", default=1, minimum=0, maximum=1000),
                     ),
                 )
                 return

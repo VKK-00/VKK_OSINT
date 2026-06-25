@@ -68,6 +68,7 @@ CLI работает в пяти режимах:
 - saved case graph analysis: счётчики связей/типов сущностей, top connected nodes и focus-запрос соседей сущности;
 - cross-case entity index: поиск повторяющихся email/domain/telegram/instagram/url и других сущностей между сохранёнными кейсами;
 - cross-case path analysis: weighted shortest path между двумя сущностями по объединённым graph edges saved cases;
+- cross-case network analysis: bounded общий graph по нескольким saved cases с aggregation, degree/case_count и фильтрами kind/relation;
 - local toolbox: один HTML-пульт с seed-полями и направлениями для фото-зацепок, OCR, EXIF/metadata, QR/barcodes, reverse image portals, person/username/social, email/phone, domain/url, RU/UA, cases/clickable SVG graph/index и adapter profiles;
 - toolbox backend: `toolbox --serve` поднимает локальный token-protected HTTP server, принимает только структурированные `/api/search` payloads включая `scope_note`, ведёт job queue, logs/status/report access и read-only case endpoints для saved SQLite cases/graph/index;
 - dry-run режим без сетевых запросов по умолчанию;
@@ -234,10 +235,10 @@ CLI работает в пяти режимах:
   - `write_toolbox()` — запись HTML-файла на диск.
 - `osint_toolkit/toolbox_server.py`
   - `ToolboxJobRunner` — создаёт allowlisted `python -m osint_toolkit search ...` jobs, ограничивает output paths рабочей папкой backend и сохраняет stdout/stderr/status.
-  - `ToolboxRequestHandler` — HTTP endpoints `/api/search`, `/api/jobs`, `/api/jobs/<id>`, `/api/jobs/<id>/report`, `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph`, `/api/case-index`, `/api/case-path`, `/api/health`.
+  - `ToolboxRequestHandler` — HTTP endpoints `/api/search`, `/api/jobs`, `/api/jobs/<id>`, `/api/jobs/<id>/report`, `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph`, `/api/case-index`, `/api/case-path`, `/api/case-network`, `/api/health`.
   - `run_toolbox_server()` — CLI entrypoint для `toolbox --serve`.
 - `osint_toolkit/cli.py`
-  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `search`, `profiles`, `adapters`, `adapter-profiles`, `adapter-setup`, `doctor`, `run-adapter`, `toolbox`, `investigate`, `cases`, `case-show`, `case-graph`, `case-index`, `case-path`, `recommend`, `brief`.
+  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `search`, `profiles`, `adapters`, `adapter-profiles`, `adapter-setup`, `doctor`, `run-adapter`, `toolbox`, `investigate`, `cases`, `case-show`, `case-graph`, `case-index`, `case-path`, `case-network`, `recommend`, `brief`.
 
 ## Как система работает end-to-end
 
@@ -321,6 +322,8 @@ Case-store поток:
 8. `CaseStore.list_entity_index()` строит индекс сущностей по всем сохранённым кейсам; `find_cases_by_entity()` показывает кейсы для точной сущности.
 9. Пользователь запускает `python -m osint_toolkit case-path --case-db <path> --from-kind ... --to-kind ...`.
 10. `CaseStore.load_cases()` загружает bounded набор saved cases, а `analyze_cross_case_path()` строит объединённый graph и возвращает weighted shortest path с provenance по каждому hop.
+11. Пользователь запускает `python -m osint_toolkit case-network --case-db <path>`.
+12. `analyze_cross_case_network()` агрегирует одинаковые graph edges между saved cases, считает degree/case_count и отдаёт bounded visible subgraph для CLI/API/toolbox.
 
 ## Поток данных
 
@@ -334,7 +337,7 @@ Case-store поток:
 
 Toolbox:
 
-`ToolboxSection[] + AdapterProfile[] -> render_toolbox_html() -> local HTML -> operator fills image path/seeds -> copy-ready command OR /api/search -> ToolboxJobRunner -> python -m osint_toolkit search -> report/case -> Case Browser /api/cases|graph|case-index|case-path`
+`ToolboxSection[] + AdapterProfile[] -> render_toolbox_html() -> local HTML -> operator fills image path/seeds -> copy-ready command OR /api/search -> ToolboxJobRunner -> python -m osint_toolkit search -> report/case -> Case Browser /api/cases|graph|case-index|case-path|case-network`
 
 Search:
 
@@ -378,7 +381,7 @@ Investigation:
 
 Сохранённые кейсы:
 
-`InvestigationResult + workflow/profile/scope policy metadata -> CaseStore(SQLite) -> cases/case-show/case-graph/case-index/case-path -> table/Markdown/CSV/JSON`
+`InvestigationResult + workflow/profile/scope policy metadata -> CaseStore(SQLite) -> cases/case-show/case-graph/case-index/case-path/case-network -> table/Markdown/CSV/JSON`
 
 ## Внешние интеграции
 
@@ -449,6 +452,9 @@ External adapters должны подключать upstream CLI/API без ко
 - `case-path --from-kind`, `--from-value`, `--to-kind`, `--to-value` — source/target entities для cross-case path поиска.
 - `case-path --case-limit` — максимальное число свежих saved cases, загружаемых для объединённого графа.
 - `case-path --max-depth` — максимальное число hops для weighted shortest path.
+- `case-network --kind` — optional entity-kind neighborhood filter для общего saved-case graph.
+- `case-network --relation` — optional relation filter для общего saved-case graph.
+- `case-network --case-limit`, `--node-limit`, `--edge-limit`, `--min-degree` — границы общего graph view.
 - `run-adapter --execute` — явный запуск внешнего CLI; для поддерживаемых stdout/generated-report formats добавляет parsed findings.
 - `adapter-setup` — показать install/config/readiness plan для adapters.
 
@@ -533,6 +539,7 @@ python -m osint_toolkit case-graph --case-db cases.sqlite case-001 --entity-kind
 python -m osint_toolkit case-index --case-db cases.sqlite --kind domain --min-cases 2
 python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value person@example.com --format json
 python -m osint_toolkit case-path --case-db cases.sqlite --from-kind email --from-value person@example.com --to-kind url --to-value https://example.com/profile --format json
+python -m osint_toolkit case-network --case-db cases.sqlite --kind domain --format markdown
 python -m osint_toolkit recommend username --region ru
 python -m osint_toolkit brief --task username --target-value example --out reports/example.md
 ```
@@ -614,7 +621,7 @@ osint-toolkit stats
 - Adapter manifest теперь включает generated CSV/TXT folder template для `sherlock-project/sherlock`, isolated workdir TXT ingestion для `thewhiteh4t/nexfil`, generated JSON-file templates для `alpkeskin/mosint`, `h8mail` и `laramies/theHarvester`, generated JSON-report folder template для `soxoj/maigret`, generated JSON/NDJSON output folder template для `blacklanternsecurity/bbot`, required-env Python script template для `smicallef/spiderfoot`, interactive stdin template для `jasonxtn/argus`, target-specific executable templates для `user-scanner`, region-aware template для `snooppr/snoop`, required-env Node template для `qeeqbox/social-analyzer`, checkout/results template для `p1ngul1n0/blackbird` и executable template для `sundowndev/phoneinfoga`; более сложные adapters могут потребовать richer per-mode config.
 - Adapter parser покрывает общие URL/email/phone/key-value patterns, Sherlock stdout/CSV/TXT reports, Nexfil stdout/TXT reports, Mosint JSON reports, h8mail JSON reports, Maigret JSON/CSV reports, `user-scanner` JSON/verbose output, Snoop stdout/CSV output, Social Analyzer JSON output, Blackbird JSON/stdout output, PhoneInfoga CLI/API output, domain-recon adapters Subfinder/httpx/passive Amass/theHarvester, BBOT events, SpiderFoot events и Argus stdout/cache-like output; сложные JSON/CSV/HTML exports остальных upstream ещё не разобраны.
 - Adapter profiles в `adapters.py` пока статические. Search-layer profiles можно расширять через `--profile-file` и управлять через `profiles list/show/export`; saved cases хранят workflow/profile/adapter/scope policy metadata, но UI-редактора профилей и enforcement per-case policy ещё нет.
-- Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> email`, `domain -> phone`, `domain -> discovered/social/sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois-server`, `domain -> ip|port|technology`, `url -> instagram`, `url -> social-profile`, `instagram -> platform/display name/account id/public URLs`, `social -> social-profile/platform/display name/account id/public URLs` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics, cross-case entity index, weighted shortest path, command toolbox, served Case Browser и clickable bounded SVG case graph, но нет full cross-case edge graph visualization.
+- Graph edges покрывают базовые отношения, включая `email -> domain`, `domain -> email`, `domain -> phone`, `domain -> discovered/social/sitemap URL`, `domain -> robots disallow path`, `domain -> subdomain`, `domain -> registrar`, `domain -> nameserver`, `domain -> whois-server`, `domain -> ip|port|technology`, `url -> instagram`, `url -> social-profile`, `instagram -> platform/display name/account id/public URLs`, `social -> social-profile/platform/display name/account id/public URLs` и adapter-derived `email -> related_email`; есть summary/focus-neighbor analytics, cross-case entity index, weighted shortest path, bounded cross-case network, command toolbox, served Case Browser и clickable bounded SVG graph, но нет advanced graph layout/filter UI.
 - SQLite schema сейчас версии 3; при изменении таблиц нужна явная миграция.
 - Рекомендации и scan-результаты являются техническими сигналами, не юридической или операционной инструкцией.
 - Для будущего расширения может понадобиться отдельный ingestion pipeline и повторяемый классификатор.
@@ -715,3 +722,4 @@ osint-toolkit stats
 - 2026-06-25: Case Browser в `toolbox --serve` получил bounded SVG-визуализацию saved case graph из `entities`/`edges`; `/api/search` payload теперь передаёт `scope_note` в allowlisted CLI command.
 - 2026-06-25: SVG-граф в Case Browser стал кликабельным: выбор узла заполняет focus entity и запускает focus-neighbor analysis через существующий graph endpoint.
 - 2026-06-25: добавлен cross-case weighted path analysis: `case-path`, `/api/case-path`, toolbox Path-кнопка и Markdown/table/JSON форматирование path hops с `case_id`/relation/direction/confidence/source/weight.
+- 2026-06-25: добавлен bounded cross-case network analysis: `case-network`, `/api/case-network`, toolbox Network-кнопка, aggregation одинаковых edges, degree/case_count и фильтры kind/relation.

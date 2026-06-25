@@ -687,6 +687,25 @@ class CliTests(unittest.TestCase):
             self.assertEqual(path_payload["hop_count"], 2)
             self.assertEqual([step["case_id"] for step in path_payload["steps"]], ["case-1", "case-2"])
 
+            network_result = self.run_cli(
+                "case-network",
+                "--case-db",
+                str(db_path),
+                "--kind",
+                "domain",
+                "--format",
+                "json",
+            )
+            self.assertEqual(network_result.returncode, 0, network_result.stderr)
+            network_payload = json.loads(network_result.stdout)
+            self.assertGreaterEqual(network_payload["visible_node_count"], 3)
+            network_nodes = {
+                (node["kind"], node["value"].lower()): node
+                for node in network_payload["nodes"]
+            }
+            self.assertEqual(network_nodes[("domain", "example.com")]["case_count"], 2)
+            self.assertIn("email_domain", network_payload["relation_counts"])
+
     def test_brief_command_writes_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "brief.md"

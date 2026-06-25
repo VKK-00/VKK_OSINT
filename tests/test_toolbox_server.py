@@ -155,6 +155,17 @@ class ToolboxServerTests(unittest.TestCase):
                 self.assertTrue(path["found"])
                 self.assertEqual(path["hop_count"], 2)
                 self.assertEqual([step["case_id"] for step in path["steps"]], ["email-1", "url-1"])
+
+                network = self._request_json(
+                    f"{base_url}/api/case-network?case_db=cases.sqlite&kind=domain",
+                    auth="test-auth",
+                )
+                self.assertGreaterEqual(network["visible_node_count"], 3)
+                network_nodes = {
+                    (node["kind"], node["value"].lower()): node
+                    for node in network["nodes"]
+                }
+                self.assertEqual(network_nodes[("domain", "example.com")]["case_count"], 2)
             finally:
                 server.shutdown()
                 server.server_close()

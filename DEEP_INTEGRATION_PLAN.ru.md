@@ -566,6 +566,7 @@ Notes:
 13. Done: add bounded SVG case graph visualization in served toolbox Case Browser and pass `scope_note` from the structured backend payload.
 14. Done: make served toolbox graph nodes clickable/keyboard-focusable so one entity can drive focus-neighbor analysis from the same window.
 15. Done: add cross-case weighted path analysis through `case-path`, `/api/case-path` and toolbox Path view.
+16. Done: add bounded cross-case network analysis through `case-network`, `/api/case-network` and toolbox Network view.
 
 ## Definition of done
 

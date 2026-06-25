@@ -109,6 +109,7 @@ python -m osint_toolkit case-graph --case-db cases.sqlite case-one --entity-kind
 python -m osint_toolkit case-index --case-db cases.sqlite --kind domain --min-cases 2
 python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value person@example.com
 python -m osint_toolkit case-path --case-db cases.sqlite --from-kind email --from-value person@example.com --to-kind url --to-value https://example.com/profile
+python -m osint_toolkit case-network --case-db cases.sqlite --kind domain --format markdown
 python -m osint_toolkit recommend username --region ru --limit 8
 python -m osint_toolkit brief --task telegram --region ua --target-value "public channel" --out reports/telegram_ua.md
 ```
@@ -217,7 +218,7 @@ python -m osint_toolkit toolbox --serve --port 8766 --out osint_toolbox.html
 - SQLite cases, SVG graph и cross-case index;
 - каталог, adapter readiness/setup и reusable adapter profiles.
 
-Static `toolbox --out` не загружает фото автоматически и не запускает команды из браузера: он собирает команды для ручного запуска. `toolbox --serve` поднимает локальный `127.0.0.1` backend с per-session token и принимает только структурированные payloads: `/api/search` для запуска unified jobs и read-only `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph`, `/api/case-index`, `/api/case-path` для saved SQLite cases внутри рабочей папки backend. Case Browser строит bounded SVG-визуализацию из сохранённых `entities`/`edges`; клик по узлу заполняет focus entity и вызывает graph summary/focus-neighbor analysis, а `Path` ищет weighted shortest path между source/target entities по всем сохранённым кейсам. Произвольный shell из браузера не исполняется. Для фото served mode запускает тот же `search image ... --execute-adapters`: ready local tools, derived seeds, report/case. Reverse image search остаётся ручной загрузкой на внешние сайты для источника, дублей и контекста изображения, а не для face-ID.
+Static `toolbox --out` не загружает фото автоматически и не запускает команды из браузера: он собирает команды для ручного запуска. `toolbox --serve` поднимает локальный `127.0.0.1` backend с per-session token и принимает только структурированные payloads: `/api/search` для запуска unified jobs и read-only `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph`, `/api/case-index`, `/api/case-path`, `/api/case-network` для saved SQLite cases внутри рабочей папки backend. Case Browser строит bounded SVG-визуализацию из сохранённых `entities`/`edges`; клик по узлу заполняет focus entity и вызывает graph summary/focus-neighbor analysis, `Path` ищет weighted shortest path между source/target entities, а `Network` показывает общий bounded graph по нескольким saved cases с фильтрами kind/relation. Произвольный shell из браузера не исполняется. Для фото served mode запускает тот же `search image ... --execute-adapters`: ready local tools, derived seeds, report/case. Reverse image search остаётся ручной загрузкой на внешние сайты для источника, дублей и контекста изображения, а не для face-ID.
 
 ### `stats`
 
@@ -384,7 +385,7 @@ python -m osint_toolkit investigate --title "saved case" --email person@example.
 
 Если указан `--case-db`, кейс сохраняется в SQLite: targets, findings, entities, graph edges и case metadata можно открыть позже через `cases`, `case-show`, `case-graph` и `case-index`. `--scope-note` добавляет в metadata текстовый контекст/рамки проверки. Для `search` metadata фиксирует requested/search profile, profile file, execute flags и реально запущенные adapters/local tools; для `investigate` — adapter profiles, allowlist и execute flags.
 
-### `cases`, `case-show`, `case-graph`, `case-index` и `case-path`
+### `cases`, `case-show`, `case-graph`, `case-index`, `case-path` и `case-network`
 
 Работа с сохранёнными расследованиями.
 
@@ -399,6 +400,7 @@ python -m osint_toolkit case-index --case-db cases.sqlite
 python -m osint_toolkit case-index --case-db cases.sqlite --kind domain --min-cases 2 --format markdown
 python -m osint_toolkit case-index --case-db cases.sqlite --kind telegram --value "@durov" --format json
 python -m osint_toolkit case-path --case-db cases.sqlite --from-kind email --from-value person@example.com --to-kind url --to-value https://example.com/profile --format markdown
+python -m osint_toolkit case-network --case-db cases.sqlite --kind domain --relation email_domain --format json
 ```
 
 `case-show` в JSON/Markdown показывает `metadata`: workflow, profile/policy, `scope_note` и execution flags, если кейс был сохранён через `search --case-db` или `investigate --case-db`.
@@ -408,6 +410,8 @@ python -m osint_toolkit case-path --case-db cases.sqlite --from-kind email --fro
 `case-index` строит индекс сущностей по всем сохранённым кейсам. Без `--value` команда показывает сущности и количество кейсов, где они встречались; с `--kind` и `--value` показывает конкретные кейсы, содержащие эту сущность.
 
 `case-path` объединяет graph edges из сохранённых кейсов и ищет weighted shortest path между двумя сущностями. Каждый шаг показывает `case_id`, relation, direction, confidence, source и weight.
+
+`case-network` строит bounded общий граф по нескольким saved cases: агрегирует одинаковые edges, считает degree/case_count, поддерживает фильтры `--kind` и `--relation`, а также лимиты `--case-limit`, `--node-limit`, `--edge-limit` и `--min-degree`.
 
 Статусы:
 
