@@ -277,7 +277,7 @@ Search-поток:
 5. Для image target planner добавляет local-tool routes: PowerShell baseline/hash, ExifTool, ImageMagick, Tesseract и zbarimg.
 6. В plan-only режиме результат выводится как table/Markdown/CSV/JSON через `format_search_plan()`. Missing/config/restricted tools остаются строками плана, а не ошибками.
 7. В adapter execution режиме `ready_adapter_repositories()` выбирает только `stage=adapter,status=ready,readiness=ready` и отсекает restricted entries даже при `--include-restricted`.
-8. `run_investigation()` получает исходный target и allowlist ready repositories, запускает внешние adapters через существующий `run_adapter_findings()` и сохраняет Markdown/JSON report и SQLite case при `--out`/`--case-db`; `--scope-note` попадает в case metadata как текстовый контекст/рамки проверки.
+8. `run_investigation()` получает исходный target, `profile.native_kinds` и allowlist ready repositories, запускает только native target kinds из профиля и внешние adapters через существующий `run_adapter_findings()`, затем сохраняет Markdown/JSON report и SQLite case при `--out`/`--case-db`; `--scope-note` попадает в case metadata как текстовый контекст/рамки проверки.
 9. Для `image` target `run_image_search()` запускает ready local tools, добавляет missing/error/timeout findings по остальным local tools, извлекает URL/email/phone/username/domain clues и маршрутизирует derived targets через обычный `search`/`run_investigation()` flow.
 
 Scan-поток:
@@ -310,7 +310,7 @@ Investigation-поток:
 
 1. Пользователь запускает `python -m osint_toolkit investigate` с одним или несколькими seed values.
 2. CLI превращает каждый seed в `ScanTarget`.
-3. `run_investigation()` запускает native scan-модули; person seeds разворачиваются в derived username targets.
+3. `run_investigation()` запускает native scan-модули; в обычном `investigate` режиме доступны все native target kinds, а в `search --execute-adapters` набор ограничивается `profile.native_kinds`.
 4. Derived username targets прогоняются через native username scan и, при `--include-adapters`, через совместимые adapters.
 5. При `--execute-adapters` совместимые adapters запускаются через `run_adapter_findings()`; stdout/stderr parser добавляет дополнительные adapter findings. Для domain seeds профиль `domain-recon` может добавить Subfinder/httpx/passive Amass/theHarvester/BBOT/SpiderFoot, а профиль `broad-recon` может добавить BBOT/SpiderFoot/Argus; их parsed findings входят в тот же graph.
 6. `entities.py` извлекает и объединяет сущности из входных целей, `Finding.url`, `Finding.evidence` и `Finding.metadata`.
@@ -353,7 +353,7 @@ Toolbox:
 
 Search:
 
-`seed -> classify_target() -> SearchProfile -> native steps + AdapterSpec readiness + LocalToolSpec readiness -> SearchPlan -> plan output OR ready adapter allowlist/local image runner -> run_investigation() -> report/case`
+`seed -> classify_target() -> SearchProfile -> native steps + AdapterSpec readiness + LocalToolSpec readiness -> SearchPlan -> plan output OR profile-scoped native execution + ready adapter allowlist/local image runner -> run_investigation() -> report/case`
 
 Сканирование:
 
@@ -753,3 +753,4 @@ osint-toolkit stats
 - 2026-06-25: добавлен safe case management слой: `cases --workflow/--profile/--scope-query`, `case-update`, `case-delete --yes`, `/api/cases/<id>/update`, `/api/cases/<id>/delete` и toolbox controls для filtered list, title/scope update и typed-confirm delete.
 - 2026-06-25: `toolbox --serve` получил guarded custom profile integration: `/api/profiles`, поля `Profile file`/`Custom profile`, path guard внутри backend cwd и передачу `--profile-file` в allowlisted `/api/search` jobs после JSON validation.
 - 2026-06-25: served toolbox расширен минимальным profile editor: `/api/profiles/save`, `/api/profiles/delete`, поля profile target/native/adapter/local/excluded lists, canonical JSON write и повторная валидация всего custom profile file перед сохранением.
+- 2026-06-25: `search --execute-adapters` теперь передаёт `profile.native_kinds` в `run_investigation()`, поэтому custom adapter-only profiles не запускают скрытые native-модули вне выбранного профиля.

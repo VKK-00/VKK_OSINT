@@ -953,6 +953,44 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["executed_adapters"], [])
         self.assertEqual(payload["investigation"]["targets"][0]["value"], "person@example.com")
 
+    def test_search_execute_adapters_respects_custom_profile_native_kinds(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "profiles.json"
+            profile_path.write_text(
+                json.dumps(
+                    {
+                        "profiles": [
+                            {
+                                "name": "case-email-adapter-only",
+                                "target_kinds": ["email"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_cli(
+                "search",
+                "email",
+                "person@example.com",
+                "--profile",
+                "case-email-adapter-only",
+                "--profile-file",
+                str(profile_path),
+                "--execute-adapters",
+                "--adapter-limit",
+                "0",
+                "--format",
+                "json",
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["search_plan"]["profile"]["native_kinds"], [])
+        self.assertEqual(payload["investigation"]["findings"], [])
+        self.assertEqual(payload["executed_adapters"], [])
+
     def test_search_execute_adapters_can_save_report_and_case(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             report_path = Path(tmpdir) / "search.md"

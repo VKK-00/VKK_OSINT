@@ -8,7 +8,7 @@ from pathlib import Path
 from .adapter_runner import run_adapter_findings
 from .adapters import ADAPTERS, AdapterSpec, find_adapter
 from .entities import Entity, entities_from_findings, entities_from_targets, merge_entities
-from .engine import Finding, RunConfig, ScanTarget
+from .engine import Engine, Finding, RunConfig, ScanTarget
 from .graph import GraphEdge, graph_edges_from_case
 from .runtime import build_default_engine
 
@@ -59,6 +59,7 @@ def run_investigation(
     crawl_depth: int = 1,
     person_aliases: tuple[str, ...] = (),
     adapter_repositories: tuple[str, ...] = (),
+    native_kinds: tuple[str, ...] | None = None,
 ) -> InvestigationResult:
     engine = build_default_engine()
     config = RunConfig(
@@ -73,11 +74,11 @@ def run_investigation(
     )
     findings: list[Finding] = []
     for target in targets:
-        findings.extend(engine.scan(target, config))
+        findings.extend(_native_scan(engine, target, config, native_kinds=native_kinds))
 
     scan_targets = _scan_targets_with_person_expansions(targets, tuple(findings))
     for target in scan_targets[len(targets) :]:
-        findings.extend(engine.scan(target, config))
+        findings.extend(_native_scan(engine, target, config, native_kinds=native_kinds))
 
     adapter_findings: list[Finding] = []
     if include_adapters:
@@ -108,6 +109,18 @@ def run_investigation(
         edges=edges,
         generated_at=datetime.now().astimezone().isoformat(timespec="seconds"),
     )
+
+
+def _native_scan(
+    engine: Engine,
+    target: ScanTarget,
+    config: RunConfig,
+    *,
+    native_kinds: tuple[str, ...] | None,
+) -> tuple[Finding, ...]:
+    if native_kinds is not None and target.kind not in native_kinds:
+        return ()
+    return engine.scan(target, config)
 
 
 def render_investigation_markdown(result: InvestigationResult) -> str:

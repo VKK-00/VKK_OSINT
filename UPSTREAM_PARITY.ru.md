@@ -391,6 +391,7 @@ python -m osint_toolkit case-delete --case-db cases.sqlite case-001 --yes
 - reusable adapter profiles such as `username-full`, `email-safe`, `phone-safe` and `username-ru-ua`; username/email profiles now include Blackbird where lawful scope allows execution;
 - repeated `--adapter <repository>` allowlist for one case;
 - explicit executed adapter ingestion via `--execute-adapters`;
+- profile-scoped native execution for `search --execute-adapters` through `profile.native_kinds`;
 - Markdown/JSON report;
 - Entity Summary from targets, finding URLs, evidence and metadata;
 - Graph Edges for base entity relations;

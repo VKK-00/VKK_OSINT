@@ -565,6 +565,7 @@ def handle_search(args: argparse.Namespace) -> int:
         adapter_timeout=args.adapter_timeout,
         adapter_limit=args.adapter_limit,
         adapter_repositories=executable_adapters,
+        native_kinds=plan.profile.native_kinds,
     )
     content = _render_search_execution(plan, result, executable_adapters, output_format=args.format)
     saved_message = ""

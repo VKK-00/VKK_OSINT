@@ -267,6 +267,7 @@ class SearchPlanTests(unittest.TestCase):
         )
 
         self.assertEqual(ready_adapter_repositories(plan), ("ready/repo",))
+        self.assertEqual(ready_adapter_repositories(plan, limit=0), ())
 
 
 if __name__ == "__main__":

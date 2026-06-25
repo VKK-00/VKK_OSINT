@@ -10,6 +10,16 @@ from osint_toolkit.investigation import InvestigationResult, render_investigatio
 
 
 class InvestigationTests(unittest.TestCase):
+    def test_native_kinds_can_disable_native_scans(self):
+        result = run_investigation(
+            (ScanTarget(kind="email", value="person@example.com"),),
+            native_kinds=(),
+        )
+
+        self.assertEqual(result.findings, ())
+        entities = {(entity.kind, entity.value.lower()) for entity in result.entities}
+        self.assertIn(("email", "person@example.com"), entities)
+
     def test_adapter_allowlist_limits_dry_run_repositories(self):
         result = run_investigation(
             (ScanTarget(kind="username", value="example_user"),),

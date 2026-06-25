@@ -552,6 +552,8 @@ def build_search_plan(
 
 
 def ready_adapter_repositories(plan: SearchPlan, *, limit: int | None = None) -> tuple[str, ...]:
+    if limit == 0:
+        return ()
     repositories: list[str] = []
     seen: set[str] = set()
     for step in plan.steps:
