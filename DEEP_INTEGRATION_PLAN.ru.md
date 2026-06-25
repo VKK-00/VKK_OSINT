@@ -54,7 +54,7 @@ python -m osint_toolkit search domain example.com --profile passive-recon --plan
 - graph edges and cross-case entity index;
 - static `toolbox` window.
 
-Главный оставшийся gap: `search --plan-only` уже строит единый high-level fan-out plan, но execution queue, которая автоматически запускает все ready tools и ведёт весь запуск до отчёта, ещё не реализована.
+Главный оставшийся gap: `search --plan-only` уже строит единый high-level fan-out plan, а `search --execute-adapters` запускает ready non-restricted external adapters. Не реализованы ещё local image tool execution, installer/doctor profile workflow и локальный UI backend для запуска команд из браузерного окна.
 
 ## Целевая архитектура
 
@@ -462,9 +462,10 @@ Deliverables:
 - `SearchProfile`, `LocalToolSpec`, `PlannedStep`, `SearchPlan`;
 - auto target classifier;
 - mapping target kind -> native modules + adapter profiles + local image tools;
-- `--plan-only`.
+- `--plan-only`;
+- ready-only `--execute-adapters` path for non-image targets.
 
-Status: implemented in the current codebase.
+Status: planner and ready-only external adapter execution are implemented in the current codebase. Image local-tool execution remains a later stage.
 
 Tests:
 
@@ -548,9 +549,9 @@ Notes:
 1. Done: add `search --plan-only` for phone/email/username/person/domain/url/image/social/ru-ua.
 2. Done: add built-in `phone-full`, `email-full`, `image-full`, `all-safe` and related profiles.
 3. Next: add `tools doctor --profile`.
-4. Next: add fan-out execution for ready adapters.
+4. Done: add fan-out execution for ready non-restricted adapters.
 5. Next: add image local tool execution and derived seed extraction.
-6. In progress: replace toolbox command cards with `search` commands where high-level routing is stable.
+6. Done for stable routes: replace toolbox command cards with `search` plan/execution commands where high-level routing is stable.
 
 ## Definition of done
 

@@ -1,6 +1,14 @@
 import unittest
 
-from osint_toolkit.search import build_search_plan, classify_target
+from osint_toolkit.engine import ScanTarget
+from osint_toolkit.search import (
+    PlannedStep,
+    SearchPlan,
+    build_search_plan,
+    classify_target,
+    find_search_profile,
+    ready_adapter_repositories,
+)
 
 
 class SearchPlanTests(unittest.TestCase):
@@ -76,6 +84,75 @@ class SearchPlanTests(unittest.TestCase):
 
         self.assertEqual(plan.target.kind, "email")
         self.assertEqual(plan.profile.name, "email-full")
+
+    def test_person_full_plan_includes_derived_username_adapter_routes(self):
+        plan = build_search_plan("person", "Ivan Petrenko", profile_name="person-full")
+        sources = {step.source: step for step in plan.steps}
+
+        self.assertIn("scan person", sources)
+        self.assertIn("scan username", sources)
+        self.assertIn("sherlock-project/sherlock", sources)
+        self.assertEqual(sources["sherlock-project/sherlock"].target_kind, "username")
+        self.assertEqual(sources["sherlock-project/sherlock"].target_value, "<derived usernames>")
+
+    def test_ready_adapter_repositories_only_returns_ready_non_restricted_steps(self):
+        plan = SearchPlan(
+            target=ScanTarget(kind="username", value="example_user"),
+            profile=find_search_profile("username-full"),
+            steps=(
+                PlannedStep(
+                    stage="adapter",
+                    source="ready/repo",
+                    title="ready",
+                    target_kind="username",
+                    target_value="example_user",
+                    status="ready",
+                    readiness="ready",
+                    metadata={"adapter_status": "planned"},
+                ),
+                PlannedStep(
+                    stage="adapter",
+                    source="restricted/repo",
+                    title="restricted",
+                    target_kind="username",
+                    target_value="example_user",
+                    status="ready",
+                    readiness="ready",
+                    metadata={"adapter_status": "restricted"},
+                ),
+                PlannedStep(
+                    stage="adapter",
+                    source="missing/repo",
+                    title="missing",
+                    target_kind="username",
+                    target_value="example_user",
+                    status="missing",
+                    readiness="missing",
+                    metadata={"adapter_status": "planned"},
+                ),
+                PlannedStep(
+                    stage="adapter",
+                    source="ready/repo",
+                    title="duplicate",
+                    target_kind="username",
+                    target_value="example_user",
+                    status="ready",
+                    readiness="ready",
+                    metadata={"adapter_status": "planned"},
+                ),
+                PlannedStep(
+                    stage="native",
+                    source="scan username",
+                    title="native",
+                    target_kind="username",
+                    target_value="example_user",
+                    status="planned",
+                    readiness="built_in",
+                ),
+            ),
+        )
+
+        self.assertEqual(ready_adapter_repositories(plan), ("ready/repo",))
 
 
 if __name__ == "__main__":

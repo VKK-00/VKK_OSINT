@@ -40,7 +40,7 @@
 - запускать Social Analyzer adapter в fast JSON mode с optional RU/UA `--countries` фильтром и разбирать `detected`/`unknown`/`failed` profiles;
 - запускать Blackbird adapter из upstream checkout, читать свежие JSON exports и stdout profile hits для username/email account discovery;
 - запускать Subfinder, httpx, пассивный Amass, theHarvester, BBOT, SpiderFoot и Argus recon adapters и нормализовать subdomains/emails/phones/URLs/IPs/ports/technologies/HTTP probe results в общий graph;
-- строить unified `search --plan-only` fan-out план: один seed автоматически разворачивается в native checks, совместимые adapters, readiness/install hints и local image tools;
+- строить unified `search` fan-out: один seed автоматически разворачивается в native checks, совместимые adapters, readiness/install hints и local image tools, а `--execute-adapters` запускает ready non-restricted adapters в единый report/case;
 - генерировать локальное HTML-окно `toolbox` с направлениями OSINT, seed-полями и copy-ready командами для фото-зацепок, OCR, EXIF/metadata, QR/barcodes, reverse image portals, лиц/username, email, телефона, домена/URL, РФ/Украины, кейсов, графов и adapters;
 - получать безопасный workflow под задачу;
 - генерировать Markdown-brief для кейса.
@@ -53,6 +53,7 @@
 python -m osint_toolkit stats
 python -m osint_toolkit toolbox --out osint_toolbox.html
 python -m osint_toolkit search phone +380441234567 --profile phone-full --plan-only
+python -m osint_toolkit search phone +380441234567 --profile phone-full --execute-adapters --adapter-limit 3 --out reports/phone.md --case-db cases.sqlite --case-id phone-001
 python -m osint_toolkit search email person@example.com --profile email-full --plan-only --format markdown
 python -m osint_toolkit search auto https://vk.com/example --profile auto --plan-only --format json
 python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full --plan-only
@@ -116,11 +117,13 @@ osint-toolkit stats
 
 ### `search`
 
-Строит единый fan-out план для одного seed: native checks, совместимые adapters, readiness внешних CLI/env, local image tools, install hints и restricted/excluded notices.
+Строит единый fan-out план для одного seed: native checks, совместимые adapters, readiness внешних CLI/env, local image tools, install hints и restricted/excluded notices. С `--execute-adapters` запускает только ready non-restricted adapters из этого же плана и пишет unified investigation report.
 
 ```powershell
 python -m osint_toolkit search phone +380441234567 --profile phone-full --plan-only
+python -m osint_toolkit search phone +380441234567 --profile phone-full --execute-adapters --adapter-limit 3 --out reports/phone.md --case-db cases.sqlite --case-id phone-001
 python -m osint_toolkit search email person@example.com --profile email-full --plan-only --format markdown
+python -m osint_toolkit search email person@example.com --profile email-full --execute-adapters --adapter-limit 3 --format json
 python -m osint_toolkit search username example_user --profile username-full --region ua --plan-only
 python -m osint_toolkit search domain example.com --profile passive-recon --plan-only
 python -m osint_toolkit search url https://example.com --profile web-full --plan-only
@@ -128,7 +131,7 @@ python -m osint_toolkit search image C:\evidence\photo.jpg --profile image-full 
 python -m osint_toolkit search phone +380441234567 --profile phone-full --include-restricted --plan-only --format json
 ```
 
-`search` в текущем слое является планировщиком: он не требует вручную перечислять каждый upstream tool, но пока требует `--plan-only`. Execution fan-out через `--execute-adapters` будет следующим этапом; существующий `investigate --execute-adapters` остаётся рабочим lower-level маршрутом для выбранных adapters.
+Без `--execute-adapters` команда показывает план и ничего не запускает. `--execute-adapters` использует readiness из плана, запускает только `ready` adapters, не запускает `missing`/`config_missing`/`not_configured`/`excluded`/`restricted` entries и сохраняет результат через тот же investigation/case-store слой. Для `image` execution пока не запускает локальные ExifTool/OCR/QR tools: используй `--plan-only`, затем выполняй локальные команды из плана или toolbox.
 
 ### `toolbox`
 

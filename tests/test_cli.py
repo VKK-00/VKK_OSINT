@@ -685,7 +685,85 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(sources["megadose/ignorant"]["status"], "restricted")
 
-    def test_search_execute_adapters_is_not_enabled_in_v1(self):
+    def test_search_execute_adapters_writes_json_report_without_ready_adapters(self):
+        result = self.run_cli(
+            "search",
+            "email",
+            "person@example.com",
+            "--profile",
+            "email-full",
+            "--execute-adapters",
+            "--adapter-limit",
+            "0",
+            "--format",
+            "json",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(payload["search_plan"]["target"]["kind"], "email")
+        self.assertEqual(payload["executed_adapters"], [])
+        self.assertEqual(payload["investigation"]["targets"][0]["value"], "person@example.com")
+
+    def test_search_execute_adapters_can_save_report_and_case(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            report_path = Path(tmpdir) / "search.md"
+            db_path = Path(tmpdir) / "cases.sqlite"
+            result = self.run_cli(
+                "search",
+                "phone",
+                "+380441234567",
+                "--profile",
+                "phone-full",
+                "--execute-adapters",
+                "--adapter-limit",
+                "0",
+                "--out",
+                str(report_path),
+                "--case-db",
+                str(db_path),
+                "--case-id",
+                "phone-search-1",
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(report_path.exists())
+            self.assertTrue(db_path.exists())
+            self.assertIn("Wrote", result.stdout)
+            self.assertIn("Saved case phone-search-1", result.stdout)
+
+            content = report_path.read_text(encoding="utf-8")
+            self.assertIn("# Search Execution Report: phone", content)
+            self.assertIn("## Fan-out Plan", content)
+            self.assertIn("## Investigation Report", content)
+
+    def test_search_execute_adapters_rejects_image_targets(self):
+        result = self.run_cli(
+            "search",
+            "image",
+            r"C:\x\photo.jpg",
+            "--profile",
+            "image-full",
+            "--execute-adapters",
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("does not execute local image tools yet", result.stderr)
+
+    def test_search_execute_adapters_rejects_plan_only_conflict(self):
+        result = self.run_cli(
+            "search",
+            "phone",
+            "+380441234567",
+            "--profile",
+            "phone-full",
+            "--plan-only",
+            "--execute-adapters",
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("mutually exclusive", result.stderr)
+
+    def test_search_case_id_requires_case_db(self):
         result = self.run_cli(
             "search",
             "phone",
@@ -693,10 +771,14 @@ class CliTests(unittest.TestCase):
             "--profile",
             "phone-full",
             "--execute-adapters",
+            "--adapter-limit",
+            "0",
+            "--case-id",
+            "phone-search-1",
         )
 
         self.assertEqual(result.returncode, 2)
-        self.assertIn("search --execute-adapters is planned", result.stderr)
+        self.assertIn("--case-id requires --case-db", result.stderr)
 
 
 if __name__ == "__main__":

@@ -27,6 +27,8 @@ class ToolboxTests(unittest.TestCase):
         self.assertIn("python -m osint_toolkit search email", html)
         self.assertIn("python -m osint_toolkit search image", html)
         self.assertIn("python -m osint_toolkit search person", html)
+        self.assertIn("--execute-adapters", html)
+        self.assertIn("ready-only", html)
         self.assertIn("exiftool -a -u -g1 -ee", html)
         self.assertIn("tesseract", html)
         self.assertIn("zbarimg", html)

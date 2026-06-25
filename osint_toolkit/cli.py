@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import webbrowser
 from pathlib import Path
@@ -35,7 +36,13 @@ from .output import (
     format_stats,
 )
 from .runtime import build_default_engine
-from .search import TARGET_KINDS, build_search_plan, list_search_profiles
+from .search import (
+    TARGET_KINDS,
+    SearchPlan,
+    build_search_plan,
+    list_search_profiles,
+    ready_adapter_repositories,
+)
 from .toolbox import write_toolbox
 from .workflows import TASK_PROFILES, recommend_projects, render_brief, render_recommendation, write_brief
 
@@ -152,13 +159,13 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("target_value")
     search.add_argument("--profile", choices=("auto", *(profile.name for profile in list_search_profiles())), default="auto")
     search.add_argument("--plan-only", action="store_true", help="Only show the fan-out plan. No tools are executed.")
-    search.add_argument("--execute-adapters", action="store_true", help="Execute ready external adapters. Not available in v1 planner.")
+    search.add_argument("--execute-adapters", action="store_true", help="Execute ready non-restricted external adapters from the search plan.")
     search.add_argument("--include-restricted", action="store_true", help="Include restricted tools in the plan with explicit markings.")
     search.add_argument("--region", choices=("all", "ru", "ua"), default="all")
     search.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
-    search.add_argument("--out", help="Future report output path for execution mode.")
-    search.add_argument("--case-db", help="Future SQLite case database for execution mode.")
-    search.add_argument("--case-id", help="Future stable case id for execution mode.")
+    search.add_argument("--out", help="Write execution report to this path.")
+    search.add_argument("--case-db", help="SQLite database path for saving execution results.")
+    search.add_argument("--case-id", help="Optional stable case id when --case-db is used.")
     search.add_argument("--timeout", type=float, default=10.0)
     search.add_argument("--adapter-timeout", type=float, default=60.0)
     search.add_argument("--adapter-limit", type=int, default=20)
@@ -339,10 +346,6 @@ def handle_toolbox(args: argparse.Namespace) -> int:
 
 
 def handle_search(args: argparse.Namespace) -> int:
-    if args.execute_adapters:
-        raise ValueError("search --execute-adapters is planned for the execution stage; use --plan-only in this version.")
-    if not args.plan_only:
-        raise ValueError("search currently requires --plan-only. Execution fan-out is the next integration stage.")
     plan = build_search_plan(
         args.target_kind,
         args.target_value,
@@ -350,8 +353,88 @@ def handle_search(args: argparse.Namespace) -> int:
         region=args.region,
         include_restricted=args.include_restricted,
     )
-    print(format_search_plan(plan, output_format=args.format))
+    if args.plan_only and args.execute_adapters:
+        raise ValueError("--plan-only and --execute-adapters are mutually exclusive.")
+    if not args.execute_adapters:
+        print(format_search_plan(plan, output_format=args.format))
+        return 0
+    if args.case_id and not args.case_db:
+        raise ValueError("--case-id requires --case-db.")
+    if plan.target.kind == "image":
+        raise ValueError("search --execute-adapters does not execute local image tools yet; use --plan-only for image targets.")
+    executable_adapters = ready_adapter_repositories(plan, limit=args.adapter_limit)
+    result = run_investigation(
+        (plan.target,),
+        title=f"Unified search: {plan.target.kind}:{plan.target.value}",
+        live=False,
+        timeout=args.timeout,
+        include_adapters=bool(executable_adapters),
+        execute_adapters=bool(executable_adapters),
+        allow_restricted_adapters=False,
+        adapter_timeout=args.adapter_timeout,
+        adapter_limit=args.adapter_limit,
+        adapter_repositories=executable_adapters,
+    )
+    content = _render_search_execution(plan, result, executable_adapters, output_format=args.format)
+    saved_message = ""
+    if args.case_db:
+        case_id = CaseStore(args.case_db).save(result, case_id=args.case_id)
+        saved_message = f"Saved case {case_id} to {args.case_db}"
+    if args.out:
+        path = write_investigation(args.out, content)
+        print(f"Wrote {path}")
+    else:
+        print(content)
+    if saved_message:
+        if args.out:
+            print(saved_message)
+        else:
+            print(saved_message, file=sys.stderr)
     return 0
+
+
+def _render_search_execution(
+    plan: SearchPlan,
+    result,
+    executable_adapters: tuple[str, ...],
+    *,
+    output_format: str,
+) -> str:
+    if output_format == "json":
+        return json.dumps(
+            {
+                "search_plan": plan.to_dict(),
+                "executed_adapters": list(executable_adapters),
+                "investigation": result.to_dict(),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    plan_markdown = format_search_plan(plan, output_format="markdown")
+    investigation_markdown = render_investigation_markdown(result)
+    adapter_lines = "\n".join(f"- `{repository}`" for repository in executable_adapters) or "- none"
+    return "\n".join(
+        [
+            f"# Search Execution Report: {plan.target.kind}",
+            "",
+            f"- Target: `{plan.target.value}`",
+            f"- Profile: `{plan.profile.name}`",
+            "- Restricted execution: disabled",
+            "",
+            "## Executed Adapters",
+            "",
+            adapter_lines,
+            "",
+            "## Fan-out Plan",
+            "",
+            plan_markdown,
+            "",
+            "## Investigation Report",
+            "",
+            investigation_markdown.strip(),
+            "",
+        ]
+    )
 
 
 def handle_investigate(args: argparse.Namespace) -> int:

@@ -348,6 +348,25 @@ def build_search_plan(
     return SearchPlan(target=target, profile=profile, steps=tuple(_dedupe_steps(steps)), warnings=warnings)
 
 
+def ready_adapter_repositories(plan: SearchPlan, *, limit: int | None = None) -> tuple[str, ...]:
+    repositories: list[str] = []
+    seen: set[str] = set()
+    for step in plan.steps:
+        if step.stage != "adapter" or step.status != "ready" or step.readiness != "ready":
+            continue
+        adapter_status = str((step.metadata or {}).get("adapter_status", ""))
+        if adapter_status == "restricted":
+            continue
+        key = step.source.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        repositories.append(step.source)
+        if limit is not None and len(repositories) >= limit:
+            break
+    return tuple(repositories)
+
+
 def _profile_for_target(profile_name: str, target_kind: str) -> SearchProfile:
     if profile_name == "auto":
         profile_name = _default_profile_for_target(target_kind)
@@ -419,11 +438,15 @@ def _adapter_steps(
         adapter = find_adapter(repository)
         if repository in profile.excluded_repositories and not include_restricted:
             continue
+        step_target = target
         if adapter.target_kinds and target.kind not in adapter.target_kinds:
-            continue
+            if target.kind == "person" and "username" in adapter.target_kinds:
+                step_target = ScanTarget(kind="username", value="<derived usernames>", region=target.region)
+            else:
+                continue
         setup = build_adapter_setup(adapter)
-        command = format_command(adapter.render_command(target))
-        steps.append(_adapter_step(target, setup, command))
+        command = format_command(adapter.render_command(step_target))
+        steps.append(_adapter_step(step_target, setup, command))
     return tuple(steps)
 
 

@@ -198,6 +198,19 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     badges=("search", "person-full"),
                 ),
                 ToolboxCommand(
+                    "Person ready execution",
+                    "Запускает ready non-restricted adapters из person-full плана и пишет unified report/case.",
+                    (
+                        'python -m osint_toolkit search person "{person}" '
+                        "--profile person-full --region {region} --execute-adapters "
+                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--case-db {case_db} --case-id {case_id}"
+                    ),
+                    required_inputs=("person", "region", "adapter_limit", "out", "case_db", "case_id"),
+                    badges=("execute", "ready-only"),
+                    note="Missing/config/restricted tools остаются видимыми в Fan-out Plan, но не запускаются.",
+                ),
+                ToolboxCommand(
                     "Username full search plan",
                     "Планирует native username checks, global adapters и broad compatible routes.",
                     (
@@ -206,6 +219,19 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     ),
                     required_inputs=("username", "region"),
                     badges=("search", "username-full"),
+                ),
+                ToolboxCommand(
+                    "Username ready execution",
+                    "Запускает ready non-restricted adapters из username-full плана и пишет unified report/case.",
+                    (
+                        "python -m osint_toolkit search username {username} "
+                        "--profile username-full --region {region} --execute-adapters "
+                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--case-db {case_db} --case-id {case_id}"
+                    ),
+                    required_inputs=("username", "region", "adapter_limit", "out", "case_db", "case_id"),
+                    badges=("execute", "ready-only"),
+                    note="Restricted adapters через search execution не запускаются.",
                 ),
                 ToolboxCommand(
                     "Имя -> username-кандидаты",
@@ -258,6 +284,19 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     badges=("search", "email-full"),
                 ),
                 ToolboxCommand(
+                    "Email ready execution",
+                    "Запускает ready non-restricted adapters из email-full плана и пишет unified report/case.",
+                    (
+                        "python -m osint_toolkit search email {email} "
+                        "--profile email-full --execute-adapters "
+                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--case-db {case_db} --case-id {case_id}"
+                    ),
+                    required_inputs=("email", "adapter_limit", "out", "case_db", "case_id"),
+                    badges=("execute", "ready-only"),
+                    note="holehe/email2phonenumber остаются restricted/excluded и не запускаются.",
+                ),
+                ToolboxCommand(
                     "Phone full search plan",
                     "Планирует native phone, PhoneInfoga, broad compatible tools и restricted exclusions.",
                     (
@@ -266,6 +305,19 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     ),
                     required_inputs=("phone",),
                     badges=("search", "phone-full"),
+                ),
+                ToolboxCommand(
+                    "Phone ready execution",
+                    "Запускает ready non-restricted adapters из phone-full плана и пишет unified report/case.",
+                    (
+                        "python -m osint_toolkit search phone {phone} "
+                        "--profile phone-full --execute-adapters "
+                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--case-db {case_db} --case-id {case_id}"
+                    ),
+                    required_inputs=("phone", "adapter_limit", "out", "case_db", "case_id"),
+                    badges=("execute", "ready-only"),
+                    note="Phone-to-account restricted checks не запускаются через search execution.",
                 ),
             ),
         ),
@@ -285,6 +337,18 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     badges=("search", "passive-recon"),
                 ),
                 ToolboxCommand(
+                    "Domain ready execution",
+                    "Запускает ready non-restricted adapters из passive-recon плана и пишет unified report/case.",
+                    (
+                        "python -m osint_toolkit search domain {domain} "
+                        "--profile passive-recon --execute-adapters "
+                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--case-db {case_db} --case-id {case_id}"
+                    ),
+                    required_inputs=("domain", "adapter_limit", "out", "case_db", "case_id"),
+                    badges=("execute", "ready-only"),
+                ),
+                ToolboxCommand(
                     "Web full URL search plan",
                     "Планирует native URL recon, archive route и broad compatible adapters.",
                     (
@@ -293,6 +357,18 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     ),
                     required_inputs=("url",),
                     badges=("search", "web-full"),
+                ),
+                ToolboxCommand(
+                    "URL ready execution",
+                    "Запускает ready non-restricted adapters из web-full плана и пишет unified report/case.",
+                    (
+                        "python -m osint_toolkit search url {url} "
+                        "--profile web-full --execute-adapters "
+                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--case-db {case_db} --case-id {case_id}"
+                    ),
+                    required_inputs=("url", "adapter_limit", "out", "case_db", "case_id"),
+                    badges=("execute", "ready-only"),
                 ),
                 ToolboxCommand(
                     "Domain recon adapters",
@@ -343,6 +419,18 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     badges=("search", "ru-ua-full"),
                 ),
                 ToolboxCommand(
+                    "RU/UA username ready execution",
+                    "Запускает ready non-restricted RU/UA-aware adapters и пишет unified report/case.",
+                    (
+                        "python -m osint_toolkit search username {username} "
+                        "--profile ru-ua-full --region {region} --execute-adapters "
+                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--case-db {case_db} --case-id {case_id}"
+                    ),
+                    required_inputs=("username", "region", "adapter_limit", "out", "case_db", "case_id"),
+                    badges=("execute", "ru-ua-full"),
+                ),
+                ToolboxCommand(
                     "RU/UA source scan",
                     "Native route по RU/UA sources.",
                     "python -m osint_toolkit scan ru-ua {ruua} --region {region} --format markdown",
@@ -355,6 +443,18 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     "python -m osint_toolkit search social {social} --profile social-full --region {region} --plan-only --format markdown",
                     required_inputs=("social", "region"),
                     badges=("search", "social-full"),
+                ),
+                ToolboxCommand(
+                    "RU social ready execution",
+                    "Запускает ready non-restricted social-full adapters и пишет unified report/case.",
+                    (
+                        "python -m osint_toolkit search social {social} "
+                        "--profile social-full --region {region} --execute-adapters "
+                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--case-db {case_db} --case-id {case_id}"
+                    ),
+                    required_inputs=("social", "region", "adapter_limit", "out", "case_db", "case_id"),
+                    badges=("execute", "social-full"),
                 ),
             ),
         ),
