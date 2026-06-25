@@ -408,7 +408,6 @@ Profile fields:
 Приоритет 1:
 
 - Argus per-target parser fixtures.
-- ExifTool JSON parser.
 - Tesseract OCR text parser and seed extractor.
 - zbarimg parser.
 
@@ -580,6 +579,7 @@ Notes:
 30. Done: add DetectDee executable route and parser for username/email/phone profiles; readiness uses `DetectDee` in `PATH` plus `DETECTDEE_DATA`, and execution only uses upstream detect mode.
 31. Done: add pwnedOrNot stdout parser for safe `-n` breach lookups, including HIBP breach summary/rows and credential-output redaction guard.
 32. Done: add SpiderFoot phone/email/username mode examples and target provenance metadata for parsed SpiderFoot events.
+33. Done: add ExifTool JSON local image parser, structured metadata findings and derived seed extraction for GPS/camera/date/contact clues.
 
 ## Definition of done
 

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 from .adapter_runner import format_command
@@ -239,7 +241,9 @@ def _run_local_image_tools(
                 },
             )
         )
-        seeds = _extract_derived_seeds(output, source=tool.name)
+        parsed_findings, parsed_seeds = _parse_local_tool_output(tool.name, plan.target, output)
+        findings.extend(parsed_findings)
+        seeds = _dedupe_seeds((*_extract_derived_seeds(output, source=tool.name), *parsed_seeds))
         derived.extend(seeds)
         findings.extend(_derived_seed_findings(plan.target, seeds))
     return tuple(findings), _dedupe_seeds(tuple(derived)), tuple(executed)
@@ -288,6 +292,165 @@ def _extract_derived_seeds(text: str, *, source: str) -> tuple[DerivedSeed, ...]
     for domain in _domains(text):
         seeds.append(DerivedSeed(kind="domain", value=domain, source=source))
     return _dedupe_seeds(tuple(seeds))
+
+
+def _parse_local_tool_output(
+    tool_name: str,
+    target: ScanTarget,
+    output: str,
+) -> tuple[tuple[Finding, ...], tuple[DerivedSeed, ...]]:
+    if tool_name == "exiftool":
+        return _parse_exiftool_json(target, output)
+    return (), ()
+
+
+def _parse_exiftool_json(target: ScanTarget, output: str) -> tuple[tuple[Finding, ...], tuple[DerivedSeed, ...]]:
+    payload = _json_payload_from_text(output)
+    if payload is None:
+        return (), ()
+
+    records = payload if isinstance(payload, list) else [payload]
+    findings: list[Finding] = []
+    seeds: list[DerivedSeed] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        scalars = _json_scalars(record)
+        if not scalars:
+            continue
+        scalar_text = "\n".join(value for _, value in scalars)
+        record_seeds = _extract_derived_seeds(scalar_text, source="exiftool")
+        seeds.extend(record_seeds)
+        metadata = _exiftool_metadata(scalars, record_seeds)
+        findings.append(
+            Finding(
+                module="local-image-parser",
+                source="exiftool",
+                target=target.value,
+                status="completed",
+                confidence="medium",
+                evidence=_exiftool_evidence(metadata),
+                metadata=metadata,
+            )
+        )
+    return tuple(findings), _dedupe_seeds(tuple(seeds))
+
+
+def _json_payload_from_text(text: str) -> Any | None:
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char not in "[{":
+            continue
+        try:
+            payload, _ = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        return payload
+    return None
+
+
+def _json_scalars(value: Any, path: tuple[str, ...] = ()) -> tuple[tuple[tuple[str, ...], str], ...]:
+    scalars: list[tuple[tuple[str, ...], str]] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            scalars.extend(_json_scalars(item, (*path, str(key))))
+    elif isinstance(value, list):
+        for item in value:
+            scalars.extend(_json_scalars(item, path))
+    elif value is not None:
+        text = str(value).strip()
+        if text:
+            scalars.append((path, text))
+    return tuple(scalars)
+
+
+def _exiftool_metadata(
+    scalars: tuple[tuple[tuple[str, ...], str], ...],
+    seeds: tuple[DerivedSeed, ...],
+) -> dict[str, str]:
+    metadata = {
+        "parser": "exiftool-json",
+    }
+    key_map = {
+        "source_file": ("SourceFile",),
+        "file_type": ("FileType",),
+        "mime_type": ("MIMEType",),
+        "image_width": ("ImageWidth", "ExifImageWidth"),
+        "image_height": ("ImageHeight", "ExifImageHeight"),
+        "camera_make": ("Make",),
+        "camera_model": ("Model",),
+        "lens_model": ("LensModel",),
+        "software": ("Software",),
+        "datetime_original": ("DateTimeOriginal",),
+        "create_date": ("CreateDate",),
+        "modify_date": ("ModifyDate", "FileModifyDate"),
+        "gps_latitude": ("GPSLatitude",),
+        "gps_longitude": ("GPSLongitude",),
+        "gps_altitude": ("GPSAltitude",),
+        "gps_position": ("GPSPosition",),
+        "name": ("Artist", "Creator", "By-line", "Author", "OwnerName"),
+        "copyright": ("Copyright",),
+    }
+    for metadata_key, labels in key_map.items():
+        value = _first_exif_value(scalars, *labels)
+        if value:
+            metadata[metadata_key] = value
+
+    latitude = metadata.get("gps_latitude", "")
+    longitude = metadata.get("gps_longitude", "")
+    if latitude and longitude:
+        metadata["location"] = f"{latitude}, {longitude}"
+    elif metadata.get("gps_position"):
+        metadata["location"] = metadata["gps_position"]
+
+    urls = tuple(seed.value for seed in seeds if seed.kind in {"url", "telegram", "instagram", "social"})
+    emails = tuple(seed.value for seed in seeds if seed.kind == "email")
+    phones = tuple(seed.value for seed in seeds if seed.kind == "phone")
+    domains = tuple(seed.value for seed in seeds if seed.kind == "domain")
+    usernames = tuple(seed.value for seed in seeds if seed.kind == "username")
+    if urls:
+        metadata["discovered_urls"] = "|".join(urls)
+    if emails:
+        metadata["emails"] = "|".join(emails)
+    if phones:
+        metadata["phones"] = "|".join(phones)
+    if domains:
+        metadata["domain"] = domains[0]
+    if usernames:
+        metadata["username"] = usernames[0]
+    return metadata
+
+
+def _first_exif_value(scalars: tuple[tuple[tuple[str, ...], str], ...], *labels: str) -> str:
+    wanted = {_normalize_exif_label(label) for label in labels}
+    for path, value in scalars:
+        if not path:
+            continue
+        if _normalize_exif_label(path[-1]) in wanted:
+            return value
+    return ""
+
+
+def _normalize_exif_label(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.lower())
+
+
+def _exiftool_evidence(metadata: dict[str, str]) -> str:
+    parts = ["ExifTool JSON metadata parsed"]
+    for key, label in (
+        ("camera_make", "make"),
+        ("camera_model", "model"),
+        ("datetime_original", "created"),
+        ("location", "location"),
+        ("discovered_urls", "urls"),
+        ("emails", "emails"),
+        ("phones", "phones"),
+        ("username", "username"),
+    ):
+        value = metadata.get(key)
+        if value:
+            parts.append(f"{label}={value}")
+    return "; ".join(parts)
 
 
 def _derived_targets(

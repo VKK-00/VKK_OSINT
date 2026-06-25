@@ -127,7 +127,7 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                 ToolboxCommand(
                     "EXIF / metadata через ExifTool",
                     "Читает EXIF, GPS, XMP/IPTC и embedded metadata, если установлен `exiftool`.",
-                    'exiftool -a -u -g1 -ee "{image_path}"',
+                    'exiftool -json -a -u -g1 -ee "{image_path}"',
                     required_inputs=("image_path",),
                     badges=("exiftool", "metadata"),
                     note="Перед передачей отчёта наружу отдельно проверь GPS и приватные metadata.",
