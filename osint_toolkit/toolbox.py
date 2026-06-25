@@ -36,6 +36,7 @@ class ToolboxInput:
 
 TOOLBOX_INPUTS: tuple[ToolboxInput, ...] = (
     ToolboxInput("title", "Название кейса", "photo clue review"),
+    ToolboxInput("image_path", "Путь к фото", r"C:\path\to\photo.jpg"),
     ToolboxInput("person", "Имя", "Ivan Petrenko"),
     ToolboxInput("username", "Username / handle", "example_user"),
     ToolboxInput("email", "Email", "person@example.com", "email"),
@@ -62,11 +63,65 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
             slug="photo",
             title="Фото / изображение",
             description=(
-                "Маршрут для ручного разбора фото как источника небиометрических "
-                "зацепок: текст, username, URL, домен, телефон, email, логотип, "
-                "география, public profile links."
+                "Маршрут для разбора фото как источника небиометрических "
+                "зацепок: metadata, EXIF, OCR, QR/barcodes, текст, username, URL, "
+                "домен, телефон, email, логотип, география, public profile links."
             ),
             commands=(
+                ToolboxCommand(
+                    "Локальный baseline файла",
+                    "Размер, timestamps и SHA256 без внешних зависимостей.",
+                    (
+                        'Get-Item -LiteralPath "{image_path}" | '
+                        "Select-Object FullName,Length,CreationTimeUtc,LastWriteTimeUtc; "
+                        'Get-FileHash -Algorithm SHA256 -LiteralPath "{image_path}"'
+                    ),
+                    required_inputs=("image_path",),
+                    badges=("local", "hash"),
+                    note="Это не читает EXIF, но даёт стабильный fingerprint файла.",
+                ),
+                ToolboxCommand(
+                    "EXIF / metadata через ExifTool",
+                    "Читает EXIF, GPS, XMP/IPTC и embedded metadata, если установлен `exiftool`.",
+                    'exiftool -a -u -g1 -ee "{image_path}"',
+                    required_inputs=("image_path",),
+                    badges=("exiftool", "metadata"),
+                    note="Перед передачей отчёта наружу отдельно проверь GPS и приватные metadata.",
+                ),
+                ToolboxCommand(
+                    "ImageMagick identify",
+                    "Формат, размеры, цветовые профили, signature и technical metadata.",
+                    'magick identify -verbose "{image_path}"',
+                    required_inputs=("image_path",),
+                    badges=("imagemagick", "metadata"),
+                ),
+                ToolboxCommand(
+                    "OCR через Tesseract",
+                    "Извлекает видимый текст для дальнейшей проверки username, URL, email и телефонов.",
+                    'tesseract "{image_path}" stdout -l eng+rus+ukr',
+                    required_inputs=("image_path",),
+                    badges=("ocr", "tesseract"),
+                    note="После OCR перенеси найденные handles, URLs, emails или телефоны в seed-поля.",
+                ),
+                ToolboxCommand(
+                    "QR / barcode scan",
+                    "Извлекает QR-коды и barcodes, если установлен `zbarimg`.",
+                    'zbarimg --raw "{image_path}"',
+                    required_inputs=("image_path",),
+                    badges=("qr", "barcode"),
+                ),
+                ToolboxCommand(
+                    "Reverse image search portals",
+                    "Открывает страницы ручной загрузки для поиска источника, дублей и контекста изображения.",
+                    (
+                        'Start-Process "https://lens.google.com/upload"; '
+                        'Start-Process "https://tineye.com/"; '
+                        'Start-Process "https://yandex.com/images/search"; '
+                        'Start-Process "https://www.bing.com/images/search?view=detailv2&iss=sbi"'
+                    ),
+                    badges=("reverse image", "manual upload"),
+                    note="Используй для source/context search, не для биометрической идентификации человека.",
+                ),
                 ToolboxCommand(
                     "Кейс из всех зацепок с фото",
                     "Собирает один investigation report из заполненных seed-полей.",
@@ -118,7 +173,8 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
             ),
             notes=(
                 "Этот пульт не распознаёт лицо и не устанавливает личность по биометрии.",
-                "Фото не загружается в HTML: сначала извлеки видимые public clues, затем запускай нужный маршрут.",
+                "Фото не загружается в HTML автоматически: локальные команды читают файл только после ручного запуска оператором.",
+                "Reverse image search здесь нужен для источника, дублей и контекста изображения, а не для face-ID.",
             ),
         ),
         ToolboxSection(

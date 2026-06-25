@@ -61,7 +61,7 @@ CLI работает в четырёх режимах:
 - SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges и findings;
 - saved case graph analysis: счётчики связей/типов сущностей, top connected nodes и focus-запрос соседей сущности;
 - cross-case entity index: поиск повторяющихся email/domain/telegram/instagram/url и других сущностей между сохранёнными кейсами;
-- local toolbox: один HTML-пульт с seed-полями и направлениями для фото-зацепок, person/username/social, email/phone, domain/url, RU/UA, cases/graph/index и adapter profiles;
+- local toolbox: один HTML-пульт с seed-полями и направлениями для фото-зацепок, OCR, EXIF/metadata, QR/barcodes, reverse image portals, person/username/social, email/phone, domain/url, RU/UA, cases/graph/index и adapter profiles;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
 
@@ -234,7 +234,8 @@ Toolbox-поток:
 2. CLI вызывает `write_toolbox()`, который берёт текущее описание направлений и adapter profiles.
 3. `render_toolbox_html()` создаёт самодостаточный HTML/CSS/JS без внешних assets и сетевых запросов.
 4. В браузере оператор заполняет seed-поля, выбирает направление и копирует готовую команду.
-5. HTML не запускает процессы и не загружает фото; для фото используются только вручную извлечённые небиометрические public clues.
+5. HTML не запускает процессы и не загружает фото сам; для фото он собирает команды для локальных утилит ExifTool, ImageMagick, Tesseract, zbarimg, PowerShell hash baseline и открывает reverse image portals для ручной загрузки.
+6. Найденные через metadata/OCR/QR/reverse-search public clues оператор переносит в seed-поля и запускает существующие CLI-маршруты.
 
 Scan-поток:
 
@@ -297,7 +298,7 @@ Case-store поток:
 
 Toolbox:
 
-`ToolboxSection[] + AdapterProfile[] -> render_toolbox_html() -> local HTML -> operator fills seeds -> copy-ready CLI command`
+`ToolboxSection[] + AdapterProfile[] -> render_toolbox_html() -> local HTML -> operator fills image path/seeds -> copy-ready local image-tool or OSINT CLI command`
 
 Сканирование:
 
@@ -498,7 +499,7 @@ osint-toolkit stats
 - Graph analysis отделён от case store: SQLite хранит факты кейса, а `analyze_case_graph()` вычисляет summary и neighbors без изменения схемы БД.
 - Cross-case entity index использует уже сохранённую таблицу `entities`; новая таблица не добавлена, потому что индекс пока вычисляется read-only запросами и не требует миграции.
 - Toolbox сделан как статический локальный HTML, а не как сервер: он не требует новых зависимостей, не открывает порт и не может сам запустить внешний CLI из браузера.
-- В photo-направлении toolbox работает только с небиометрическими public clues, которые оператор извлёк вручную; идентификация личности по лицу не реализуется.
+- В photo-направлении toolbox добавляет только небиометрические маршруты: file hash/baseline, EXIF/metadata, OCR, QR/barcodes и reverse image source/context search. Идентификация личности по лицу не реализуется.
 - Dry-run используется по умолчанию для scan-команд. Live-сетевые проверки требуют явного `--live`.
 - Лицензионно сложные или большие проекты подключаются adapters вместо прямого копирования кода.
 - Password recovery flows, email-to-account и phone-to-account механики не переносятся в native-код без restricted-режима.
@@ -528,7 +529,7 @@ osint-toolkit stats
 - Telegram module пока не использует Telegram API и не получает private/group data.
 - Instagram module пока является safe public metadata wrapper: нет login/session handling, private data access, follower/following scraping, comments/messages export, media archive ingestion или обхода platform rate limits.
 - Social module для VK/OK/Yandex/Mail.ru пока является safe public metadata wrapper: нет VK/OK/Yandex/Mail.ru API adapters, login/session handling, private profile access, follower scraping, comments/messages export или обхода platform rate limits.
-- Toolbox не выполняет OCR, EXIF parsing, image search или face recognition сам. Фото-направление сейчас является операторским маршрутом: вручную извлечённые clues вводятся в seed-поля и отправляются в существующие CLI-команды.
+- Toolbox не выполняет команды из браузера и не содержит собственного OCR/EXIF engine: он собирает copy-ready команды для локально установленных ExifTool, ImageMagick, Tesseract, zbarimg и PowerShell hash baseline. Reverse image search остаётся ручной загрузкой на внешние сайты. Face recognition и поиск человека по лицу не добавлены.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
 - Adapter setup metadata покрывает ключевые upstream adapters, но install commands могут меняться; перед установкой нужно сверяться с upstream docs URL.
@@ -619,3 +620,4 @@ osint-toolkit stats
 - 2026-06-25: добавлен `qeeqbox/social-analyzer` external adapter: runner требует `SOCIAL_ANALYZER_APP_JS`, запускает upstream Node `app.js` в fast JSON mode с optional RU/UA country filter, а parser нормализует `detected`/`unknown`/`failed` profiles в `Finding`/entities/graph signals.
 - 2026-06-25: добавлен `p1ngul1n0/blackbird` external adapter: runner поддерживает upstream checkout working directory через `BLACKBIRD_DIR`, читает только свежие/изменённые JSON exports из `results/`, а parser нормализует Blackbird username/email account hits в entities/graph signals.
 - 2026-06-25: добавлен `toolbox` HTML-пульт: одно локальное окно для seed-полей, направлений OSINT, фото-зацепок без face-ID, cases/graph/index и adapter profiles с copy-ready CLI-командами.
+- 2026-06-25: photo-раздел `toolbox` расширен локальными image routes: PowerShell baseline/hash, ExifTool metadata, ImageMagick identify, Tesseract OCR, zbarimg QR/barcodes и reverse image search portals для source/context search.

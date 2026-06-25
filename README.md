@@ -38,7 +38,7 @@
 - запускать Social Analyzer adapter в fast JSON mode с optional RU/UA `--countries` фильтром и разбирать `detected`/`unknown`/`failed` profiles;
 - запускать Blackbird adapter из upstream checkout, читать свежие JSON exports и stdout profile hits для username/email account discovery;
 - запускать Subfinder, httpx, пассивный Amass, theHarvester, BBOT, SpiderFoot и Argus recon adapters и нормализовать subdomains/emails/phones/URLs/IPs/ports/technologies/HTTP probe results в общий graph;
-- генерировать локальное HTML-окно `toolbox` с направлениями OSINT, seed-полями и copy-ready командами для фото-зацепок, лиц/username, email, телефона, домена/URL, РФ/Украины, кейсов, графов и adapters;
+- генерировать локальное HTML-окно `toolbox` с направлениями OSINT, seed-полями и copy-ready командами для фото-зацепок, OCR, EXIF/metadata, QR/barcodes, reverse image portals, лиц/username, email, телефона, домена/URL, РФ/Украины, кейсов, графов и adapters;
 - получать безопасный workflow под задачу;
 - генерировать Markdown-brief для кейса.
 - сохранять расследования в SQLite и анализировать graph edges сохранённого кейса.
@@ -119,6 +119,7 @@ python -m osint_toolkit toolbox --out osint_toolbox.html --open
 В окно вынесены направления:
 
 - фото/изображение как источник небиометрических public clues;
+- локальный file baseline/hash, ExifTool, ImageMagick, Tesseract OCR, zbarimg и reverse image search portals;
 - лицо, username, Instagram, Telegram и RU social identifiers;
 - email и телефон;
 - домен, URL, passive/broad web recon;
@@ -126,7 +127,7 @@ python -m osint_toolkit toolbox --out osint_toolbox.html --open
 - SQLite cases, graph и cross-case index;
 - каталог, adapter readiness/setup и reusable adapter profiles.
 
-`toolbox` не загружает фото, не запускает команды из браузера и не делает идентификацию личности по лицу. Для фото workflow такой: оператор сам извлекает видимые публичные зацепки, например текст, handle, URL, домен, email, телефон, логотип или географический контекст, вводит их в seed-поля и копирует подходящую команду.
+`toolbox` не загружает фото автоматически, не запускает команды из браузера и не делает идентификацию личности по лицу. Для фото workflow такой: оператор запускает нужную локальную команду по файлу, например ExifTool/OCR/QR/hash, вручную проверяет результат, переносит найденные public clues в seed-поля и копирует подходящую OSINT-команду. Reverse image search открывается как ручная загрузка на внешние сайты для источника, дублей и контекста изображения, а не для face-ID.
 
 ### `stats`
 
