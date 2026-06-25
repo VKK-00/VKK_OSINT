@@ -6,6 +6,9 @@ from collections.abc import Iterable
 
 OSINT_ENV_KEYS: tuple[str, ...] = (
     "AMASS_CONFIG",
+    "BBOT_DOCKER_CONFIG_DIR",
+    "BBOT_DOCKER_IMAGE",
+    "BBOT_RUNNER",
     "BLACKBIRD_DIR",
     "BLACKBIRD_PYTHON",
     "CENSYS_API_ID",

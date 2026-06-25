@@ -456,7 +456,7 @@ class InvestigationTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args=args, returncode=0, stdout="bbot usage\n  -t TARGET\n  -p PRESET\n", stderr="")
             if tuple(args) == ("bbot", "-t", "example.com", "-p", "subdomain-enum", "-rf", "passive", "--dry-run", "-y"):
                 return subprocess.CompletedProcess(args=args, returncode=0, stdout="dry run ok\n", stderr="")
-            output_dir = Path(args[args.index("--output") + 1])
+            output_dir = Path(args[args.index("-o") + 1])
             scan_dir = output_dir / "osint-toolkit"
             scan_dir.mkdir(parents=True, exist_ok=True)
             (scan_dir / "output.json").write_text(
@@ -469,7 +469,10 @@ class InvestigationTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(args=args, returncode=0, stdout="Scan complete\n", stderr="")
 
-        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="bbot"), patch(
+        with patch.dict(os.environ, {"BBOT_RUNNER": "native"}), patch(
+            "osint_toolkit.adapter_runner.shutil.which",
+            return_value="bbot",
+        ), patch(
             "osint_toolkit.adapter_runner.subprocess.run",
             side_effect=fake_run,
         ):

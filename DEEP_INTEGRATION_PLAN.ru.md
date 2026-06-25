@@ -589,6 +589,7 @@ Notes:
 39. Done: add `tools install <profile>` dry-run/`--execute` installer layer for allowlisted missing tools while keeping config/runtime/manual/restricted steps explicit.
 40. Done: wire `search --install-missing` to the resolved profile installer view, with `--execute-install` required for real package-manager execution and mutual exclusion from plan/execution modes.
 41. Done: add Socialscan username/email adapter, generated JSON parser and safe availability-signal mapping for `candidate`/`not_found`/`skipped`/`error` results.
+42. Done: add BBOT Docker fallback route for Windows/POSIX startup failures so `all-safe` can use `docker run --rm -v <output_dir>:/root/.bbot/scans -v <config_dir>:/root/.config/bbot blacklanternsecurity/bbot:stable ...` when native BBOT fails its runtime probe.
 
 ## Definition of done
 

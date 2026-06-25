@@ -5,7 +5,7 @@ import shutil
 from dataclasses import dataclass
 
 from .adapter_runner import format_command
-from .adapter_probe import probe_adapter_executable
+from .adapter_runtime import resolve_adapter_runtime
 from .adapters import AdapterSpec
 
 
@@ -25,6 +25,7 @@ class AdapterSetup:
     optional_env: tuple[str, ...]
     command_hint: str
     readiness_note: str = ""
+    execution_route: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -42,37 +43,25 @@ class AdapterSetup:
             "optional_env": list(self.optional_env),
             "command_hint": self.command_hint,
             "readiness_note": self.readiness_note,
+            "execution_route": self.execution_route,
         }
 
 
 def build_adapter_setup(adapter: AdapterSpec) -> AdapterSetup:
-    executables = adapter.executable_names()
-    executable_paths = tuple(shutil.which(executable) or "" for executable in executables)
-    executable = ", ".join(executables)
-    executable_path = ", ".join(path for path in executable_paths if path)
-    missing_executables = tuple(
-        executable for executable, path in zip(executables, executable_paths) if not path
-    )
+    runtime = resolve_adapter_runtime(adapter, which=shutil.which)
     missing_env = tuple(key for key in adapter.required_env if not os.environ.get(key))
-    probe = (
-        probe_adapter_executable(adapter, executable_paths)
-        if executables and not missing_executables
-        else None
-    )
     readiness = _readiness(
         adapter,
-        executables,
-        missing_executables,
+        runtime.readiness,
         missing_env,
-        probe.readiness if probe else "ready",
     )
 
     return AdapterSetup(
         repository=adapter.repository,
         adapter_status=adapter.status,
         readiness=readiness,
-        executable=executable,
-        executable_path=executable_path,
+        executable=runtime.executable,
+        executable_path=runtime.executable_path,
         install_kind=adapter.install_kind,
         install_command=format_command(adapter.install_command) if adapter.install_command else "",
         install_note=adapter.install_note,
@@ -81,7 +70,8 @@ def build_adapter_setup(adapter: AdapterSpec) -> AdapterSetup:
         missing_env=missing_env,
         optional_env=adapter.optional_env,
         command_hint=adapter.command_hint,
-        readiness_note=probe.note if probe else "",
+        readiness_note=runtime.note,
+        execution_route=runtime.route,
     )
 
 
@@ -91,19 +81,13 @@ def build_adapter_setups(adapters: tuple[AdapterSpec, ...]) -> tuple[AdapterSetu
 
 def _readiness(
     adapter: AdapterSpec,
-    executables: tuple[str, ...],
-    missing_executables: tuple[str, ...],
+    runtime_readiness: str,
     missing_env: tuple[str, ...],
-    executable_probe_readiness: str,
 ) -> str:
     if adapter.status == "restricted":
         return "restricted"
-    if not executables:
-        return "not_configured"
-    if missing_executables:
-        return "missing"
-    if executable_probe_readiness != "ready":
-        return executable_probe_readiness
+    if runtime_readiness != "ready":
+        return runtime_readiness
     if missing_env:
         return "config_missing"
     return "ready"

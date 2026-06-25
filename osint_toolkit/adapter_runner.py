@@ -7,7 +7,11 @@ import tempfile
 from pathlib import Path
 
 from .adapter_parsers import parse_adapter_output
-from .adapter_probe import probe_adapter_executable
+from .adapter_runtime import (
+    render_adapter_command,
+    render_adapter_output_dir_args,
+    resolve_adapter_runtime,
+)
 from .adapters import find_adapter
 from .engine import Finding, ScanTarget
 
@@ -51,7 +55,8 @@ def run_adapter_findings(
             ),
         )
 
-    command = adapter.render_command(target)
+    runtime = resolve_adapter_runtime(adapter, which=shutil.which)
+    command = render_adapter_command(adapter, target, route=runtime.route)
     if not command:
         return (
             Finding(
@@ -105,7 +110,7 @@ def run_adapter_findings(
             ),
         )
 
-    executable = shutil.which(command[0])
+    executable = runtime.executable_path or shutil.which(command[0])
     if not executable:
         return (
             Finding(
@@ -118,20 +123,20 @@ def run_adapter_findings(
                 metadata={**adapter.to_dict(), "command": command_text, "stdin_lines": str(command_input_lines)},
             ),
         )
-    probe = probe_adapter_executable(adapter, (executable,))
-    if probe.readiness != "ready":
+    if runtime.readiness != "ready":
         return (
             Finding(
                 module="external-adapter",
                 source=adapter.repository,
                 target=target.value,
-                status=probe.readiness,
+                status=runtime.readiness,
                 confidence="high",
-                evidence=probe.note or f"Executable did not match expected upstream CLI: {executable}",
+                evidence=runtime.note or f"Executable did not match expected upstream CLI: {executable}",
                 metadata={
                     **adapter.to_dict(),
                     "command": command_text,
                     "executable_path": executable,
+                    "execution_route": runtime.route,
                     "stdin_lines": str(command_input_lines),
                 },
             ),
@@ -160,9 +165,10 @@ def run_adapter_findings(
                 process_env["HOME"] = output_dir
                 process_env["USERPROFILE"] = output_dir
             output_file = str(Path(output_dir) / "adapter-output.json")
+            command = render_adapter_command(adapter, target, route=runtime.route, output_dir=output_dir)
             command = (
                 *command,
-                *adapter.render_output_dir_args(output_dir),
+                *render_adapter_output_dir_args(adapter, output_dir, route=runtime.route),
                 *adapter.render_output_file_args(output_file),
             )
             command_text = format_command(command)
@@ -236,6 +242,7 @@ def run_adapter_findings(
         metadata={
             **adapter.to_dict(),
             "command": command_text,
+            "execution_route": runtime.route,
             "returncode": str(result.returncode),
             "stderr": _truncate(result.stderr),
             "generated_output_files": str(generated_count),

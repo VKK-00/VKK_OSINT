@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
+from .adapter_runtime import render_adapter_command
 from .adapter_runner import format_command
 from .adapter_setup import AdapterSetup, build_adapter_setup
 from .adapters import expand_adapter_repositories, filter_adapters, find_adapter, find_adapter_profile
@@ -708,7 +709,7 @@ def _adapter_steps(
             else:
                 continue
         setup = build_adapter_setup(adapter)
-        command = format_command(adapter.render_command(step_target))
+        command = format_command(render_adapter_command(adapter, step_target, route=setup.execution_route))
         steps.append(_adapter_step(step_target, setup, command))
     return tuple(steps)
 
@@ -813,6 +814,7 @@ def _adapter_step(target: ScanTarget, setup: AdapterSetup, command: str) -> Plan
             "optional_env": list(setup.optional_env),
             "executable": setup.executable,
             "executable_path": setup.executable_path,
+            "execution_route": setup.execution_route,
             "readiness_note": setup.readiness_note,
         },
     )

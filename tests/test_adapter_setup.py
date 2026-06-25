@@ -3,6 +3,7 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
+from osint_toolkit.adapter_runtime import render_adapter_command, render_adapter_output_dir_args
 from osint_toolkit.adapter_runner import run_adapter_findings
 from osint_toolkit.adapter_setup import build_adapter_setup
 from osint_toolkit.adapters import find_adapter
@@ -290,9 +291,9 @@ class AdapterSetupTests(unittest.TestCase):
             ),
         )
         self.assertEqual(bbot_passive_web.render_command(ScanTarget(kind="username", value="@example_user")), ())
-        self.assertEqual(bbot.render_output_dir_args("C:\\tmp\\bbot"), ("--output", "C:\\tmp\\bbot", "--name", "osint-toolkit"))
+        self.assertEqual(bbot.render_output_dir_args("C:\\tmp\\bbot"), ("-o", "C:\\tmp\\bbot", "-n", "osint-toolkit"))
         self.assertEqual(bbot.generated_output_patterns, ("*.json",))
-        self.assertEqual(bbot_passive_web.render_output_dir_args("C:\\tmp\\bbot"), ("--output", "C:\\tmp\\bbot", "--name", "osint-toolkit"))
+        self.assertEqual(bbot_passive_web.render_output_dir_args("C:\\tmp\\bbot"), ("-o", "C:\\tmp\\bbot", "-n", "osint-toolkit"))
         self.assertEqual(bbot_passive_web.generated_output_patterns, ("*.json",))
 
         with patch.dict(os.environ, {"SPIDERFOOT_SF_PATH": "C:\\tools\\spiderfoot\\sf.py"}):
@@ -528,7 +529,10 @@ class AdapterSetupTests(unittest.TestCase):
             stderr="ModuleNotFoundError: No module named 'fcntl'",
         )
 
-        with patch("osint_toolkit.adapter_setup.shutil.which", return_value="C:\\tools\\bbot.exe"), patch(
+        with patch.dict(os.environ, {"BBOT_RUNNER": "native"}), patch(
+            "osint_toolkit.adapter_setup.shutil.which",
+            return_value="C:\\tools\\bbot.exe",
+        ), patch(
             "osint_toolkit.adapter_probe.subprocess.run",
             side_effect=(bbot_help, bbot_dry_run_failure),
         ):
@@ -537,6 +541,75 @@ class AdapterSetupTests(unittest.TestCase):
         self.assertEqual(setup.readiness, "runtime_error")
         self.assertIn("non-network dry-run probe", setup.readiness_note)
         self.assertIn("fcntl", setup.readiness_note)
+
+    def test_bbot_setup_uses_docker_route_when_native_probe_fails(self):
+        adapter = find_adapter("blacklanternsecurity/bbot")
+        bbot_help = subprocess.CompletedProcess(
+            args=("bbot", "-h"),
+            returncode=0,
+            stdout="usage: bbot\n  -t TARGET\n  -p PRESET\n",
+            stderr="",
+        )
+        bbot_dry_run_failure = subprocess.CompletedProcess(
+            args=("bbot", "-t", "example.com", "-p", "subdomain-enum", "-rf", "passive", "--dry-run", "-y"),
+            returncode=1,
+            stdout="",
+            stderr="ModuleNotFoundError: No module named 'fcntl'",
+        )
+        docker_version = subprocess.CompletedProcess(
+            args=("docker", "--version"),
+            returncode=0,
+            stdout="Docker version 29.5.3\n",
+            stderr="",
+        )
+
+        def which(name: str) -> str:
+            return {
+                "bbot": "C:\\tools\\bbot.exe",
+                "docker": "C:\\tools\\docker.exe",
+            }.get(name, "")
+
+        with patch.dict(os.environ, {"BBOT_RUNNER": "docker", "BBOT_DOCKER_CONFIG_DIR": "C:\\tmp\\bbot-config"}), patch(
+            "osint_toolkit.adapter_setup.shutil.which",
+            side_effect=which,
+        ), patch("subprocess.run", side_effect=(bbot_help, bbot_dry_run_failure, docker_version)):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "ready")
+        self.assertEqual(setup.executable, "docker")
+        self.assertEqual(setup.executable_path, "C:\\tools\\docker.exe")
+        self.assertEqual(setup.execution_route, "bbot-docker")
+        self.assertIn("native BBOT is not runnable", setup.readiness_note)
+        with patch.dict(os.environ, {"BBOT_DOCKER_CONFIG_DIR": "C:\\tmp\\bbot-config"}):
+            command = render_adapter_command(
+                adapter,
+                ScanTarget(kind="domain", value="example.com"),
+                route=setup.execution_route,
+                output_dir="C:\\tmp\\bbot",
+            )
+        self.assertEqual(
+            command,
+            (
+                "docker",
+                "run",
+                "--rm",
+                "-v",
+                "C:\\tmp\\bbot:/root/.bbot/scans",
+                "-v",
+                "C:\\tmp\\bbot-config:/root/.config/bbot",
+                "blacklanternsecurity/bbot:stable",
+                "-t",
+                "example.com",
+                "-p",
+                "subdomain-enum",
+                "-rf",
+                "passive",
+            ),
+        )
+        self.assertEqual(
+            render_adapter_output_dir_args(adapter, "C:\\tmp\\bbot", route=setup.execution_route),
+            ("-o", "/root/.bbot/scans", "-n", "osint-toolkit"),
+        )
 
     def test_bbot_execute_stops_when_runtime_probe_fails(self):
         bbot_help = subprocess.CompletedProcess(
@@ -552,7 +625,10 @@ class AdapterSetupTests(unittest.TestCase):
             stderr="ModuleNotFoundError: No module named 'fcntl'",
         )
 
-        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="bbot"), patch(
+        with patch.dict(os.environ, {"BBOT_RUNNER": "native"}), patch(
+            "osint_toolkit.adapter_runner.shutil.which",
+            return_value="bbot",
+        ), patch(
             "osint_toolkit.adapter_probe.subprocess.run",
             side_effect=(bbot_help, bbot_dry_run_failure),
         ):
@@ -565,6 +641,58 @@ class AdapterSetupTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].status, "runtime_error")
         self.assertIn("fcntl", findings[0].evidence)
+
+    def test_bbot_execute_uses_docker_route_when_native_probe_fails(self):
+        bbot_help = subprocess.CompletedProcess(
+            args=("bbot", "-h"),
+            returncode=0,
+            stdout="usage: bbot\n  -t TARGET\n  -p PRESET\n",
+            stderr="",
+        )
+        bbot_dry_run_failure = subprocess.CompletedProcess(
+            args=("bbot", "-t", "example.com", "-p", "subdomain-enum", "-rf", "passive", "--dry-run", "-y"),
+            returncode=1,
+            stdout="",
+            stderr="ModuleNotFoundError: No module named 'fcntl'",
+        )
+        docker_version = subprocess.CompletedProcess(
+            args=("docker", "--version"),
+            returncode=0,
+            stdout="Docker version 29.5.3\n",
+            stderr="",
+        )
+        docker_run = subprocess.CompletedProcess(
+            args=("docker", "run"),
+            returncode=0,
+            stdout='{"type":"DNS_NAME","data":"www.example.com","module":"dns"}\n',
+            stderr="",
+        )
+
+        def which(name: str) -> str:
+            return {
+                "bbot": "C:\\tools\\bbot.exe",
+                "docker": "C:\\tools\\docker.exe",
+            }.get(name, "")
+
+        with patch.dict(os.environ, {"BBOT_RUNNER": "docker", "BBOT_DOCKER_CONFIG_DIR": "C:\\tmp\\bbot-config"}), patch(
+            "osint_toolkit.adapter_runner.shutil.which",
+            side_effect=which,
+        ), patch("subprocess.run", side_effect=(bbot_help, bbot_dry_run_failure, docker_version, docker_run)) as run_adapter:
+            findings = run_adapter_findings(
+                "blacklanternsecurity/bbot",
+                ScanTarget(kind="domain", value="example.com"),
+                execute=True,
+            )
+
+        command = run_adapter.call_args_list[-1].args[0]
+        self.assertEqual(command[:3], ["C:\\tools\\docker.exe", "run", "--rm"])
+        self.assertIn("blacklanternsecurity/bbot:stable", command)
+        self.assertIn("C:\\tmp\\bbot-config:/root/.config/bbot", command)
+        self.assertIn("-o", command)
+        self.assertIn("/root/.bbot/scans", command)
+        self.assertEqual(findings[0].status, "completed")
+        self.assertEqual(findings[0].metadata["execution_route"], "bbot-docker")
+        self.assertTrue(any(finding.metadata.get("parser") == "bbot" for finding in findings[1:]))
 
     def test_detectdee_setup_uses_target_specific_commands_and_data_file(self):
         adapter = find_adapter("Yvesssn/DetectDee")
@@ -645,7 +773,10 @@ class AdapterSetupTests(unittest.TestCase):
             stderr="ModuleNotFoundError: No module named 'fcntl'",
         )
 
-        with patch("osint_toolkit.doctor.ADAPTERS", (find_adapter("blacklanternsecurity/bbot"),)), patch(
+        with patch.dict(os.environ, {"BBOT_RUNNER": "native"}), patch(
+            "osint_toolkit.doctor.ADAPTERS",
+            (find_adapter("blacklanternsecurity/bbot"),),
+        ), patch(
             "osint_toolkit.adapter_setup.shutil.which",
             return_value="C:\\tools\\bbot.exe",
         ), patch("osint_toolkit.adapter_probe.subprocess.run", side_effect=(bbot_help, bbot_dry_run_failure)):

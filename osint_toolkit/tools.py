@@ -32,6 +32,7 @@ class ToolReadiness:
     missing_env: tuple[str, ...] = ()
     optional_env: tuple[str, ...] = ()
     readiness_note: str = ""
+    execution_route: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -48,6 +49,7 @@ class ToolReadiness:
             "missing_env": list(self.missing_env),
             "optional_env": list(self.optional_env),
             "readiness_note": self.readiness_note,
+            "execution_route": self.execution_route,
         }
 
 
@@ -111,6 +113,7 @@ def build_profile_tool_readiness(
                 missing_env=setup.missing_env,
                 optional_env=setup.optional_env,
                 readiness_note=setup.readiness_note,
+                execution_route=setup.execution_route,
             )
         )
     local_tools_by_name = {tool.name: tool for tool in LOCAL_TOOLS}
@@ -532,6 +535,7 @@ def _rows_csv(rows: tuple[ToolReadiness, ...]) -> str:
             "missing_env",
             "optional_env",
             "readiness_note",
+            "execution_route",
         ),
         lineterminator="\n",
     )

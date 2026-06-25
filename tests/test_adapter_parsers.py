@@ -1952,7 +1952,7 @@ class AdapterParserTests(unittest.TestCase):
             if tuple(args) == ("bbot", "-t", "example.com", "-p", "subdomain-enum", "-rf", "passive", "--dry-run", "-y"):
                 return subprocess.CompletedProcess(args=args, returncode=0, stdout="dry run ok\n", stderr="")
             self.assertEqual(args[:7], ["bbot", "-t", "example.com", "-p", "subdomain-enum", "-rf", "passive"])
-            output_dir = Path(args[args.index("--output") + 1])
+            output_dir = Path(args[args.index("-o") + 1])
             scan_dir = output_dir / "osint-toolkit"
             scan_dir.mkdir(parents=True, exist_ok=True)
             (scan_dir / "output.json").write_text(
@@ -1963,7 +1963,10 @@ class AdapterParserTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(args=args, returncode=0, stdout="Scan complete\n", stderr="")
 
-        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="bbot"), patch(
+        with patch.dict(os.environ, {"BBOT_RUNNER": "native"}), patch(
+            "osint_toolkit.adapter_runner.shutil.which",
+            return_value="bbot",
+        ), patch(
             "osint_toolkit.adapter_runner.subprocess.run",
             side_effect=fake_run,
         ):
@@ -1975,7 +1978,8 @@ class AdapterParserTests(unittest.TestCase):
 
         self.assertEqual(findings[0].status, "completed")
         self.assertEqual(findings[0].metadata["generated_output_files"], "1")
-        self.assertIn("--output", findings[0].metadata["command"])
+        self.assertIn("-o", findings[0].metadata["command"])
+        self.assertIn("-n osint-toolkit", findings[0].metadata["command"])
         self.assertTrue(any(finding.metadata.get("parser") == "bbot" for finding in findings[1:]))
         self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
         self.assertTrue(any(finding.metadata.get("subdomain") == "api.example.com" for finding in findings[1:]))
@@ -2021,10 +2025,10 @@ class AdapterParserTests(unittest.TestCase):
                     "deadly",
                     "portscan",
                     "web-screenshots",
-                    "--output",
+                    "-o",
                 ],
             )
-            output_dir = Path(args[args.index("--output") + 1])
+            output_dir = Path(args[args.index("-o") + 1])
             scan_dir = output_dir / "osint-toolkit"
             scan_dir.mkdir(parents=True, exist_ok=True)
             (scan_dir / "output.json").write_text(
@@ -2033,7 +2037,10 @@ class AdapterParserTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(args=args, returncode=0, stdout="Scan complete\n", stderr="")
 
-        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="bbot"), patch(
+        with patch.dict(os.environ, {"BBOT_RUNNER": "native"}), patch(
+            "osint_toolkit.adapter_runner.shutil.which",
+            return_value="bbot",
+        ), patch(
             "osint_toolkit.adapter_runner.subprocess.run",
             side_effect=fake_run,
         ):
