@@ -370,6 +370,8 @@ python -m osint_toolkit investigate --username <name> --include-adapters --adapt
 python -m osint_toolkit investigate --username <name> --include-adapters --execute-adapters --adapter-limit 1
 python -m osint_toolkit investigate --username <name> --case-db cases.sqlite --case-id case-001
 python -m osint_toolkit cases --case-db cases.sqlite
+python -m osint_toolkit cases --case-db cases.sqlite --workflow search --profile email-full --scope-query internal
+python -m osint_toolkit case-update --case-db cases.sqlite case-001 --title "reviewed case" --scope-note "reviewed scope"
 python -m osint_toolkit case-show --case-db cases.sqlite case-001
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001 --entity-kind email --entity-value person@example.com
@@ -377,6 +379,7 @@ python -m osint_toolkit case-index --case-db cases.sqlite --kind domain --min-ca
 python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value person@example.com
 python -m osint_toolkit case-path --case-db cases.sqlite --from-kind email --from-value person@example.com --to-kind url --to-value https://example.com/profile
 python -m osint_toolkit case-network --case-db cases.sqlite --kind domain
+python -m osint_toolkit case-delete --case-db cases.sqlite case-001 --yes
 ```
 
 Уже реализовано:
@@ -399,16 +402,17 @@ python -m osint_toolkit case-network --case-db cases.sqlite --kind domain
 - cross-case entity index and exact saved-case lookup by entity;
 - cross-case weighted shortest path between two saved entities with per-hop case/relation/source provenance;
 - bounded cross-case network view with aggregated edges, degree/case_count and kind/relation filters;
+- basic safe case management: filtered case list by workflow/profile/scope, title/scope_note update and explicit confirmed delete;
 - parsed executed adapter outputs can enter investigation entities, graph edges and case store;
 - static local `toolbox` HTML command window with OSINT directions, seed fields, image metadata/OCR/QR/reverse-search routes, cases/graph/index routes and adapter profile buttons;
-- served toolbox Case Browser for saved cases, case detail, clickable bounded SVG case graph, graph summary/focus and cross-case index through token-protected read-only endpoints;
+- served toolbox Case Browser for saved cases, case detail, safe title/scope update, typed-confirm delete, clickable bounded SVG case graph, graph summary/focus and cross-case index through token-protected allowlisted endpoints;
 - review checklist in every Markdown report.
 
 Gap:
 
 - graph edges пока базовые, без advanced cross-case graph layout/filter UI;
 - есть custom search profiles через `search/tools --profile-file` и CLI management `profiles list/show/export`; saved cases persist workflow/profile/adapter/scope policy metadata, но adapter profiles в `adapters.py` остаются статическим manifest-layer и нет UI/enforcement для per-case policy;
-- нет full case-management UI и продвинутого graph exploration UI; `toolbox --serve` уже умеет запускать unified search, передавать scope note, читать saved cases/graph/index/path/network, рисовать clickable bounded SVG case/cross-case graph и делать focus-neighbor запрос кликом по узлу, но static `toolbox --out` остаётся command/portal window и не делает face-ID.
+- нет продвинутого graph exploration UI; `toolbox --serve` уже умеет запускать unified search, передавать scope note, читать/filter/update/delete saved cases, graph/index/path/network, рисовать clickable bounded SVG case/cross-case graph и делать focus-neighbor запрос кликом по узлу, но static `toolbox --out` остаётся command/portal window и не делает face-ID.
 
 ## Adapter doctor
 

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .case_store import CaseStore
+from .case_store import CaseStore, CaseStoreError
 from .graph import analyze_case_graph, analyze_cross_case_network, analyze_cross_case_path
 from .search import TARGET_KINDS, list_search_profiles
 from .toolbox import render_toolbox_html, write_toolbox
@@ -111,8 +111,21 @@ class ToolboxJobRunner:
             raise ValueError("Report is not available yet.")
         return job.report_path.read_text(encoding="utf-8", errors="replace")
 
-    def list_cases(self, case_db: str, *, limit: int) -> dict[str, object]:
-        records = CaseStore(self._case_db_path(case_db)).list_cases(limit=limit)
+    def list_cases(
+        self,
+        case_db: str,
+        *,
+        limit: int,
+        workflow: str = "",
+        profile: str = "",
+        scope_query: str = "",
+    ) -> dict[str, object]:
+        records = CaseStore(self._case_db_path(case_db)).list_cases(
+            limit=limit,
+            workflow=workflow,
+            profile=profile,
+            scope_query=scope_query,
+        )
         return {"cases": [record.to_dict() for record in records]}
 
     def load_case(self, case_db: str, case_id: str) -> dict[str, object]:
@@ -120,6 +133,30 @@ class ToolboxJobRunner:
         if not normalized_case_id:
             raise ValueError("case_id is required.")
         return CaseStore(self._case_db_path(case_db)).load_case(normalized_case_id)
+
+    def update_case(self, case_db: str, case_id: str, payload: dict[str, Any]) -> dict[str, object]:
+        normalized_case_id = case_id.strip()
+        if not normalized_case_id:
+            raise ValueError("case_id is required.")
+        metadata_updates: dict[str, object] = {}
+        if "scope_note" in payload:
+            metadata_updates["scope_note"] = str(payload.get("scope_note", ""))
+        title = payload.get("title")
+        return CaseStore(self._case_db_path(case_db)).update_case(
+            normalized_case_id,
+            title=None if title is None else str(title),
+            metadata_updates=metadata_updates,
+        )
+
+    def delete_case(self, case_db: str, case_id: str, payload: dict[str, Any]) -> dict[str, object]:
+        normalized_case_id = case_id.strip()
+        if not normalized_case_id:
+            raise ValueError("case_id is required.")
+        confirmation = str(payload.get("confirm", "")).strip()
+        if confirmation != normalized_case_id:
+            raise ValueError("delete confirmation must exactly match case_id.")
+        deleted_case_id = CaseStore(self._case_db_path(case_db)).delete_case(normalized_case_id)
+        return {"case_id": deleted_case_id, "deleted": True}
 
     def case_graph(
         self,
@@ -407,6 +444,9 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
                     self._runner().list_cases(
                         _query_string(query, "case_db", default="cases.sqlite"),
                         limit=_query_int(query, "limit", default=20, minimum=1, maximum=500),
+                        workflow=_query_string(query, "workflow", default=""),
+                        profile=_query_string(query, "profile", default=""),
+                        scope_query=_query_string(query, "scope_query", default=""),
                     ),
                 )
                 return
@@ -487,20 +527,29 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(200, self._runner().get_job(job_id).to_dict())
                 return
             self._send_json(404, {"error": "not_found"})
-        except ValueError as exc:
+        except (CaseStoreError, ValueError) as exc:
             self._send_json(400, {"error": str(exc)})
 
     def do_POST(self) -> None:
         try:
             self._require_token()
             path = urlparse(self.path).path
-            if path != "/api/search":
-                self._send_json(404, {"error": "not_found"})
+            if path == "/api/search":
+                payload = self._read_json()
+                job = self._runner().submit_search(payload)
+                self._send_json(202, {"job": job.to_dict()})
                 return
-            payload = self._read_json()
-            job = self._runner().submit_search(payload)
-            self._send_json(202, {"job": job.to_dict()})
-        except ValueError as exc:
+            case_id, case_route = self._case_route(path)
+            if case_id and case_route in {"update", "delete"}:
+                payload = self._read_json()
+                case_db = str(payload.get("case_db", "cases.sqlite"))
+                if case_route == "update":
+                    self._send_json(200, self._runner().update_case(case_db, case_id, payload))
+                    return
+                self._send_json(200, self._runner().delete_case(case_db, case_id, payload))
+                return
+            self._send_json(404, {"error": "not_found"})
+        except (CaseStoreError, ValueError) as exc:
             self._send_json(400, {"error": str(exc)})
 
     def log_message(self, format: str, *args: object) -> None:
@@ -542,6 +591,10 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
             return unquote(parts[2]), "show"
         if len(parts) == 4 and parts[:2] == ["api", "cases"] and parts[3] == "graph":
             return unquote(parts[2]), "graph"
+        if len(parts) == 4 and parts[:2] == ["api", "cases"] and parts[3] == "update":
+            return unquote(parts[2]), "update"
+        if len(parts) == 4 and parts[:2] == ["api", "cases"] and parts[3] == "delete":
+            return unquote(parts[2]), "delete"
         return "", ""
 
     def _send_json(self, status: int, payload: dict[str, Any]) -> None:

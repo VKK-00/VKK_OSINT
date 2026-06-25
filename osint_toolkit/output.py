@@ -585,6 +585,15 @@ def format_case_detail(payload: dict[str, object], *, output_format: str = "json
     raise ValueError(f"Unsupported output format: {output_format}")
 
 
+def format_case_delete_result(case_id: str, *, output_format: str = "table") -> str:
+    payload = {"case_id": case_id, "deleted": True}
+    if output_format == "json":
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+    if output_format == "table":
+        return _format_table(("Case ID", "Deleted"), ((case_id, "yes"),))
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
 def format_case_graph_analysis(analysis: GraphAnalysis, *, output_format: str = "table") -> str:
     if output_format == "json":
         return json.dumps(analysis.to_dict(), ensure_ascii=False, indent=2)

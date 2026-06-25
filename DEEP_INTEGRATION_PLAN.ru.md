@@ -567,6 +567,7 @@ Notes:
 14. Done: make served toolbox graph nodes clickable/keyboard-focusable so one entity can drive focus-neighbor analysis from the same window.
 15. Done: add cross-case weighted path analysis through `case-path`, `/api/case-path` and toolbox Path view.
 16. Done: add bounded cross-case network analysis through `case-network`, `/api/case-network` and toolbox Network view.
+17. Done: add safe saved-case management through filtered `cases`, `case-update`, `case-delete`, `/api/cases/<id>/update`, `/api/cases/<id>/delete` and toolbox Case Browser controls.
 
 ## Definition of done
 
@@ -579,4 +580,4 @@ Goal is complete only when:
 - ready tools can execute and parse into unified findings;
 - reports include per-tool provenance, entities, graph and case storage;
 - tests cover planning, execution, parser normalization, redaction and docs;
-- toolbox exposes the unified `search` flows instead of separate low-level commands.
+- toolbox exposes the unified `search` flows and saved-case management instead of forcing separate low-level commands.

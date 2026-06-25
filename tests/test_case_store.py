@@ -62,6 +62,64 @@ class CaseStoreTests(unittest.TestCase):
             with self.assertRaises(CaseStoreError):
                 store.list_cases(limit=0)
 
+    def test_filters_updates_and_deletes_cases(self):
+        result = run_investigation(
+            (ScanTarget(kind="email", value="person@example.com"),),
+            title="original title",
+        )
+        other = run_investigation(
+            (ScanTarget(kind="username", value="example_user"),),
+            title="other case",
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = CaseStore(Path(tmpdir) / "cases.sqlite")
+            store.save(
+                result,
+                case_id="case-1",
+                metadata={
+                    "workflow": "search",
+                    "requested_profile": "email-full",
+                    "scope_note": "internal validation scope",
+                },
+            )
+            store.save(
+                other,
+                case_id="case-2",
+                metadata={
+                    "workflow": "investigate",
+                    "adapter_profiles": ["username-full"],
+                    "scope_note": "public scope",
+                },
+            )
+
+            self.assertEqual(
+                [record.case_id for record in store.list_cases(workflow="search")],
+                ["case-1"],
+            )
+            self.assertEqual(
+                [record.case_id for record in store.list_cases(profile="username-full")],
+                ["case-2"],
+            )
+            self.assertEqual(
+                [record.case_id for record in store.list_cases(scope_query="validation")],
+                ["case-1"],
+            )
+
+            updated = store.update_case(
+                "case-1",
+                title="updated title",
+                metadata_updates={"scope_note": "updated scope"},
+            )
+            self.assertEqual(updated["case"]["title"], "updated title")
+            self.assertEqual(updated["metadata"]["scope_note"], "updated scope")
+
+            deleted = store.delete_case("case-2")
+            self.assertEqual(deleted, "case-2")
+            self.assertEqual([record.case_id for record in store.list_cases(limit=10)], ["case-1"])
+            with self.assertRaises(CaseStoreError):
+                store.load_case("case-2")
+
     def test_entity_index_and_exact_entity_search(self):
         first = run_investigation(
             (

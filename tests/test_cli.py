@@ -600,6 +600,89 @@ class CliTests(unittest.TestCase):
             }
             self.assertIn(("domain", "example.com", "email_domain"), neighbors)
 
+    def test_case_update_delete_and_filtered_list_commands(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "cases.sqlite"
+            report_path = Path(tmpdir) / "email.md"
+            save_result = self.run_cli(
+                "search",
+                "email",
+                "person@example.com",
+                "--profile",
+                "email-full",
+                "--execute-adapters",
+                "--adapter-limit",
+                "0",
+                "--case-db",
+                str(db_path),
+                "--case-id",
+                "email-1",
+                "--scope-note",
+                "server scope",
+                "--out",
+                str(report_path),
+            )
+            self.assertEqual(save_result.returncode, 0, save_result.stderr)
+
+            list_result = self.run_cli(
+                "cases",
+                "--case-db",
+                str(db_path),
+                "--workflow",
+                "search",
+                "--profile",
+                "email-full",
+                "--scope-query",
+                "server",
+                "--format",
+                "json",
+            )
+            self.assertEqual(list_result.returncode, 0, list_result.stderr)
+            list_payload = json.loads(list_result.stdout)
+            self.assertEqual([record["case_id"] for record in list_payload], ["email-1"])
+
+            update_result = self.run_cli(
+                "case-update",
+                "--case-db",
+                str(db_path),
+                "email-1",
+                "--title",
+                "updated email case",
+                "--scope-note",
+                "updated scope",
+                "--format",
+                "json",
+            )
+            self.assertEqual(update_result.returncode, 0, update_result.stderr)
+            update_payload = json.loads(update_result.stdout)
+            self.assertEqual(update_payload["case"]["title"], "updated email case")
+            self.assertEqual(update_payload["metadata"]["scope_note"], "updated scope")
+
+            delete_without_confirmation = self.run_cli(
+                "case-delete",
+                "--case-db",
+                str(db_path),
+                "email-1",
+            )
+            self.assertEqual(delete_without_confirmation.returncode, 2)
+            self.assertIn("case-delete requires --yes", delete_without_confirmation.stderr)
+
+            delete_result = self.run_cli(
+                "case-delete",
+                "--case-db",
+                str(db_path),
+                "email-1",
+                "--yes",
+                "--format",
+                "json",
+            )
+            self.assertEqual(delete_result.returncode, 0, delete_result.stderr)
+            self.assertEqual(json.loads(delete_result.stdout), {"case_id": "email-1", "deleted": True})
+
+            show_result = self.run_cli("case-show", "--case-db", str(db_path), "email-1")
+            self.assertEqual(show_result.returncode, 2)
+            self.assertIn("case not found", show_result.stderr)
+
     def test_case_index_can_find_shared_entities(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "cases.sqlite"

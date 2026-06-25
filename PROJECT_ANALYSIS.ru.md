@@ -70,7 +70,7 @@ CLI работает в пяти режимах:
 - cross-case path analysis: weighted shortest path между двумя сущностями по объединённым graph edges saved cases;
 - cross-case network analysis: bounded общий graph по нескольким saved cases с aggregation, degree/case_count и фильтрами kind/relation;
 - local toolbox: один HTML-пульт с seed-полями и направлениями для фото-зацепок, OCR, EXIF/metadata, QR/barcodes, reverse image portals, person/username/social, email/phone, domain/url, RU/UA, cases/clickable SVG graph/index и adapter profiles;
-- toolbox backend: `toolbox --serve` поднимает локальный token-protected HTTP server, принимает только структурированные `/api/search` payloads включая `scope_note`, ведёт job queue, logs/status/report access и read-only case endpoints для saved SQLite cases/graph/index;
+- toolbox backend: `toolbox --serve` поднимает локальный token-protected HTTP server, принимает только структурированные `/api/search` payloads включая `scope_note`, ведёт job queue, logs/status/report access и allowlisted case endpoints для saved SQLite cases/graph/index/update/delete;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
 
@@ -83,8 +83,8 @@ CLI работает в пяти режимах:
 - `osint_toolkit/` — Python-пакет CLI.
 - `osint_toolkit/modules/` — native scan-модули.
 - `osint_toolkit/search.py` — unified search profiles, target classifier и fan-out planner.
-- `osint_toolkit/toolbox.py` — генератор локального HTML-пульта с направлениями, шаблонами команд, optional backend runner UI, Case Browser и bounded clickable SVG-визуализацией сохранённого графа.
-- `osint_toolkit/toolbox_server.py` — локальный backend для `toolbox --serve`: token auth, allowlisted unified search jobs со `scope_note`, status/logs/report endpoints и read-only case endpoints.
+- `osint_toolkit/toolbox.py` — генератор локального HTML-пульта с направлениями, шаблонами команд, optional backend runner UI, Case Browser, safe case management controls и bounded clickable SVG-визуализацией сохранённого графа.
+- `osint_toolkit/toolbox_server.py` — локальный backend для `toolbox --serve`: token auth, allowlisted unified search jobs со `scope_note`, status/logs/report endpoints и allowlisted case endpoints.
 - `osint_toolkit/resources/sherlock_data.json` — встроенный snapshot Sherlock `sherlock_project/resources/data.json`, commit `206068d`, MIT license.
 - `osint_toolkit/resources/whatsmyname_wmn_data.json` — встроенный snapshot WhatsMyName `wmn-data.json`, commit `7c44595`, CC BY-SA 4.0 license.
 - `osint_toolkit/resources/maigret_sites.json` — sanitized projection Maigret `maigret/resources/data.json`, commit `2484509`, MIT license.
@@ -235,10 +235,16 @@ CLI работает в пяти режимах:
   - `write_toolbox()` — запись HTML-файла на диск.
 - `osint_toolkit/toolbox_server.py`
   - `ToolboxJobRunner` — создаёт allowlisted `python -m osint_toolkit search ...` jobs, ограничивает output paths рабочей папкой backend и сохраняет stdout/stderr/status.
-  - `ToolboxRequestHandler` — HTTP endpoints `/api/search`, `/api/jobs`, `/api/jobs/<id>`, `/api/jobs/<id>/report`, `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph`, `/api/case-index`, `/api/case-path`, `/api/case-network`, `/api/health`.
+  - `ToolboxRequestHandler` — HTTP endpoints `/api/search`, `/api/jobs`, `/api/jobs/<id>`, `/api/jobs/<id>/report`, `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph`, `/api/cases/<id>/update`, `/api/cases/<id>/delete`, `/api/case-index`, `/api/case-path`, `/api/case-network`, `/api/health`.
   - `run_toolbox_server()` — CLI entrypoint для `toolbox --serve`.
+- `osint_toolkit/case_store.py`
+  - `CaseStore.save()` — сохраняет investigation result, graph и metadata в SQLite.
+  - `CaseStore.list_cases()` — выводит summary cases и поддерживает фильтры metadata `workflow`, `profile`, `scope_query`.
+  - `CaseStore.update_case()` — меняет allowlisted management fields: title и metadata keys вроде `scope_note`.
+  - `CaseStore.delete_case()` — удаляет один кейс через SQLite cascade.
+  - `CaseStore.load_case()`/`load_cases()` — возвращают case payloads для CLI/API/graph analytics.
 - `osint_toolkit/cli.py`
-  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `search`, `profiles`, `adapters`, `adapter-profiles`, `adapter-setup`, `doctor`, `run-adapter`, `toolbox`, `investigate`, `cases`, `case-show`, `case-graph`, `case-index`, `case-path`, `case-network`, `recommend`, `brief`.
+  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `search`, `profiles`, `adapters`, `adapter-profiles`, `adapter-setup`, `doctor`, `run-adapter`, `toolbox`, `investigate`, `cases`, `case-show`, `case-update`, `case-delete`, `case-graph`, `case-index`, `case-path`, `case-network`, `recommend`, `brief`.
 
 ## Как система работает end-to-end
 
@@ -257,8 +263,9 @@ Toolbox-поток:
 3. Served mode: пользователь запускает `python -m osint_toolkit toolbox --serve --open`; CLI создаёт session token, пишет HTML с backend URL/token и поднимает локальный HTTP server.
 4. Browser отправляет только структурированный `/api/search` payload: target kind/value, profile, region, execute/plan mode, limits, report path, case DB и optional scope note.
 5. Backend собирает allowlisted `python -m osint_toolkit search ...`, запускает job в фоне, показывает queue/status/stdout/stderr и отдаёт report content по job id.
-6. Case Browser читает `/api/cases/<id>` и `/api/cases/<id>/graph`, рисует bounded SVG-граф из сохранённых `entities`/`edges` и показывает summary/focus analysis рядом с JSON; клик или Enter/Space на узле заполняет focus entity и перезапрашивает соседей.
-7. HTML не загружает фото сам; для фото served mode запускает только тот же `search image ... --execute-adapters`, а reverse image portals остаются ручной загрузкой.
+6. Case Browser читает `/api/cases` с optional workflow/profile/scope filters, `/api/cases/<id>` и `/api/cases/<id>/graph`, рисует bounded SVG-граф из сохранённых `entities`/`edges` и показывает summary/focus analysis рядом с JSON; клик или Enter/Space на узле заполняет focus entity и перезапрашивает соседей.
+7. Case Browser меняет только allowlisted поля title/scope_note через `/api/cases/<id>/update`; delete идёт через `/api/cases/<id>/delete` только если typed confirmation точно совпадает с `case_id`.
+8. HTML не загружает фото сам; для фото served mode запускает только тот же `search image ... --execute-adapters`, а reverse image portals остаются ручной загрузкой.
 
 Search-поток:
 
@@ -313,17 +320,21 @@ Investigation-поток:
 Case-store поток:
 
 1. Пользователь запускает `python -m osint_toolkit cases --case-db <path>`.
-2. `CaseStore.list_cases()` читает summary сохранённых кейсов.
+2. `CaseStore.list_cases()` читает summary сохранённых кейсов и применяет optional filters `workflow`, `profile`, `scope_query`.
 3. Пользователь запускает `python -m osint_toolkit case-show --case-db <path> <case_id>`.
 4. `CaseStore.load_case()` возвращает targets, entities, edges и findings в table/Markdown/JSON формате.
-5. Пользователь запускает `python -m osint_toolkit case-graph --case-db <path> <case_id>`.
-6. `analyze_case_graph()` строит summary сохранённого графа и, при указанном фокусе, возвращает соседей конкретной сущности.
-7. Пользователь запускает `python -m osint_toolkit case-index --case-db <path>`.
-8. `CaseStore.list_entity_index()` строит индекс сущностей по всем сохранённым кейсам; `find_cases_by_entity()` показывает кейсы для точной сущности.
-9. Пользователь запускает `python -m osint_toolkit case-path --case-db <path> --from-kind ... --to-kind ...`.
-10. `CaseStore.load_cases()` загружает bounded набор saved cases, а `analyze_cross_case_path()` строит объединённый graph и возвращает weighted shortest path с provenance по каждому hop.
-11. Пользователь запускает `python -m osint_toolkit case-network --case-db <path>`.
-12. `analyze_cross_case_network()` агрегирует одинаковые graph edges между saved cases, считает degree/case_count и отдаёт bounded visible subgraph для CLI/API/toolbox.
+5. Пользователь запускает `python -m osint_toolkit case-update --case-db <path> <case_id> --title ... --scope-note ...`.
+6. `CaseStore.update_case()` меняет только title и metadata, не пересчитывая findings/entities/edges.
+7. Пользователь запускает `python -m osint_toolkit case-delete --case-db <path> <case_id> --yes`.
+8. `CaseStore.delete_case()` удаляет кейс и дочерние rows через SQLite cascade.
+9. Пользователь запускает `python -m osint_toolkit case-graph --case-db <path> <case_id>`.
+10. `analyze_case_graph()` строит summary сохранённого графа и, при указанном фокусе, возвращает соседей конкретной сущности.
+11. Пользователь запускает `python -m osint_toolkit case-index --case-db <path>`.
+12. `CaseStore.list_entity_index()` строит индекс сущностей по всем сохранённым кейсам; `find_cases_by_entity()` показывает кейсы для точной сущности.
+13. Пользователь запускает `python -m osint_toolkit case-path --case-db <path> --from-kind ... --to-kind ...`.
+14. `CaseStore.load_cases()` загружает bounded набор saved cases, а `analyze_cross_case_path()` строит объединённый graph и возвращает weighted shortest path с provenance по каждому hop.
+15. Пользователь запускает `python -m osint_toolkit case-network --case-db <path>`.
+16. `analyze_cross_case_network()` агрегирует одинаковые graph edges между saved cases, считает degree/case_count и отдаёт bounded visible subgraph для CLI/API/toolbox.
 
 ## Поток данных
 
@@ -337,7 +348,7 @@ Case-store поток:
 
 Toolbox:
 
-`ToolboxSection[] + AdapterProfile[] -> render_toolbox_html() -> local HTML -> operator fills image path/seeds -> copy-ready command OR /api/search -> ToolboxJobRunner -> python -m osint_toolkit search -> report/case -> Case Browser /api/cases|graph|case-index|case-path|case-network`
+`ToolboxSection[] + AdapterProfile[] -> render_toolbox_html() -> local HTML -> operator fills image path/seeds -> copy-ready command OR /api/search -> ToolboxJobRunner -> python -m osint_toolkit search -> report/case -> Case Browser /api/cases|graph|update|delete|case-index|case-path|case-network`
 
 Search:
 
@@ -443,6 +454,12 @@ External adapters должны подключать upstream CLI/API без ко
 - `investigate --case-db` — SQLite-файл для сохранения кейса.
 - `investigate --case-id` — стабильный ID кейса, если нужен повторяемый ключ.
 - `investigate --scope-note` — текстовый контекст/рамки проверки, который сохраняется в case metadata при `--case-db`.
+- `cases --workflow` — фильтр saved cases по metadata workflow.
+- `cases --profile` — фильтр saved cases по requested/search profile или adapter profile metadata.
+- `cases --scope-query` — case-insensitive substring filter по metadata `scope_note`.
+- `case-update --title` — меняет title saved case без изменения findings/entities/edges.
+- `case-update --scope-note` — upsert metadata `scope_note` saved case.
+- `case-delete --yes` — обязательное CLI-подтверждение удаления одного saved case.
 - `case-graph --entity-kind` и `case-graph --entity-value` — focus-сущность для поиска соседей в сохранённом графе.
 - `case-graph --limit` — ограничение top nodes и списка соседей.
 - `case-index --kind` — фильтр типа сущности в cross-case индексе.
@@ -533,9 +550,12 @@ python -m osint_toolkit investigate --username example_user --include-adapters -
 python -m osint_toolkit investigate --username example_user --include-adapters --execute-adapters --adapter-limit 1
 python -m osint_toolkit investigate --email person@example.com --case-db cases.sqlite --case-id case-001 --scope-note "internal validation scope"
 python -m osint_toolkit cases --case-db cases.sqlite
+python -m osint_toolkit cases --case-db cases.sqlite --workflow search --profile email-full --scope-query internal
+python -m osint_toolkit case-update --case-db cases.sqlite case-001 --title "reviewed case" --scope-note "reviewed scope"
 python -m osint_toolkit case-show --case-db cases.sqlite case-001 --format json
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001 --entity-kind email --entity-value person@example.com --format json
+python -m osint_toolkit case-delete --case-db cases.sqlite case-001 --yes
 python -m osint_toolkit case-index --case-db cases.sqlite --kind domain --min-cases 2
 python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value person@example.com --format json
 python -m osint_toolkit case-path --case-db cases.sqlite --from-kind email --from-value person@example.com --to-kind url --to-value https://example.com/profile --format json
@@ -614,6 +634,7 @@ osint-toolkit stats
 - Instagram module пока является safe public metadata wrapper: нет login/session handling, private data access, follower/following scraping, comments/messages export, media archive ingestion или обхода platform rate limits.
 - Social module для VK/OK/Yandex/Mail.ru пока является safe public metadata wrapper: нет VK/OK/Yandex/Mail.ru API adapters, login/session handling, private profile access, follower scraping, comments/messages export или обхода platform rate limits.
 - Toolbox static mode не выполняет команды из браузера; served mode выполняет structured unified `search` jobs через локальный backend. Собственного OCR/EXIF engine нет: image execution использует локально установленные ExifTool, ImageMagick, Tesseract, zbarimg и PowerShell hash baseline. Reverse image search остаётся ручной загрузкой на внешние сайты. Face recognition и поиск человека по лицу не добавлены.
+- Case management intentionally narrow: `case-update` и `/api/cases/<id>/update` меняют только title/scope_note, а `case-delete` и `/api/cases/<id>/delete` требуют явного подтверждения; нет bulk delete, raw SQL editor или редактирования saved findings/entities/edges из UI.
 - `search --execute-adapters` запускает только ready non-restricted external adapters. Для image targets он запускает ready local tools и маршрутизирует derived seeds; face recognition и identity-by-face matching не реализуются.
 - RU/UA source pack пока curated вручную из текущего snapshot, без автообновления.
 - Adapter runner запускает только те CLI, которые уже установлены в `PATH`; установкой upstream-проектов он пока не занимается.
@@ -723,3 +744,4 @@ osint-toolkit stats
 - 2026-06-25: SVG-граф в Case Browser стал кликабельным: выбор узла заполняет focus entity и запускает focus-neighbor analysis через существующий graph endpoint.
 - 2026-06-25: добавлен cross-case weighted path analysis: `case-path`, `/api/case-path`, toolbox Path-кнопка и Markdown/table/JSON форматирование path hops с `case_id`/relation/direction/confidence/source/weight.
 - 2026-06-25: добавлен bounded cross-case network analysis: `case-network`, `/api/case-network`, toolbox Network-кнопка, aggregation одинаковых edges, degree/case_count и фильтры kind/relation.
+- 2026-06-25: добавлен safe case management слой: `cases --workflow/--profile/--scope-query`, `case-update`, `case-delete --yes`, `/api/cases/<id>/update`, `/api/cases/<id>/delete` и toolbox controls для filtered list, title/scope update и typed-confirm delete.

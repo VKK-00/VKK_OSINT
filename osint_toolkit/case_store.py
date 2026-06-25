@@ -212,13 +212,25 @@ class CaseStore:
                 )
         return normalized_case_id
 
-    def list_cases(self, *, limit: int = 20) -> tuple[CaseRecord, ...]:
+    def list_cases(
+        self,
+        *,
+        limit: int = 20,
+        workflow: str = "",
+        profile: str = "",
+        scope_query: str = "",
+    ) -> tuple[CaseRecord, ...]:
         if limit < 1:
             raise CaseStoreError("limit must be greater than zero.")
+        where, params = _case_filter_sql(
+            workflow=workflow,
+            profile=profile,
+            scope_query=scope_query,
+        )
         with self._open() as conn:
             _ensure_schema(conn)
             rows = conn.execute(
-                """
+                f"""
                 SELECT
                     cases.case_id,
                     cases.title,
@@ -229,10 +241,11 @@ class CaseStore:
                     (SELECT COUNT(*) FROM findings WHERE findings.case_id = cases.case_id) AS finding_count,
                     (SELECT COUNT(*) FROM edges WHERE edges.case_id = cases.case_id) AS edge_count
                 FROM cases
+                {where}
                 ORDER BY cases.saved_at DESC, cases.case_id DESC
                 LIMIT ?
                 """,
-                (limit,),
+                (*params, limit),
             ).fetchall()
         return tuple(
             CaseRecord(
@@ -247,6 +260,79 @@ class CaseStore:
             )
             for row in rows
         )
+
+    def update_case(
+        self,
+        case_id: str,
+        *,
+        title: str | None = None,
+        metadata_updates: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        normalized_case_id = case_id.strip()
+        if not normalized_case_id:
+            raise CaseStoreError("case_id cannot be empty.")
+        if title is None and not metadata_updates:
+            raise CaseStoreError("No case updates were provided.")
+
+        saved_at = datetime.now().astimezone().isoformat(timespec="seconds")
+        with self._open() as conn:
+            _ensure_schema(conn)
+            case = conn.execute(
+                "SELECT case_id FROM cases WHERE case_id = ?",
+                (normalized_case_id,),
+            ).fetchone()
+            if case is None:
+                raise CaseStoreError(f"case not found: {normalized_case_id}")
+
+            if title is not None:
+                normalized_title = title.strip()
+                if not normalized_title:
+                    raise CaseStoreError("title cannot be empty.")
+                conn.execute(
+                    "UPDATE cases SET title = ?, saved_at = ? WHERE case_id = ?",
+                    (normalized_title, saved_at, normalized_case_id),
+                )
+
+            if metadata_updates:
+                rows = []
+                for key, value in sorted(metadata_updates.items()):
+                    normalized_key = key.strip()
+                    if not normalized_key:
+                        raise CaseStoreError("metadata key cannot be empty.")
+                    rows.append(
+                        (
+                            normalized_case_id,
+                            normalized_key,
+                            json.dumps(value, ensure_ascii=False, sort_keys=True),
+                        )
+                    )
+                conn.executemany(
+                    """
+                    INSERT INTO case_metadata(case_id, key, value_json)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(case_id, key) DO UPDATE SET value_json = excluded.value_json
+                    """,
+                    rows,
+                )
+                conn.execute(
+                    "UPDATE cases SET saved_at = ? WHERE case_id = ?",
+                    (saved_at, normalized_case_id),
+                )
+        return self.load_case(normalized_case_id)
+
+    def delete_case(self, case_id: str) -> str:
+        normalized_case_id = case_id.strip()
+        if not normalized_case_id:
+            raise CaseStoreError("case_id cannot be empty.")
+        with self._open() as conn:
+            _ensure_schema(conn)
+            result = conn.execute(
+                "DELETE FROM cases WHERE case_id = ?",
+                (normalized_case_id,),
+            )
+            if result.rowcount == 0:
+                raise CaseStoreError(f"case not found: {normalized_case_id}")
+        return normalized_case_id
 
     def load_case(self, case_id: str) -> dict[str, object]:
         with self._open() as conn:
@@ -315,10 +401,22 @@ class CaseStore:
             },
         }
 
-    def load_cases(self, *, limit: int = 100) -> tuple[dict[str, object], ...]:
+    def load_cases(
+        self,
+        *,
+        limit: int = 100,
+        workflow: str = "",
+        profile: str = "",
+        scope_query: str = "",
+    ) -> tuple[dict[str, object], ...]:
         if limit < 1:
             raise CaseStoreError("limit must be greater than zero.")
-        records = self.list_cases(limit=limit)
+        records = self.list_cases(
+            limit=limit,
+            workflow=workflow,
+            profile=profile,
+            scope_query=scope_query,
+        )
         return tuple(self.load_case(record.case_id) for record in records)
 
     def list_entity_index(
@@ -525,6 +623,80 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         "INSERT OR REPLACE INTO metadata(key, value) VALUES (?, ?)",
         ("schema_version", SCHEMA_VERSION),
     )
+
+
+def _case_filter_sql(
+    *,
+    workflow: str = "",
+    profile: str = "",
+    scope_query: str = "",
+) -> tuple[str, tuple[object, ...]]:
+    clauses: list[str] = []
+    params: list[object] = []
+
+    normalized_workflow = workflow.strip()
+    if normalized_workflow:
+        clauses.append(
+            """
+            EXISTS (
+                SELECT 1 FROM case_metadata
+                WHERE case_metadata.case_id = cases.case_id
+                  AND case_metadata.key = 'workflow'
+                  AND lower(case_metadata.value_json) = lower(?)
+            )
+            """
+        )
+        params.append(json.dumps(normalized_workflow, ensure_ascii=False))
+
+    normalized_profile = profile.strip()
+    if normalized_profile:
+        clauses.append(
+            """
+            EXISTS (
+                SELECT 1 FROM case_metadata
+                WHERE case_metadata.case_id = cases.case_id
+                  AND (
+                    (
+                        case_metadata.key = 'requested_profile'
+                        AND lower(case_metadata.value_json) = lower(?)
+                    )
+                    OR (
+                        case_metadata.key = 'search_profile'
+                        AND lower(case_metadata.value_json) LIKE lower(?) ESCAPE '\\'
+                    )
+                    OR (
+                        case_metadata.key = 'adapter_profiles'
+                        AND lower(case_metadata.value_json) LIKE lower(?) ESCAPE '\\'
+                    )
+                  )
+            )
+            """
+        )
+        profile_json = json.dumps(normalized_profile, ensure_ascii=False)
+        profile_like = f"%{_escape_like(json.dumps(normalized_profile, ensure_ascii=False)[1:-1])}%"
+        params.extend((profile_json, profile_like, profile_like))
+
+    normalized_scope_query = scope_query.strip()
+    if normalized_scope_query:
+        clauses.append(
+            """
+            EXISTS (
+                SELECT 1 FROM case_metadata
+                WHERE case_metadata.case_id = cases.case_id
+                  AND case_metadata.key = 'scope_note'
+                  AND lower(case_metadata.value_json) LIKE lower(?) ESCAPE '\\'
+            )
+            """
+        )
+        params.append(f"%{_escape_like(normalized_scope_query)}%")
+
+    if not clauses:
+        return "", ()
+    return "WHERE " + " AND ".join(f"({clause})" for clause in clauses), tuple(params)
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _finding_row_to_dict(row: sqlite3.Row) -> dict[str, object]:

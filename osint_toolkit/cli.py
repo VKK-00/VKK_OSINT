@@ -30,6 +30,7 @@ from .output import (
     format_case_graph_analysis,
     format_cross_case_network_analysis,
     format_cross_case_path_analysis,
+    format_case_delete_result,
     format_case_detail,
     format_cases,
     format_findings,
@@ -270,6 +271,9 @@ def build_parser() -> argparse.ArgumentParser:
     cases = subparsers.add_parser("cases", help="List saved investigation cases.")
     cases.add_argument("--case-db", required=True, help="SQLite database path.")
     cases.add_argument("--limit", type=int, default=20)
+    cases.add_argument("--workflow", default="", help="Filter by saved workflow metadata, for example search.")
+    cases.add_argument("--profile", default="", help="Filter by requested/search profile metadata.")
+    cases.add_argument("--scope-query", default="", help="Case-insensitive substring filter over scope_note metadata.")
     cases.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     cases.set_defaults(handler=handle_cases)
 
@@ -278,6 +282,21 @@ def build_parser() -> argparse.ArgumentParser:
     case_show.add_argument("case_id")
     case_show.add_argument("--format", choices=("table", "markdown", "json"), default="json")
     case_show.set_defaults(handler=handle_case_show)
+
+    case_update = subparsers.add_parser("case-update", help="Update safe metadata for one saved case.")
+    case_update.add_argument("--case-db", required=True, help="SQLite database path.")
+    case_update.add_argument("case_id")
+    case_update.add_argument("--title", help="Replace the case title.")
+    case_update.add_argument("--scope-note", help="Replace or add scope_note metadata.")
+    case_update.add_argument("--format", choices=("table", "markdown", "json"), default="markdown")
+    case_update.set_defaults(handler=handle_case_update)
+
+    case_delete = subparsers.add_parser("case-delete", help="Delete one saved case from SQLite.")
+    case_delete.add_argument("--case-db", required=True, help="SQLite database path.")
+    case_delete.add_argument("case_id")
+    case_delete.add_argument("--yes", action="store_true", help="Required confirmation for deletion.")
+    case_delete.add_argument("--format", choices=("table", "json"), default="table")
+    case_delete.set_defaults(handler=handle_case_delete)
 
     case_graph = subparsers.add_parser("case-graph", help="Analyze graph edges for one saved investigation case.")
     case_graph.add_argument("--case-db", required=True, help="SQLite database path.")
@@ -726,7 +745,12 @@ def _investigation_case_metadata(
 
 
 def handle_cases(args: argparse.Namespace) -> int:
-    records = CaseStore(args.case_db).list_cases(limit=args.limit)
+    records = CaseStore(args.case_db).list_cases(
+        limit=args.limit,
+        workflow=args.workflow,
+        profile=args.profile,
+        scope_query=args.scope_query,
+    )
     print(format_cases(records, output_format=args.format))
     return 0
 
@@ -734,6 +758,27 @@ def handle_cases(args: argparse.Namespace) -> int:
 def handle_case_show(args: argparse.Namespace) -> int:
     payload = CaseStore(args.case_db).load_case(args.case_id)
     print(format_case_detail(payload, output_format=args.format))
+    return 0
+
+
+def handle_case_update(args: argparse.Namespace) -> int:
+    metadata_updates: dict[str, object] = {}
+    if args.scope_note is not None:
+        metadata_updates["scope_note"] = args.scope_note
+    payload = CaseStore(args.case_db).update_case(
+        args.case_id,
+        title=args.title,
+        metadata_updates=metadata_updates,
+    )
+    print(format_case_detail(payload, output_format=args.format))
+    return 0
+
+
+def handle_case_delete(args: argparse.Namespace) -> int:
+    if not args.yes:
+        raise ValueError("case-delete requires --yes.")
+    case_id = CaseStore(args.case_db).delete_case(args.case_id)
+    print(format_case_delete_result(case_id, output_format=args.format))
     return 0
 
 

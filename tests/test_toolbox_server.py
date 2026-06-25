@@ -7,6 +7,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from osint_toolkit.case_store import CaseStore
+from osint_toolkit.engine import ScanTarget
+from osint_toolkit.investigation import run_investigation
 from osint_toolkit.toolbox_server import ToolboxJobRunner, create_toolbox_server
 
 
@@ -166,6 +169,78 @@ class ToolboxServerTests(unittest.TestCase):
                     for node in network["nodes"]
                 }
                 self.assertEqual(network_nodes[("domain", "example.com")]["case_count"], 2)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_case_management_endpoints_filter_update_and_delete(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "cases.sqlite"
+            result = run_investigation(
+                (ScanTarget(kind="email", value="person@example.com"),),
+                title="server case",
+            )
+            CaseStore(db_path).save(
+                result,
+                case_id="case-1",
+                metadata={
+                    "workflow": "search",
+                    "requested_profile": "email-full",
+                    "scope_note": "server scope",
+                },
+            )
+
+            runner = ToolboxJobRunner(cwd=tmpdir, auth="test-auth")
+            server = create_toolbox_server(host="127.0.0.1", port=0, runner=runner)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base_url = f"http://{server.server_address[0]}:{server.server_address[1]}"
+            try:
+                cases = self._request_json(
+                    (
+                        f"{base_url}/api/cases?case_db=cases.sqlite"
+                        "&workflow=search&profile=email-full&scope_query=server"
+                    ),
+                    auth="test-auth",
+                )
+                self.assertEqual([record["case_id"] for record in cases["cases"]], ["case-1"])
+
+                updated = self._request_json(
+                    f"{base_url}/api/cases/case-1/update",
+                    method="POST",
+                    auth="test-auth",
+                    payload={
+                        "case_db": "cases.sqlite",
+                        "title": "updated server case",
+                        "scope_note": "updated scope",
+                    },
+                )
+                self.assertEqual(updated["case"]["title"], "updated server case")
+                self.assertEqual(updated["metadata"]["scope_note"], "updated scope")
+
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    self._request_json(
+                        f"{base_url}/api/cases/case-1/delete",
+                        method="POST",
+                        auth="test-auth",
+                        payload={"case_db": "cases.sqlite", "confirm": "wrong"},
+                    )
+                self.assertEqual(raised.exception.code, 400)
+
+                deleted = self._request_json(
+                    f"{base_url}/api/cases/case-1/delete",
+                    method="POST",
+                    auth="test-auth",
+                    payload={"case_db": "cases.sqlite", "confirm": "case-1"},
+                )
+                self.assertEqual(deleted, {"case_id": "case-1", "deleted": True})
+
+                empty = self._request_json(
+                    f"{base_url}/api/cases?case_db=cases.sqlite",
+                    auth="test-auth",
+                )
+                self.assertEqual(empty["cases"], [])
             finally:
                 server.shutdown()
                 server.server_close()

@@ -53,6 +53,10 @@ TOOLBOX_INPUTS: tuple[ToolboxInput, ...] = (
     ToolboxInput("case_db", "SQLite case DB", "cases.sqlite"),
     ToolboxInput("case_id", "Case ID", "case-001"),
     ToolboxInput("scope_note", "Scope note", "internal validation scope"),
+    ToolboxInput("workflow_filter", "Workflow filter", "search"),
+    ToolboxInput("profile_filter", "Profile filter", "email-full"),
+    ToolboxInput("scope_query", "Scope contains", "internal validation"),
+    ToolboxInput("delete_confirm", "Delete confirm", "case-001"),
     ToolboxInput("entity_kind", "Entity kind", "domain"),
     ToolboxInput("entity_value", "Entity value", "example.com"),
     ToolboxInput("relation", "Relation filter", "email_domain"),
@@ -510,10 +514,32 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                 ),
                 ToolboxCommand(
                     "Список кейсов",
-                    "Показывает сохранённые кейсы.",
-                    "python -m osint_toolkit cases --case-db {case_db} --format markdown",
+                    "Показывает сохранённые кейсы с optional workflow/profile/scope filters.",
+                    (
+                        "python -m osint_toolkit cases --case-db {case_db} "
+                        '[[--workflow {workflow_filter}]] [[--profile {profile_filter}]] '
+                        '[[--scope-query "{scope_query}"]] --format markdown'
+                    ),
                     required_inputs=("case_db",),
                     badges=("sqlite", "list"),
+                ),
+                ToolboxCommand(
+                    "Обновить кейс",
+                    "Меняет title и/или scope_note без изменения findings/entities.",
+                    (
+                        "python -m osint_toolkit case-update --case-db {case_db} {case_id} "
+                        '[[--title "{title}"]] [[--scope-note "{scope_note}"]] --format markdown'
+                    ),
+                    required_inputs=("case_db", "case_id"),
+                    badges=("case", "update"),
+                ),
+                ToolboxCommand(
+                    "Удалить кейс",
+                    "Удаляет один saved case после явного подтверждения.",
+                    "python -m osint_toolkit case-delete --case-db {case_db} {case_id} --yes --format table",
+                    required_inputs=("case_db", "case_id"),
+                    badges=("case", "delete"),
+                    note="Перед запуском CLI перепроверь Case ID: операция удаляет targets/entities/findings/edges через SQLite cascade.",
                 ),
                 ToolboxCommand(
                     "Открыть кейс",
@@ -1057,10 +1083,12 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
         </div>
         <div class="panel case-panel">
           <h2>Case Browser</h2>
-          <p>Читает saved cases из SQLite через локальный backend: список, detail, graph и cross-case index.</p>
+          <p>Читает saved cases из SQLite через локальный backend: список, detail, graph, update/delete и cross-case index.</p>
           <div class="copy-row">
             <button type="button" id="loadCases">Cases</button>
             <button type="button" class="secondary" id="showCase">Case detail</button>
+            <button type="button" class="secondary" id="updateCase">Update</button>
+            <button type="button" class="secondary" id="deleteCase">Delete</button>
             <button type="button" class="secondary" id="showCaseGraph">Graph</button>
             <button type="button" class="secondary" id="showCaseIndex">Index</button>
             <button type="button" class="secondary" id="showCasePath">Path</button>
@@ -1271,6 +1299,20 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       }}
       const response = await fetch(caseUrl(path, params), {{
         headers: {{"X-OSINT-Token": backendConfig.auth}}
+      }});
+      const text = await response.text();
+      if (!response.ok) throw new Error(text);
+      return JSON.parse(text);
+    }}
+
+    async function postCaseJson(path, payload) {{
+      if (!backendAvailable()) {{
+        throw new Error("Backend недоступен. Запусти: python -m osint_toolkit toolbox --serve --open");
+      }}
+      const response = await fetch(`${{backendConfig.url}}${{path}}`, {{
+        method: "POST",
+        headers: backendHeaders(),
+        body: JSON.stringify(payload || {{}})
       }});
       const text = await response.text();
       if (!response.ok) throw new Error(text);
@@ -1588,13 +1630,21 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       }}
     }}
 
-    async function loadCases() {{
-      const data = await fetchCaseJson("/api/cases", {{
+    async function loadCases(writeLog = true) {{
+      const params = {{
         case_db: caseDbValue(),
         limit: "50"
-      }});
+      }};
+      const workflow = readValue("workflow_filter");
+      const profile = readValue("profile_filter");
+      const scopeQuery = readValue("scope_query");
+      if (workflow) params.workflow = workflow;
+      if (profile) params.profile = profile;
+      if (scopeQuery) params.scope_query = scopeQuery;
+      const data = await fetchCaseJson("/api/cases", params);
       renderCaseList(data.cases || []);
-      setCaseLog(JSON.stringify(data, null, 2));
+      if (writeLog) setCaseLog(JSON.stringify(data, null, 2));
+      return data;
     }}
 
     async function showCase() {{
@@ -1608,6 +1658,44 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       currentGraphMode = "case";
       renderCaseGraph(currentCasePayload, currentGraphAnalysis);
       setCaseLog(JSON.stringify(data, null, 2));
+    }}
+
+    async function updateCase() {{
+      const caseId = readValue("case_id");
+      if (!caseId) throw new Error("Укажи Case ID.");
+      const payload = {{case_db: caseDbValue()}};
+      const title = readValue("title");
+      const scopeNote = readValue("scope_note");
+      if (title) payload.title = title;
+      if (scopeNote) payload.scope_note = scopeNote;
+      if (!payload.title && !payload.scope_note) {{
+        throw new Error("Укажи новое название кейса и/или Scope note.");
+      }}
+      const data = await postCaseJson(`/api/cases/${{encodeURIComponent(caseId)}}/update`, payload);
+      currentCasePayload = data;
+      currentGraphAnalysis = null;
+      currentGraphMode = "case";
+      renderCaseGraph(currentCasePayload, currentGraphAnalysis);
+      setCaseLog(JSON.stringify(data, null, 2));
+      await loadCases(false);
+    }}
+
+    async function deleteCase() {{
+      const caseId = readValue("case_id");
+      if (!caseId) throw new Error("Укажи Case ID.");
+      const confirm = readValue("delete_confirm");
+      if (confirm !== caseId) {{
+        throw new Error("Для удаления поле Delete confirm должно точно совпадать с Case ID.");
+      }}
+      const data = await postCaseJson(`/api/cases/${{encodeURIComponent(caseId)}}/delete`, {{
+        case_db: caseDbValue(),
+        confirm
+      }});
+      currentCasePayload = null;
+      currentGraphAnalysis = null;
+      renderCaseGraph(null, null);
+      setCaseLog(JSON.stringify(data, null, 2));
+      await loadCases(false);
     }}
 
     async function showCaseGraph() {{
@@ -1716,6 +1804,14 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       showCase().catch((error) => setCaseLog(String(error)));
     }});
 
+    document.getElementById("updateCase").addEventListener("click", () => {{
+      updateCase().catch((error) => setCaseLog(String(error)));
+    }});
+
+    document.getElementById("deleteCase").addEventListener("click", () => {{
+      deleteCase().catch((error) => setCaseLog(String(error)));
+    }});
+
     document.getElementById("showCaseGraph").addEventListener("click", () => {{
       showCaseGraph().catch((error) => setCaseLog(String(error)));
     }});
@@ -1761,6 +1857,8 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       document.getElementById("refreshJobs").disabled = true;
       document.getElementById("loadCases").disabled = true;
       document.getElementById("showCase").disabled = true;
+      document.getElementById("updateCase").disabled = true;
+      document.getElementById("deleteCase").disabled = true;
       document.getElementById("showCaseGraph").disabled = true;
       document.getElementById("showCaseIndex").disabled = true;
       document.getElementById("showCasePath").disabled = true;
