@@ -235,6 +235,14 @@ class ToolboxServerTests(unittest.TestCase):
                 self.assertEqual(graph["case_id"], "email-1")
                 self.assertGreaterEqual(graph["node_count"], 2)
 
+                sources = self._request_json(
+                    f"{base_url}/api/cases/email-1/sources?case_db=cases.sqlite&format=markdown",
+                    auth="test-auth",
+                )
+                self.assertEqual(sources["case"]["case_id"], "email-1")
+                self.assertIn("source_summary", sources)
+                self.assertIn("# Case Source Summary: email-1", sources["content"])
+
                 index = self._request_json(
                     f"{base_url}/api/case-index?case_db=cases.sqlite&kind=domain&min_cases=1",
                     auth="test-auth",

@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from .case_store import CaseStore, CaseStoreError
 from .environment import refresh_runtime_environment
 from .graph import analyze_case_graph, analyze_cross_case_network, analyze_cross_case_path
+from .output import findings_from_case_payload, finding_source_summary, format_case_source_summary
 from .search import (
     TARGET_KINDS,
     SearchProfile,
@@ -310,6 +311,24 @@ class ToolboxJobRunner:
             focus_value=focus_value,
             limit=limit,
         ).to_dict()
+
+    def case_sources(
+        self,
+        case_db: str,
+        case_id: str,
+        *,
+        output_format: str = "markdown",
+    ) -> dict[str, object]:
+        if output_format not in VALID_FORMATS:
+            raise ValueError(f"format must be one of: {', '.join(VALID_FORMATS)}")
+        payload = self.load_case(case_db, case_id)
+        findings = findings_from_case_payload(payload)
+        return {
+            "case": payload.get("case", {}),
+            "format": output_format,
+            "source_summary": list(finding_source_summary(findings)),
+            "content": format_case_source_summary(payload, output_format=output_format),
+        }
 
     def case_index(
         self,
@@ -711,6 +730,17 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
                     ),
                 )
                 return
+            if case_id and case_route == "sources":
+                self._require_token()
+                self._send_json(
+                    200,
+                    self._runner().case_sources(
+                        _query_string(query, "case_db", default="cases.sqlite"),
+                        case_id,
+                        output_format=_query_string(query, "format", default="markdown"),
+                    ),
+                )
+                return
             job_id, report = self._job_route(path)
             if job_id and report:
                 self._require_token()
@@ -794,6 +824,8 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
             return unquote(parts[2]), "show"
         if len(parts) == 4 and parts[:2] == ["api", "cases"] and parts[3] == "graph":
             return unquote(parts[2]), "graph"
+        if len(parts) == 4 and parts[:2] == ["api", "cases"] and parts[3] == "sources":
+            return unquote(parts[2]), "sources"
         if len(parts) == 4 and parts[:2] == ["api", "cases"] and parts[3] == "update":
             return unquote(parts[2]), "update"
         if len(parts) == 4 and parts[:2] == ["api", "cases"] and parts[3] == "delete":

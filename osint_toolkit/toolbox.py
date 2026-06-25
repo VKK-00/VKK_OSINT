@@ -1142,6 +1142,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
             <button type="button" class="secondary" id="showCase">Case detail</button>
             <button type="button" class="secondary" id="updateCase">Update</button>
             <button type="button" class="secondary" id="deleteCase">Delete</button>
+            <button type="button" class="secondary" id="showCaseSources">Sources</button>
             <button type="button" class="secondary" id="showCaseGraph">Graph</button>
             <button type="button" class="secondary" id="showCaseIndex">Index</button>
             <button type="button" class="secondary" id="showCasePath">Path</button>
@@ -1934,6 +1935,16 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       setCaseLog(JSON.stringify({{case: caseData, graph: graphData}}, null, 2));
     }}
 
+    async function showCaseSources() {{
+      const caseId = readValue("case_id");
+      if (!caseId) throw new Error("Укажи Case ID.");
+      const data = await fetchCaseJson(`/api/cases/${{encodeURIComponent(caseId)}}/sources`, {{
+        case_db: caseDbValue(),
+        format: "markdown"
+      }});
+      setCaseLog(data.content || JSON.stringify(data, null, 2));
+    }}
+
     async function showCaseIndex() {{
       const params = {{
         case_db: caseDbValue(),
@@ -2064,6 +2075,10 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       deleteCase().catch((error) => setCaseLog(String(error)));
     }});
 
+    document.getElementById("showCaseSources").addEventListener("click", () => {{
+      showCaseSources().catch((error) => setCaseLog(String(error)));
+    }});
+
     document.getElementById("showCaseGraph").addEventListener("click", () => {{
       showCaseGraph().catch((error) => setCaseLog(String(error)));
     }});
@@ -2122,6 +2137,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       document.getElementById("showCase").disabled = true;
       document.getElementById("updateCase").disabled = true;
       document.getElementById("deleteCase").disabled = true;
+      document.getElementById("showCaseSources").disabled = true;
       document.getElementById("showCaseGraph").disabled = true;
       document.getElementById("showCaseIndex").disabled = true;
       document.getElementById("showCasePath").disabled = true;

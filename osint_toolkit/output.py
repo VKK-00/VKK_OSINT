@@ -244,6 +244,86 @@ def format_finding_source_summary(
     raise ValueError(f"Unsupported output format: {output_format}")
 
 
+def findings_from_case_payload(payload: dict[str, object]) -> tuple[Finding, ...]:
+    raw_findings = payload.get("findings", ())
+    if not isinstance(raw_findings, list):
+        return ()
+    findings: list[Finding] = []
+    for raw in raw_findings:
+        if not isinstance(raw, dict):
+            continue
+        metadata = raw.get("metadata")
+        finding_metadata = (
+            {str(key): str(value) for key, value in metadata.items()}
+            if isinstance(metadata, dict)
+            else {}
+        )
+        collection = str(raw.get("collection", "") or "")
+        if collection:
+            finding_metadata.setdefault("case_collection", collection)
+        findings.append(
+            Finding(
+                module=str(raw.get("module", "") or ""),
+                source=str(raw.get("source", "") or ""),
+                target=str(raw.get("target", "") or ""),
+                status=str(raw.get("status", "") or ""),
+                url=str(raw.get("url", "") or ""),
+                title=str(raw.get("title", "") or ""),
+                http_status=_optional_int(raw.get("http_status")),
+                confidence=str(raw.get("confidence", "") or "unknown"),
+                evidence=str(raw.get("evidence", "") or ""),
+                metadata=finding_metadata,
+                checked_at=str(raw.get("checked_at", "") or ""),
+            )
+        )
+    return tuple(findings)
+
+
+def format_case_source_summary(
+    payload: dict[str, object],
+    *,
+    output_format: str = "markdown",
+) -> str:
+    case = payload.get("case")
+    case_payload = case if isinstance(case, dict) else {}
+    case_id = str(case_payload.get("case_id", "") or "")
+    title = str(case_payload.get("title", "") or "")
+    findings = findings_from_case_payload(payload)
+    rows = finding_source_summary(findings)
+    if output_format == "json":
+        return json.dumps(
+            {
+                "case": case_payload,
+                "source_summary": list(rows),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    if output_format == "csv":
+        return format_finding_source_summary(findings, output_format="csv")
+    if output_format == "table":
+        return format_finding_source_summary(
+            findings,
+            output_format="table",
+            title=f"Case Sources: {case_id or 'unknown'}",
+        )
+    if output_format == "markdown":
+        lines = [
+            f"# Case Source Summary: {case_id or 'unknown'}",
+            "",
+            f"- Title: {_escape_md(title or '-')}",
+            f"- Findings: {len(findings)}",
+            "",
+            format_finding_source_summary(
+                findings,
+                output_format="markdown",
+                title="Saved Case Sources",
+            ),
+        ]
+        return "\n".join(lines)
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
 def format_adapters(adapters: Iterable[AdapterSpec], *, output_format: str = "table") -> str:
     adapter_list = tuple(adapters)
     if output_format == "json":
@@ -1259,6 +1339,15 @@ def _int_or_zero(value: object) -> int:
         return int(str(value))
     except (TypeError, ValueError):
         return 0
+
+
+def _optional_int(value: object) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def _source_signal_kinds(findings: Iterable[Finding]) -> tuple[str, ...]:

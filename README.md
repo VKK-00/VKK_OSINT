@@ -112,6 +112,7 @@ python -m osint_toolkit cases --case-db cases.sqlite
 python -m osint_toolkit cases --case-db cases.sqlite --workflow search --profile email-full --scope-query "validation"
 python -m osint_toolkit case-update --case-db cases.sqlite case-one --title "case one reviewed" --scope-note "reviewed scope"
 python -m osint_toolkit case-show --case-db cases.sqlite case-one --format markdown
+python -m osint_toolkit case-sources --case-db cases.sqlite case-one --format markdown
 python -m osint_toolkit case-graph --case-db cases.sqlite case-one
 python -m osint_toolkit case-graph --case-db cases.sqlite case-one --entity-kind email --entity-value person@example.com
 python -m osint_toolkit case-index --case-db cases.sqlite --kind domain --min-cases 2
@@ -234,7 +235,7 @@ python -m osint_toolkit toolbox --serve --port 8766 --out osint_toolbox.html
 - SQLite cases, SVG graph и cross-case index;
 - каталог, adapter readiness/setup и reusable adapter profiles.
 
-Static `toolbox --out` не загружает фото автоматически и не запускает команды из браузера: он собирает команды для ручного запуска. `toolbox --serve` поднимает локальный `127.0.0.1` backend с per-session token и принимает только структурированные payloads: `/api/search` для запуска unified jobs, `/api/profiles`/`/api/profiles/save`/`/api/profiles/delete` для built-in/custom search profile listing and editing, `/api/tools` для profile readiness/install/env views, `/api/tools/install` для dry-run/explicit execute установки missing allowlisted tools, `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph`, `/api/cases/<id>/update`, `/api/cases/<id>/delete`, `/api/case-index`, `/api/case-path`, `/api/case-network` для saved SQLite cases внутри рабочей папки backend. Case Browser строит bounded SVG-визуализацию из сохранённых `entities`/`edges`, фильтрует cases по workflow/profile/scope, фильтрует сам граф по entity kind/value, relation и текстовому `Graph contains`, меняет только allowlisted поля title/scope_note и удаляет кейс только при typed confirmation; unified runner принимает `profile_file` только внутри рабочей папки backend и typed `custom_profile`. Клик по узлу заполняет focus entity и вызывает graph summary/focus-neighbor analysis, `Path` ищет weighted shortest path между source/target entities, а `Network` показывает общий bounded graph по нескольким saved cases с фильтрами kind/relation. Произвольный shell из браузера не исполняется; installer endpoint тоже не принимает произвольную команду и использует manifest allowlist (`pipx`, `go`, `winget`, `choco`). Для фото served mode запускает тот же `search image ... --execute-adapters`: ready local tools, derived seeds, report/case. Reverse image search остаётся ручной загрузкой на внешние сайты для источника, дублей и контекста изображения, а не для face-ID.
+Static `toolbox --out` не загружает фото автоматически и не запускает команды из браузера: он собирает команды для ручного запуска. `toolbox --serve` поднимает локальный `127.0.0.1` backend с per-session token и принимает только структурированные payloads: `/api/search` для запуска unified jobs, `/api/profiles`/`/api/profiles/save`/`/api/profiles/delete` для built-in/custom search profile listing and editing, `/api/tools` для profile readiness/install/env views, `/api/tools/install` для dry-run/explicit execute установки missing allowlisted tools, `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/sources`, `/api/cases/<id>/graph`, `/api/cases/<id>/update`, `/api/cases/<id>/delete`, `/api/case-index`, `/api/case-path`, `/api/case-network` для saved SQLite cases внутри рабочей папки backend. Case Browser строит bounded SVG-визуализацию из сохранённых `entities`/`edges`, показывает source-by-source summary для сохранённых findings через кнопку `Sources`, фильтрует cases по workflow/profile/scope, фильтрует сам граф по entity kind/value, relation и текстовому `Graph contains`, меняет только allowlisted поля title/scope_note и удаляет кейс только при typed confirmation; unified runner принимает `profile_file` только внутри рабочей папки backend и typed `custom_profile`. Клик по узлу заполняет focus entity и вызывает graph summary/focus-neighbor analysis, `Path` ищет weighted shortest path между source/target entities, а `Network` показывает общий bounded graph по нескольким saved cases с фильтрами kind/relation. Произвольный shell из браузера не исполняется; installer endpoint тоже не принимает произвольную команду и использует manifest allowlist (`pipx`, `go`, `winget`, `choco`). Для фото served mode запускает тот же `search image ... --execute-adapters`: ready local tools, derived seeds, report/case. Reverse image search остаётся ручной загрузкой на внешние сайты для источника, дублей и контекста изображения, а не для face-ID.
 
 ### `stats`
 
@@ -402,9 +403,9 @@ python -m osint_toolkit investigate --title "saved case" --email person@example.
 
 `--include-adapters` по умолчанию добавляет только dry-run команды. `--adapter-profile <name>` добавляет готовую группу adapters, а `--adapter <repository>` можно повторять, чтобы ограничить кейс конкретными upstream adapters. `--execute-adapters` явно запускает настроенные upstream CLI из `PATH`, прогоняет поддерживаемый stdout/stderr через parser и добавляет найденные URL/email/phone/key-value сигналы в тот же `Entity Summary`, `Graph Edges` и SQLite case store. Restricted adapters требуют `--allow-restricted-adapters`.
 
-Если указан `--case-db`, кейс сохраняется в SQLite: targets, findings, entities, graph edges и case metadata можно открыть позже через `cases`, `case-show`, `case-graph` и `case-index`. `--scope-note` добавляет в metadata текстовый контекст/рамки проверки. Для `search` metadata фиксирует requested/search profile, profile file, execute flags и реально запущенные adapters/local tools; для `investigate` — adapter profiles, allowlist и execute flags.
+Если указан `--case-db`, кейс сохраняется в SQLite: targets, findings, entities, graph edges и case metadata можно открыть позже через `cases`, `case-show`, `case-sources`, `case-graph` и `case-index`. `--scope-note` добавляет в metadata текстовый контекст/рамки проверки. Для `search` metadata фиксирует requested/search profile, profile file, execute flags и реально запущенные adapters/local tools; для `investigate` — adapter profiles, allowlist и execute flags.
 
-### `cases`, `case-show`, `case-update`, `case-delete`, `case-graph`, `case-index`, `case-path` и `case-network`
+### `cases`, `case-show`, `case-sources`, `case-update`, `case-delete`, `case-graph`, `case-index`, `case-path` и `case-network`
 
 Работа с сохранёнными расследованиями.
 
@@ -414,6 +415,7 @@ python -m osint_toolkit cases --case-db cases.sqlite --workflow search --profile
 python -m osint_toolkit cases --case-db cases.sqlite --format json
 python -m osint_toolkit case-show --case-db cases.sqlite case-001
 python -m osint_toolkit case-show --case-db cases.sqlite case-001 --format markdown
+python -m osint_toolkit case-sources --case-db cases.sqlite case-001 --format markdown
 python -m osint_toolkit case-update --case-db cases.sqlite case-001 --title "reviewed case" --scope-note "reviewed scope" --format markdown
 python -m osint_toolkit case-delete --case-db cases.sqlite case-001 --yes --format json
 python -m osint_toolkit case-graph --case-db cases.sqlite case-001
@@ -428,6 +430,8 @@ python -m osint_toolkit case-network --case-db cases.sqlite --kind domain --rela
 `cases` показывает свежие saved cases и поддерживает metadata filters: `--workflow`, `--profile`, `--scope-query`.
 
 `case-show` в JSON/Markdown показывает `metadata`: workflow, profile/policy, `scope_note` и execution flags, если кейс был сохранён через `search --case-db` или `investigate --case-db`.
+
+`case-sources` пересчитывает source-by-source summary по сохранённым findings: число сигналов, статусы, confidence, типы сигналов, routes/exit codes/parser versions и execution duration для adapter/local-tool provenance, если эта metadata была сохранена в кейсе.
 
 `case-update` меняет только безопасные поля управления кейсом: title и `scope_note`. Findings, targets, entities и graph edges не пересчитываются и не переписываются.
 

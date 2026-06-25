@@ -34,6 +34,7 @@ from .output import (
     format_cross_case_path_analysis,
     format_case_delete_result,
     format_case_detail,
+    format_case_source_summary,
     format_cases,
     format_findings,
     format_finding_source_summary,
@@ -301,6 +302,12 @@ def build_parser() -> argparse.ArgumentParser:
     case_show.add_argument("case_id")
     case_show.add_argument("--format", choices=("table", "markdown", "json"), default="json")
     case_show.set_defaults(handler=handle_case_show)
+
+    case_sources = subparsers.add_parser("case-sources", help="Summarize finding sources for one saved case.")
+    case_sources.add_argument("--case-db", required=True, help="SQLite database path.")
+    case_sources.add_argument("case_id")
+    case_sources.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
+    case_sources.set_defaults(handler=handle_case_sources)
 
     case_update = subparsers.add_parser("case-update", help="Update safe metadata for one saved case.")
     case_update.add_argument("--case-db", required=True, help="SQLite database path.")
@@ -839,6 +846,12 @@ def handle_cases(args: argparse.Namespace) -> int:
 def handle_case_show(args: argparse.Namespace) -> int:
     payload = CaseStore(args.case_db).load_case(args.case_id)
     print(format_case_detail(payload, output_format=args.format))
+    return 0
+
+
+def handle_case_sources(args: argparse.Namespace) -> int:
+    payload = CaseStore(args.case_db).load_case(args.case_id)
+    print(format_case_source_summary(payload, output_format=args.format))
     return 0
 
 

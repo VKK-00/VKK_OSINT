@@ -579,6 +579,14 @@ class CliTests(unittest.TestCase):
             self.assertGreaterEqual(graph_payload["node_count"], 4)
             self.assertEqual(graph_payload["relation_counts"]["email_domain"], 1)
 
+            sources_result = self.run_cli("case-sources", "--case-db", str(db_path), "case-1", "--format", "json")
+            self.assertEqual(sources_result.returncode, 0, sources_result.stderr)
+            sources_payload = json.loads(sources_result.stdout)
+            self.assertEqual(sources_payload["case"]["case_id"], "case-1")
+            source_names = {row["source"] for row in sources_payload["source_summary"]}
+            self.assertIn("syntax", source_names)
+            self.assertIn("mx-records", source_names)
+
             focus_result = self.run_cli(
                 "case-graph",
                 "--case-db",

@@ -74,7 +74,7 @@ CLI работает в пяти режимах:
 - cross-case path analysis: weighted shortest path между двумя сущностями по объединённым graph edges saved cases;
 - cross-case network analysis: bounded общий graph по нескольким saved cases с aggregation, degree/case_count и фильтрами kind/relation;
 - local toolbox: один HTML-пульт с seed-полями и направлениями для фото-зацепок, OCR, EXIF/metadata, QR/barcodes, reverse image portals, person/username/social, email/phone, domain/url, RU/UA, cases/clickable SVG graph/index и adapter profiles;
-- toolbox backend: `toolbox --serve` поднимает локальный token-protected HTTP server, принимает только структурированные `/api/search` payloads включая `scope_note` и guarded `profile_file`, ведёт job queue, logs/status/report access, `/api/profiles`/save/delete, `/api/tools` profile readiness views и allowlisted case endpoints для saved SQLite cases/graph/index/update/delete;
+- toolbox backend: `toolbox --serve` поднимает локальный token-protected HTTP server, принимает только структурированные `/api/search` payloads включая `scope_note` и guarded `profile_file`, ведёт job queue, logs/status/report access, `/api/profiles`/save/delete, `/api/tools` profile readiness views и allowlisted case endpoints для saved SQLite cases/source summaries/graph/index/update/delete;
 - dry-run режим без сетевых запросов по умолчанию;
 - live режим только при явном `--live`.
 
@@ -89,7 +89,7 @@ CLI работает в пяти режимах:
 - `osint_toolkit/environment.py` — Windows runtime env refresh для user/machine `PATH` и известных OSINT env variable names.
 - `osint_toolkit/search.py` — unified search profiles, target classifier и fan-out planner.
 - `osint_toolkit/toolbox.py` — генератор локального HTML-пульта с направлениями, шаблонами команд, optional backend runner UI, Case Browser, safe case management controls и bounded clickable SVG-визуализацией сохранённого графа.
-- `osint_toolkit/toolbox_server.py` — локальный backend для `toolbox --serve`: token auth, allowlisted unified search jobs со `scope_note`, status/logs/report endpoints и allowlisted case endpoints.
+- `osint_toolkit/toolbox_server.py` — локальный backend для `toolbox --serve`: token auth, allowlisted unified search jobs со `scope_note`, status/logs/report endpoints и allowlisted case/source/graph endpoints.
 - `osint_toolkit/resources/sherlock_data.json` — встроенный snapshot Sherlock `sherlock_project/resources/data.json`, commit `206068d`, MIT license.
 - `osint_toolkit/resources/whatsmyname_wmn_data.json` — встроенный snapshot WhatsMyName `wmn-data.json`, commit `7c44595`, CC BY-SA 4.0 license.
 - `osint_toolkit/resources/maigret_sites.json` — sanitized projection Maigret `maigret/resources/data.json`, commit `2484509`, MIT license.
@@ -242,6 +242,7 @@ CLI работает в пяти режимах:
 - `osint_toolkit/output.py`
   - форматирование таблиц, Markdown, CSV и JSON.
   - `format_search_profiles()` и `format_search_profile_detail()` — вывод built-in/custom search profiles для `profiles list/show`.
+  - `format_case_source_summary()` и `findings_from_case_payload()` — повторная source-by-source сводка по findings, уже сохранённым в SQLite case store.
 - `osint_toolkit/search.py`
   - `SearchProfile`, `LocalToolSpec`, `PlannedStep`, `SearchPlan` — модели unified plan; `derived_target_kinds` описывает дополнительные targets, выводимые из исходного seed.
   - `load_search_profiles()` — загрузка custom search profiles из JSON-файла с валидацией имён, target kinds, adapter profiles, repositories и local tools.
@@ -253,7 +254,7 @@ CLI работает в пяти режимах:
   - `write_toolbox()` — запись HTML-файла на диск.
 - `osint_toolkit/toolbox_server.py`
   - `ToolboxJobRunner` — создаёт allowlisted `python -m osint_toolkit search ...` jobs, ограничивает output paths и profile-file inputs рабочей папкой backend, валидирует/пишет custom search profiles, отдаёт profile tool readiness/install/env views и сохраняет stdout/stderr/status.
-  - `ToolboxRequestHandler` — HTTP endpoints `/api/search`, `/api/profiles`, `/api/profiles/save`, `/api/profiles/delete`, `/api/tools`, `/api/jobs`, `/api/jobs/<id>`, `/api/jobs/<id>/report`, `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/graph`, `/api/cases/<id>/update`, `/api/cases/<id>/delete`, `/api/case-index`, `/api/case-path`, `/api/case-network`, `/api/health`.
+  - `ToolboxRequestHandler` — HTTP endpoints `/api/search`, `/api/profiles`, `/api/profiles/save`, `/api/profiles/delete`, `/api/tools`, `/api/jobs`, `/api/jobs/<id>`, `/api/jobs/<id>/report`, `/api/cases`, `/api/cases/<id>`, `/api/cases/<id>/sources`, `/api/cases/<id>/graph`, `/api/cases/<id>/update`, `/api/cases/<id>/delete`, `/api/case-index`, `/api/case-path`, `/api/case-network`, `/api/health`.
   - `run_toolbox_server()` — CLI entrypoint для `toolbox --serve`.
 - `osint_toolkit/case_store.py`
   - `CaseStore.save()` — сохраняет investigation result, graph и metadata в SQLite.
@@ -262,7 +263,7 @@ CLI работает в пяти режимах:
   - `CaseStore.delete_case()` — удаляет один кейс через SQLite cascade.
   - `CaseStore.load_case()`/`load_cases()` — возвращают case payloads для CLI/API/graph analytics.
 - `osint_toolkit/cli.py`
-  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `search`, `profiles`, `adapters`, `adapter-profiles`, `adapter-setup`, `doctor`, `tools doctor/install-plan/install/env`, `run-adapter`, `toolbox`, `investigate`, `cases`, `case-show`, `case-update`, `case-delete`, `case-graph`, `case-index`, `case-path`, `case-network`, `recommend`, `brief`.
+  - argparse CLI: `stats`, `catalog`, `show`, `scan`, `search`, `profiles`, `adapters`, `adapter-profiles`, `adapter-setup`, `doctor`, `tools doctor/install-plan/install/env`, `run-adapter`, `toolbox`, `investigate`, `cases`, `case-show`, `case-sources`, `case-update`, `case-delete`, `case-graph`, `case-index`, `case-path`, `case-network`, `recommend`, `brief`.
 
 ## Как система работает end-to-end
 
@@ -282,7 +283,7 @@ Toolbox-поток:
 4. Browser отправляет только структурированный `/api/search` payload: target kind/value, profile/custom profile, optional profile file, region, execute/plan mode, limits, report path, case DB и optional scope note.
 5. Backend валидирует profile file только внутри рабочей папки backend, собирает allowlisted `python -m osint_toolkit search ...`, запускает job в фоне, показывает queue/status/stdout/stderr и отдаёт report content по job id.
 6. Browser может запросить `/api/profiles`, чтобы увидеть built-in и custom profiles из указанного JSON-файла до запуска search, сохранить/удалить custom profile через `/api/profiles/save` и `/api/profiles/delete`, а также открыть `/api/tools` views `doctor`/`install-plan`/`env` по выбранному профилю.
-7. Case Browser читает `/api/cases` с optional workflow/profile/scope filters, `/api/cases/<id>` и `/api/cases/<id>/graph`, рисует bounded SVG-граф из сохранённых `entities`/`edges` и показывает summary/focus analysis рядом с JSON; клик или Enter/Space на узле заполняет focus entity и перезапрашивает соседей.
+7. Case Browser читает `/api/cases` с optional workflow/profile/scope filters, `/api/cases/<id>`, `/api/cases/<id>/sources` и `/api/cases/<id>/graph`, рисует bounded SVG-граф из сохранённых `entities`/`edges`, показывает source summary по сохранённым findings и показывает summary/focus analysis рядом с JSON; клик или Enter/Space на узле заполняет focus entity и перезапрашивает соседей.
 8. Case Browser меняет только allowlisted поля title/scope_note через `/api/cases/<id>/update`; delete идёт через `/api/cases/<id>/delete` только если typed confirmation точно совпадает с `case_id`.
 9. HTML не загружает фото сам; для фото served mode запускает только тот же `search image ... --execute-adapters`, а reverse image portals остаются ручной загрузкой.
 
@@ -807,6 +808,7 @@ osint-toolkit stats
 - 2026-06-26: source summary в unified search/image reports расширен run-level колонками и JSON/CSV полями для adapter execution provenance: runs, routes, return codes, total duration, generated output files и parser versions.
 - 2026-06-26: served toolbox получил `/api/tools/install` и кнопку `Run install`: из одного окна можно выполнить profile-aware dry-run или явный execute missing allowlisted tools с теми же ограничениями, что `tools install --execute`.
 - 2026-06-26: Case Browser в served toolbox получил client-side фильтры SVG-графа по entity kind/value, relation и текстовому `Graph contains`, плюс сброс фильтров без изменения saved case data.
+- 2026-06-26: добавлен saved-case source summary: CLI `case-sources`, endpoint `/api/cases/<id>/sources` и кнопка `Sources` в served toolbox пересчитывают источники, статусы, confidence, signals и adapter/local-tool provenance по уже сохранённым findings.
 - 2026-06-25: Blackbird и SpiderFoot adapters получили env-backed venv executable support через `BLACKBIRD_PYTHON` и `SPIDERFOOT_PYTHON`; pwnedOrNot переведён на `-e <email> -n`, а локальная all-safe toolchain проверена через `tools doctor --profile all-safe`.
 - 2026-06-25: добавлен Windows runtime env refresh для CLI и toolbox `/api/tools`: user/machine `PATH` и известные OSINT env variables подхватываются из системного окружения, поэтому newly installed user-local tools видны без рестарта текущего терминала.
 - 2026-06-25: добавлен pwnedOrNot stdout parser: HIBP breach summary и breach rows нормализуются в `Finding`/entities, а dump/password output помечается как credential-exposure без переноса чувствительных значений.
