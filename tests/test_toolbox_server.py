@@ -243,6 +243,19 @@ class ToolboxServerTests(unittest.TestCase):
                 self.assertIn("source_summary", sources)
                 self.assertIn("# Case Source Summary: email-1", sources["content"])
 
+                exported = self._request_json(
+                    f"{base_url}/api/cases/email-1/export",
+                    method="POST",
+                    auth="test-auth",
+                    payload={"case_db": "cases.sqlite", "zip": True},
+                )
+                self.assertEqual(exported["case_id"], "email-1")
+                export_dir = Path(exported["output_dir"])
+                self.assertTrue((export_dir / "case.json").exists())
+                self.assertTrue((export_dir / "findings.csv").exists())
+                self.assertTrue((export_dir / "edges.csv").exists())
+                self.assertTrue(Path(exported["zip_path"]).exists())
+
                 index = self._request_json(
                     f"{base_url}/api/case-index?case_db=cases.sqlite&kind=domain&min_cases=1",
                     auth="test-auth",

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from .case_export import export_case_package
 from .case_store import CaseStore, CaseStoreError
 from .environment import refresh_runtime_environment
 from .graph import analyze_case_graph, analyze_cross_case_network, analyze_cross_case_path
@@ -329,6 +330,16 @@ class ToolboxJobRunner:
             "source_summary": list(finding_source_summary(findings)),
             "content": format_case_source_summary(payload, output_format=output_format),
         }
+
+    def export_case(self, case_db: str, case_id: str, payload: dict[str, Any]) -> dict[str, object]:
+        normalized_case_id = case_id.strip()
+        if not normalized_case_id:
+            raise ValueError("case_id is required.")
+        case_payload = self.load_case(case_db, normalized_case_id)
+        default_out = f"reports/case-exports/{normalized_case_id}"
+        output_dir = self._output_path(str(payload.get("out", "")).strip(), default_out)
+        result = export_case_package(case_payload, output_dir, create_zip=bool(payload.get("zip", False)))
+        return result.to_dict()
 
     def case_index(
         self,
@@ -773,11 +784,14 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(200, self._runner().profile_tools_install(self._read_json()))
                 return
             case_id, case_route = self._case_route(path)
-            if case_id and case_route in {"update", "delete"}:
+            if case_id and case_route in {"update", "delete", "export"}:
                 payload = self._read_json()
                 case_db = str(payload.get("case_db", "cases.sqlite"))
                 if case_route == "update":
                     self._send_json(200, self._runner().update_case(case_db, case_id, payload))
+                    return
+                if case_route == "export":
+                    self._send_json(200, self._runner().export_case(case_db, case_id, payload))
                     return
                 self._send_json(200, self._runner().delete_case(case_db, case_id, payload))
                 return
@@ -830,6 +844,8 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
             return unquote(parts[2]), "update"
         if len(parts) == 4 and parts[:2] == ["api", "cases"] and parts[3] == "delete":
             return unquote(parts[2]), "delete"
+        if len(parts) == 4 and parts[:2] == ["api", "cases"] and parts[3] == "export":
+            return unquote(parts[2]), "export"
         return "", ""
 
     def _send_json(self, status: int, payload: dict[str, Any]) -> None:

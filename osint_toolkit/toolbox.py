@@ -573,6 +573,20 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     badges=("case", "detail"),
                 ),
                 ToolboxCommand(
+                    "Источники кейса",
+                    "Сводит saved findings по source/status/confidence/provenance.",
+                    "python -m osint_toolkit case-sources --case-db {case_db} {case_id} --format markdown",
+                    required_inputs=("case_db", "case_id"),
+                    badges=("case", "sources"),
+                ),
+                ToolboxCommand(
+                    "Экспорт кейса",
+                    "Пишет handoff-пакет: JSON/Markdown, CSV tables, graph summary, manifest и zip.",
+                    "python -m osint_toolkit case-export --case-db {case_db} {case_id} --out reports/{case_id}-export --zip",
+                    required_inputs=("case_db", "case_id"),
+                    badges=("case", "export"),
+                ),
+                ToolboxCommand(
                     "Граф кейса",
                     "Счётчики связей, типов сущностей и top connected nodes.",
                     (
@@ -1143,6 +1157,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
             <button type="button" class="secondary" id="updateCase">Update</button>
             <button type="button" class="secondary" id="deleteCase">Delete</button>
             <button type="button" class="secondary" id="showCaseSources">Sources</button>
+            <button type="button" class="secondary" id="exportCase">Export</button>
             <button type="button" class="secondary" id="showCaseGraph">Graph</button>
             <button type="button" class="secondary" id="showCaseIndex">Index</button>
             <button type="button" class="secondary" id="showCasePath">Path</button>
@@ -1945,6 +1960,16 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       setCaseLog(data.content || JSON.stringify(data, null, 2));
     }}
 
+    async function exportCasePackage() {{
+      const caseId = readValue("case_id");
+      if (!caseId) throw new Error("Укажи Case ID.");
+      const data = await postBackendJson(`/api/cases/${{encodeURIComponent(caseId)}}/export`, {{
+        case_db: caseDbValue(),
+        zip: true
+      }});
+      setCaseLog(JSON.stringify(data, null, 2));
+    }}
+
     async function showCaseIndex() {{
       const params = {{
         case_db: caseDbValue(),
@@ -2079,6 +2104,10 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       showCaseSources().catch((error) => setCaseLog(String(error)));
     }});
 
+    document.getElementById("exportCase").addEventListener("click", () => {{
+      exportCasePackage().catch((error) => setCaseLog(String(error)));
+    }});
+
     document.getElementById("showCaseGraph").addEventListener("click", () => {{
       showCaseGraph().catch((error) => setCaseLog(String(error)));
     }});
@@ -2138,6 +2167,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       document.getElementById("updateCase").disabled = true;
       document.getElementById("deleteCase").disabled = true;
       document.getElementById("showCaseSources").disabled = true;
+      document.getElementById("exportCase").disabled = true;
       document.getElementById("showCaseGraph").disabled = true;
       document.getElementById("showCaseIndex").disabled = true;
       document.getElementById("showCasePath").disabled = true;

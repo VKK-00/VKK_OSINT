@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 
@@ -596,6 +597,38 @@ class CliTests(unittest.TestCase):
             source_names = {row["source"] for row in sources_payload["source_summary"]}
             self.assertIn("syntax", source_names)
             self.assertIn("mx-records", source_names)
+
+            export_dir = Path(tmpdir) / "export" / "case-1"
+            export_result = self.run_cli(
+                "case-export",
+                "--case-db",
+                str(db_path),
+                "case-1",
+                "--out",
+                str(export_dir),
+                "--zip",
+                "--format",
+                "json",
+            )
+            self.assertEqual(export_result.returncode, 0, export_result.stderr)
+            export_payload = json.loads(export_result.stdout)
+            self.assertEqual(export_payload["case_id"], "case-1")
+            self.assertTrue((export_dir / "case.json").exists())
+            self.assertTrue((export_dir / "case.md").exists())
+            self.assertTrue((export_dir / "findings.csv").exists())
+            self.assertTrue((export_dir / "entities.csv").exists())
+            self.assertTrue((export_dir / "edges.csv").exists())
+            self.assertTrue((export_dir / "sources.csv").exists())
+            manifest = json.loads((export_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["case_id"], "case-1")
+            exported_files = {item["name"] for item in manifest["files"]}
+            self.assertIn("case.json", exported_files)
+            self.assertIn("edges.csv", exported_files)
+            zip_path = Path(export_payload["zip_path"])
+            self.assertTrue(zip_path.exists())
+            with zipfile.ZipFile(zip_path) as archive:
+                self.assertIn("manifest.json", archive.namelist())
+                self.assertIn("findings.csv", archive.namelist())
 
             focus_result = self.run_cli(
                 "case-graph",

@@ -10,6 +10,7 @@ from .adapter_runner import run_adapter_findings
 from .adapter_setup import build_adapter_setups
 from .adapters import expand_adapter_repositories, filter_adapters, find_adapter, list_adapter_profiles
 from .case_store import CaseStore, CaseStoreError
+from .case_export import export_case_package, format_case_export_result
 from .catalog import Catalog, CatalogError
 from .doctor import inspect_adapters
 from .engine import RunConfig, ScanTarget
@@ -308,6 +309,14 @@ def build_parser() -> argparse.ArgumentParser:
     case_sources.add_argument("case_id")
     case_sources.add_argument("--format", choices=("table", "markdown", "csv", "json"), default="table")
     case_sources.set_defaults(handler=handle_case_sources)
+
+    case_export = subparsers.add_parser("case-export", help="Export one saved case as a handoff package.")
+    case_export.add_argument("--case-db", required=True, help="SQLite database path.")
+    case_export.add_argument("case_id")
+    case_export.add_argument("--out", required=True, help="Output directory for the case export package.")
+    case_export.add_argument("--zip", action="store_true", help="Also write a zip archive next to the output directory.")
+    case_export.add_argument("--format", choices=("table", "markdown", "json"), default="table")
+    case_export.set_defaults(handler=handle_case_export)
 
     case_update = subparsers.add_parser("case-update", help="Update safe metadata for one saved case.")
     case_update.add_argument("--case-db", required=True, help="SQLite database path.")
@@ -852,6 +861,13 @@ def handle_case_show(args: argparse.Namespace) -> int:
 def handle_case_sources(args: argparse.Namespace) -> int:
     payload = CaseStore(args.case_db).load_case(args.case_id)
     print(format_case_source_summary(payload, output_format=args.format))
+    return 0
+
+
+def handle_case_export(args: argparse.Namespace) -> int:
+    payload = CaseStore(args.case_db).load_case(args.case_id)
+    result = export_case_package(payload, args.out, create_zip=args.zip)
+    print(format_case_export_result(result, output_format=args.format))
     return 0
 
 
