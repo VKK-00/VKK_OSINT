@@ -541,6 +541,7 @@ Deliverables:
 - local backend server or controlled desktop runner;
 - toolbox can execute queued commands through backend;
 - visible queue, logs, status and report links.
+- saved case browser for case list/detail/graph/index through backend.
 
 Notes:
 
@@ -560,6 +561,7 @@ Notes:
 8. Done: add `--profile-file` JSON import and validation for custom search profiles in `search` and `tools doctor/install-plan/env`.
 9. Done: add `profiles list/show/export` for built-in and custom search profiles.
 10. Done: persist workflow/profile/adapter policy metadata in saved SQLite cases for `search --case-db` and `investigate --case-db`.
+11. Done: add served toolbox Case Browser for saved cases, case detail, graph summary/focus and cross-case index.
 
 ## Definition of done
 

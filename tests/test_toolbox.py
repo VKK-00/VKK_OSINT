@@ -41,7 +41,10 @@ class ToolboxTests(unittest.TestCase):
         self.assertIn("[[--username {username}]]", html)
         self.assertIn("function commandWithFields", html)
         self.assertIn("Unified Search Runner", html)
+        self.assertIn("Case Browser", html)
         self.assertIn("/api/search", html)
+        self.assertIn("/api/cases", html)
+        self.assertIn("/api/case-index", html)
         self.assertIn("toolbox --serve --open", html)
 
     def test_rendered_html_can_embed_backend_connection(self):

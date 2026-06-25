@@ -12,8 +12,10 @@ from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
+from .case_store import CaseStore
+from .graph import analyze_case_graph
 from .search import TARGET_KINDS, list_search_profiles
 from .toolbox import render_toolbox_html, write_toolbox
 
@@ -108,6 +110,51 @@ class ToolboxJobRunner:
         if not job.report_path.exists():
             raise ValueError("Report is not available yet.")
         return job.report_path.read_text(encoding="utf-8", errors="replace")
+
+    def list_cases(self, case_db: str, *, limit: int) -> dict[str, object]:
+        records = CaseStore(self._case_db_path(case_db)).list_cases(limit=limit)
+        return {"cases": [record.to_dict() for record in records]}
+
+    def load_case(self, case_db: str, case_id: str) -> dict[str, object]:
+        normalized_case_id = case_id.strip()
+        if not normalized_case_id:
+            raise ValueError("case_id is required.")
+        return CaseStore(self._case_db_path(case_db)).load_case(normalized_case_id)
+
+    def case_graph(
+        self,
+        case_db: str,
+        case_id: str,
+        *,
+        focus_kind: str = "",
+        focus_value: str = "",
+        limit: int = 20,
+    ) -> dict[str, object]:
+        payload = self.load_case(case_db, case_id)
+        return analyze_case_graph(
+            payload,
+            focus_kind=focus_kind,
+            focus_value=focus_value,
+            limit=limit,
+        ).to_dict()
+
+    def case_index(
+        self,
+        case_db: str,
+        *,
+        kind: str = "",
+        value: str = "",
+        min_cases: int = 1,
+        limit: int = 50,
+    ) -> dict[str, object]:
+        store = CaseStore(self._case_db_path(case_db))
+        if value:
+            if not kind:
+                raise ValueError("kind is required when value is provided.")
+            hits = store.find_cases_by_entity(kind=kind, value=value)
+            return {"hits": [hit.to_dict() for hit in hits]}
+        records = store.list_entity_index(kind=kind, min_cases=min_cases, limit=limit)
+        return {"entities": [record.to_dict() for record in records]}
 
     def _run_job(self, job: ToolboxJob) -> None:
         self._set_job(job.id, status="running", started_at=time.time())
@@ -227,6 +274,17 @@ class ToolboxJobRunner:
         resolved.parent.mkdir(parents=True, exist_ok=True)
         return resolved
 
+    def _case_db_path(self, value: str) -> Path:
+        normalized = str(value or "cases.sqlite").strip() or "cases.sqlite"
+        path = Path(normalized)
+        if not path.is_absolute():
+            path = self.cwd / path
+        resolved = path.resolve()
+        if not resolved.is_relative_to(self.cwd):
+            raise ValueError(f"Case DB path must stay inside {self.cwd}: {normalized}")
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        return resolved
+
 
 def create_toolbox_server(
     *,
@@ -276,7 +334,9 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         try:
-            path = urlparse(self.path).path
+            parsed_url = urlparse(self.path)
+            path = parsed_url.path
+            query = parse_qs(parsed_url.query)
             if path == "/":
                 runner = self._runner()
                 host, port = self.server.server_address[:2]
@@ -294,6 +354,53 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
                 self._require_token()
                 jobs = [job.to_dict() for job in self._runner().list_jobs()]
                 self._send_json(200, {"jobs": jobs})
+                return
+            if path == "/api/cases":
+                self._require_token()
+                self._send_json(
+                    200,
+                    self._runner().list_cases(
+                        _query_string(query, "case_db", default="cases.sqlite"),
+                        limit=_query_int(query, "limit", default=20, minimum=1, maximum=500),
+                    ),
+                )
+                return
+            if path == "/api/case-index":
+                self._require_token()
+                self._send_json(
+                    200,
+                    self._runner().case_index(
+                        _query_string(query, "case_db", default="cases.sqlite"),
+                        kind=_query_string(query, "kind", default=""),
+                        value=_query_string(query, "value", default=""),
+                        min_cases=_query_int(query, "min_cases", default=1, minimum=1, maximum=500),
+                        limit=_query_int(query, "limit", default=50, minimum=1, maximum=500),
+                    ),
+                )
+                return
+            case_id, case_route = self._case_route(path)
+            if case_id and case_route == "show":
+                self._require_token()
+                self._send_json(
+                    200,
+                    self._runner().load_case(
+                        _query_string(query, "case_db", default="cases.sqlite"),
+                        case_id,
+                    ),
+                )
+                return
+            if case_id and case_route == "graph":
+                self._require_token()
+                self._send_json(
+                    200,
+                    self._runner().case_graph(
+                        _query_string(query, "case_db", default="cases.sqlite"),
+                        case_id,
+                        focus_kind=_query_string(query, "entity_kind", default=""),
+                        focus_value=_query_string(query, "entity_value", default=""),
+                        limit=_query_int(query, "limit", default=20, minimum=1, maximum=500),
+                    ),
+                )
                 return
             job_id, report = self._job_route(path)
             if job_id and report:
@@ -354,6 +461,14 @@ class ToolboxRequestHandler(BaseHTTPRequestHandler):
             return parts[2], True
         return "", False
 
+    def _case_route(self, path: str) -> tuple[str, str]:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) == 3 and parts[:2] == ["api", "cases"]:
+            return unquote(parts[2]), "show"
+        if len(parts) == 4 and parts[:2] == ["api", "cases"] and parts[3] == "graph":
+            return unquote(parts[2]), "graph"
+        return "", ""
+
     def _send_json(self, status: int, payload: dict[str, Any]) -> None:
         body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(status)
@@ -394,6 +509,31 @@ def _choice(
     value = str(payload.get(key, default) or default).strip()
     if value not in choices:
         raise ValueError(f"{key} must be one of: {', '.join(choices)}")
+    return value
+
+
+def _query_string(query: dict[str, list[str]], key: str, *, default: str) -> str:
+    values = query.get(key)
+    if not values:
+        return default
+    return str(values[0]).strip()
+
+
+def _query_int(
+    query: dict[str, list[str]],
+    key: str,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    raw = _query_string(query, key, default=str(default))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{key} must be an integer.") from exc
+    if value < minimum or value > maximum:
+        raise ValueError(f"{key} must be between {minimum} and {maximum}.")
     return value
 
 

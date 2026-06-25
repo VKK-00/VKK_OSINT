@@ -52,6 +52,8 @@ TOOLBOX_INPUTS: tuple[ToolboxInput, ...] = (
     ToolboxInput("adapter_limit", "Лимит adapters", "3", "number"),
     ToolboxInput("case_db", "SQLite case DB", "cases.sqlite"),
     ToolboxInput("case_id", "Case ID", "case-001"),
+    ToolboxInput("entity_kind", "Entity kind", "domain"),
+    ToolboxInput("entity_value", "Entity value", "example.com"),
     ToolboxInput("out", "Файл отчета", "reports/case.md"),
 )
 
@@ -509,14 +511,20 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                 ToolboxCommand(
                     "Граф кейса",
                     "Счётчики связей, типов сущностей и top connected nodes.",
-                    "python -m osint_toolkit case-graph --case-db {case_db} {case_id} --format markdown",
+                    (
+                        "python -m osint_toolkit case-graph --case-db {case_db} {case_id} "
+                        "[[--entity-kind {entity_kind} --entity-value {entity_value}]] --format markdown"
+                    ),
                     required_inputs=("case_db", "case_id"),
                     badges=("graph", "summary"),
                 ),
                 ToolboxCommand(
                     "Cross-case индекс",
                     "Ищет повторяющиеся сущности между сохранёнными расследованиями.",
-                    "python -m osint_toolkit case-index --case-db {case_db} --min-cases 2 --format markdown",
+                    (
+                        "python -m osint_toolkit case-index --case-db {case_db} "
+                        "[[--kind {entity_kind} --value {entity_value}]] --min-cases 2 --format markdown"
+                    ),
                     required_inputs=("case_db",),
                     badges=("index", "entities"),
                 ),
@@ -811,6 +819,21 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       padding: 8px;
       background: #f8fafc;
     }}
+    .case-panel {{
+      margin-top: 14px;
+    }}
+    .case-list {{
+      margin-top: 8px;
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+    }}
+    .case-item {{
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px;
+      background: #f8fafc;
+    }}
     section {{
       margin: 0 0 18px;
       scroll-margin-top: 72px;
@@ -925,6 +948,18 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
           <div id="backendJobs" class="backend-jobs"></div>
           <pre id="backendLog" class="backend-log"></pre>
         </div>
+        <div class="panel case-panel">
+          <h2>Case Browser</h2>
+          <p>Читает saved cases из SQLite через локальный backend: список, detail, graph и cross-case index.</p>
+          <div class="copy-row">
+            <button type="button" id="loadCases">Cases</button>
+            <button type="button" class="secondary" id="showCase">Case detail</button>
+            <button type="button" class="secondary" id="showCaseGraph">Graph</button>
+            <button type="button" class="secondary" id="showCaseIndex">Index</button>
+          </div>
+          <div id="caseList" class="case-list"></div>
+          <pre id="caseLog" class="backend-log"></pre>
+        </div>
       </aside>
       <div>{body_sections}</div>
     </div>
@@ -1003,6 +1038,19 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
 
     function setBackendLog(value) {{
       document.getElementById("backendLog").textContent = value || "";
+    }}
+
+    function setCaseLog(value) {{
+      document.getElementById("caseLog").textContent = value || "";
+    }}
+
+    function caseDbValue() {{
+      return readValue("case_db") || "cases.sqlite";
+    }}
+
+    function setFieldValue(name, value) {{
+      const element = document.querySelector(`[data-field="${{name}}"]`);
+      if (element) element.value = value || "";
     }}
 
     function backendPayload() {{
@@ -1093,6 +1141,95 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       setBackendLog(await response.text());
     }}
 
+    function caseUrl(path, params) {{
+      const query = new URLSearchParams(params || {{}});
+      return `${{backendConfig.url}}${{path}}?${{query.toString()}}`;
+    }}
+
+    async function fetchCaseJson(path, params) {{
+      if (!backendAvailable()) {{
+        throw new Error("Backend недоступен. Запусти: python -m osint_toolkit toolbox --serve --open");
+      }}
+      const response = await fetch(caseUrl(path, params), {{
+        headers: {{"X-OSINT-Token": backendConfig.auth}}
+      }});
+      const text = await response.text();
+      if (!response.ok) throw new Error(text);
+      return JSON.parse(text);
+    }}
+
+    function renderCaseList(cases) {{
+      const container = document.getElementById("caseList");
+      container.innerHTML = "";
+      for (const item of cases) {{
+        const row = document.createElement("div");
+        row.className = "case-item";
+        const title = document.createElement("strong");
+        title.textContent = item.case_id || "";
+        const body = document.createElement("div");
+        body.textContent = `${{item.title || ""}} · ${{item.saved_at || ""}} · targets ${{item.target_count}} · entities ${{item.entity_count}}`;
+        const open = document.createElement("button");
+        open.type = "button";
+        open.className = "secondary";
+        open.dataset.openCase = item.case_id || "";
+        open.textContent = "Open";
+        row.appendChild(title);
+        row.appendChild(document.createElement("br"));
+        row.appendChild(body);
+        row.appendChild(open);
+        container.appendChild(row);
+      }}
+    }}
+
+    async function loadCases() {{
+      const data = await fetchCaseJson("/api/cases", {{
+        case_db: caseDbValue(),
+        limit: "50"
+      }});
+      renderCaseList(data.cases || []);
+      setCaseLog(JSON.stringify(data, null, 2));
+    }}
+
+    async function showCase() {{
+      const caseId = readValue("case_id");
+      if (!caseId) throw new Error("Укажи Case ID.");
+      const data = await fetchCaseJson(`/api/cases/${{encodeURIComponent(caseId)}}`, {{
+        case_db: caseDbValue()
+      }});
+      setCaseLog(JSON.stringify(data, null, 2));
+    }}
+
+    async function showCaseGraph() {{
+      const caseId = readValue("case_id");
+      if (!caseId) throw new Error("Укажи Case ID.");
+      const params = {{
+        case_db: caseDbValue(),
+        limit: "50"
+      }};
+      const entityKind = readValue("entity_kind");
+      const entityValue = readValue("entity_value");
+      if (entityKind && entityValue) {{
+        params.entity_kind = entityKind;
+        params.entity_value = entityValue;
+      }}
+      const data = await fetchCaseJson(`/api/cases/${{encodeURIComponent(caseId)}}/graph`, params);
+      setCaseLog(JSON.stringify(data, null, 2));
+    }}
+
+    async function showCaseIndex() {{
+      const params = {{
+        case_db: caseDbValue(),
+        min_cases: "1",
+        limit: "50"
+      }};
+      const entityKind = readValue("entity_kind");
+      const entityValue = readValue("entity_value");
+      if (entityKind) params.kind = entityKind;
+      if (entityKind && entityValue) params.value = entityValue;
+      const data = await fetchCaseJson("/api/case-index", params);
+      setCaseLog(JSON.stringify(data, null, 2));
+    }}
+
     document.getElementById("runUnifiedSearch").addEventListener("click", () => {{
       runUnifiedSearch().catch((error) => setBackendLog(String(error)));
     }});
@@ -1107,12 +1244,39 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
       readReport(button.getAttribute("data-report-job")).catch((error) => setBackendLog(String(error)));
     }});
 
+    document.getElementById("loadCases").addEventListener("click", () => {{
+      loadCases().catch((error) => setCaseLog(String(error)));
+    }});
+
+    document.getElementById("showCase").addEventListener("click", () => {{
+      showCase().catch((error) => setCaseLog(String(error)));
+    }});
+
+    document.getElementById("showCaseGraph").addEventListener("click", () => {{
+      showCaseGraph().catch((error) => setCaseLog(String(error)));
+    }});
+
+    document.getElementById("showCaseIndex").addEventListener("click", () => {{
+      showCaseIndex().catch((error) => setCaseLog(String(error)));
+    }});
+
+    document.addEventListener("click", (event) => {{
+      const button = event.target.closest("[data-open-case]");
+      if (!button) return;
+      setFieldValue("case_id", button.getAttribute("data-open-case"));
+      showCase().catch((error) => setCaseLog(String(error)));
+    }});
+
     if (backendAvailable()) {{
       document.getElementById("backendStatus").textContent = `Backend: ${{backendConfig.url}}`;
       refreshJobs().catch(() => {{}});
     }} else {{
       document.getElementById("runUnifiedSearch").disabled = true;
       document.getElementById("refreshJobs").disabled = true;
+      document.getElementById("loadCases").disabled = true;
+      document.getElementById("showCase").disabled = true;
+      document.getElementById("showCaseGraph").disabled = true;
+      document.getElementById("showCaseIndex").disabled = true;
     }}
   </script>
 </body>

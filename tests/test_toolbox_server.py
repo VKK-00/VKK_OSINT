@@ -70,6 +70,82 @@ class ToolboxServerTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_case_endpoints_read_saved_case_data(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = ToolboxJobRunner(cwd=tmpdir, auth="test-auth")
+            server = create_toolbox_server(host="127.0.0.1", port=0, runner=runner)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base_url = f"http://{server.server_address[0]}:{server.server_address[1]}"
+            try:
+                payload = {
+                    "target_kind": "email",
+                    "target_value": "person@example.com",
+                    "profile": "email-full",
+                    "execute_adapters": True,
+                    "adapter_limit": 0,
+                    "case_db": "cases.sqlite",
+                    "case_id": "email-1",
+                    "format": "json",
+                }
+                data = self._request_json(
+                    f"{base_url}/api/search",
+                    method="POST",
+                    auth="test-auth",
+                    payload=payload,
+                )
+                self._wait_for_job(base_url, data["job"]["id"])
+
+                cases = self._request_json(
+                    f"{base_url}/api/cases?case_db=cases.sqlite",
+                    auth="test-auth",
+                )
+                self.assertEqual(cases["cases"][0]["case_id"], "email-1")
+
+                case = self._request_json(
+                    f"{base_url}/api/cases/email-1?case_db=cases.sqlite",
+                    auth="test-auth",
+                )
+                self.assertEqual(case["metadata"]["workflow"], "search")
+                self.assertEqual(case["metadata"]["requested_profile"], "email-full")
+
+                graph = self._request_json(
+                    f"{base_url}/api/cases/email-1/graph?case_db=cases.sqlite",
+                    auth="test-auth",
+                )
+                self.assertEqual(graph["case_id"], "email-1")
+                self.assertGreaterEqual(graph["node_count"], 2)
+
+                index = self._request_json(
+                    f"{base_url}/api/case-index?case_db=cases.sqlite&kind=domain&min_cases=1",
+                    auth="test-auth",
+                )
+                values = {record["value"] for record in index["entities"]}
+                self.assertIn("example.com", values)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_case_endpoints_reject_db_outside_working_directory(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = ToolboxJobRunner(cwd=tmpdir, auth="test-auth")
+            server = create_toolbox_server(host="127.0.0.1", port=0, runner=runner)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base_url = f"http://{server.server_address[0]}:{server.server_address[1]}"
+            try:
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    self._request_text(
+                        f"{base_url}/api/cases?case_db=../outside.sqlite",
+                        auth="test-auth",
+                    )
+                self.assertEqual(raised.exception.code, 400)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_api_requires_token(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = ToolboxJobRunner(cwd=tmpdir, auth="test-auth")

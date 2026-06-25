@@ -397,13 +397,14 @@ python -m osint_toolkit case-index --case-db cases.sqlite --kind email --value p
 - cross-case entity index and exact saved-case lookup by entity;
 - parsed executed adapter outputs can enter investigation entities, graph edges and case store;
 - static local `toolbox` HTML command window with OSINT directions, seed fields, image metadata/OCR/QR/reverse-search routes, cases/graph/index routes and adapter profile buttons;
+- served toolbox Case Browser for saved cases, case detail, graph summary/focus and cross-case index through token-protected read-only endpoints;
 - review checklist in every Markdown report.
 
 Gap:
 
 - graph edges пока базовые, без weighted path finding и full cross-case edge graph;
 - есть custom search profiles через `search/tools --profile-file` и CLI management `profiles list/show/export`; saved cases persist workflow/profile/adapter policy metadata, но adapter profiles в `adapters.py` остаются статическим manifest-layer и нет UI/enforcement для per-case policy;
-- нет backend web UI, просмотра кейса в браузере и интерактивного графа; `toolbox` пока только собирает команды/порталы для ручного запуска и не делает face-ID.
+- нет интерактивной визуализации графа и full case-management UI; `toolbox --serve` уже умеет запускать unified search и читать saved cases/graph/index, но static `toolbox --out` остаётся command/portal window и не делает face-ID.
 
 ## Adapter doctor
 
