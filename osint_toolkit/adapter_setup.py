@@ -5,6 +5,7 @@ import shutil
 from dataclasses import dataclass
 
 from .adapter_runner import format_command
+from .adapter_probe import probe_adapter_executable
 from .adapters import AdapterSpec
 
 
@@ -23,6 +24,7 @@ class AdapterSetup:
     missing_env: tuple[str, ...]
     optional_env: tuple[str, ...]
     command_hint: str
+    readiness_note: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -39,6 +41,7 @@ class AdapterSetup:
             "missing_env": list(self.missing_env),
             "optional_env": list(self.optional_env),
             "command_hint": self.command_hint,
+            "readiness_note": self.readiness_note,
         }
 
 
@@ -51,7 +54,18 @@ def build_adapter_setup(adapter: AdapterSpec) -> AdapterSetup:
         executable for executable, path in zip(executables, executable_paths) if not path
     )
     missing_env = tuple(key for key in adapter.required_env if not os.environ.get(key))
-    readiness = _readiness(adapter, executables, missing_executables, missing_env)
+    probe = (
+        probe_adapter_executable(adapter, executable_paths)
+        if executables and not missing_executables
+        else None
+    )
+    readiness = _readiness(
+        adapter,
+        executables,
+        missing_executables,
+        missing_env,
+        probe.readiness if probe else "ready",
+    )
 
     return AdapterSetup(
         repository=adapter.repository,
@@ -67,6 +81,7 @@ def build_adapter_setup(adapter: AdapterSpec) -> AdapterSetup:
         missing_env=missing_env,
         optional_env=adapter.optional_env,
         command_hint=adapter.command_hint,
+        readiness_note=probe.note if probe else "",
     )
 
 
@@ -79,6 +94,7 @@ def _readiness(
     executables: tuple[str, ...],
     missing_executables: tuple[str, ...],
     missing_env: tuple[str, ...],
+    executable_probe_readiness: str,
 ) -> str:
     if adapter.status == "restricted":
         return "restricted"
@@ -86,6 +102,8 @@ def _readiness(
         return "not_configured"
     if missing_executables:
         return "missing"
+    if executable_probe_readiness != "ready":
+        return executable_probe_readiness
     if missing_env:
         return "config_missing"
     return "ready"

@@ -1,7 +1,9 @@
 import os
+import subprocess
 import unittest
 from unittest.mock import patch
 
+from osint_toolkit.adapter_runner import run_adapter_findings
 from osint_toolkit.adapter_setup import build_adapter_setup
 from osint_toolkit.adapters import find_adapter
 from osint_toolkit.doctor import inspect_adapters
@@ -272,6 +274,62 @@ class AdapterSetupTests(unittest.TestCase):
         self.assertEqual(argus_setup.readiness, "missing")
         self.assertEqual(argus_setup.install_kind, "pip")
         self.assertEqual(argus_setup.install_command, "python -m pip install argus-recon")
+
+    def test_httpx_setup_rejects_wrong_executable_on_path(self):
+        adapter = find_adapter("projectdiscovery/httpx")
+        wrong_help = subprocess.CompletedProcess(
+            args=("httpx", "-h"),
+            returncode=0,
+            stdout="Usage: httpx [OPTIONS] URL\n",
+            stderr="",
+        )
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value="C:\\Python\\Scripts\\httpx.exe"), patch(
+            "osint_toolkit.adapter_probe.subprocess.run",
+            return_value=wrong_help,
+        ):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "wrong_executable")
+        self.assertIn("ProjectDiscovery httpx", setup.readiness_note)
+
+    def test_httpx_setup_accepts_projectdiscovery_help_flags(self):
+        adapter = find_adapter("projectdiscovery/httpx")
+        projectdiscovery_help = subprocess.CompletedProcess(
+            args=("httpx", "-h"),
+            returncode=0,
+            stdout="Usage: httpx\n  -status-code\n  -tech-detect\n",
+            stderr="",
+        )
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value="C:\\tools\\httpx.exe"), patch(
+            "osint_toolkit.adapter_probe.subprocess.run",
+            return_value=projectdiscovery_help,
+        ):
+            setup = build_adapter_setup(adapter)
+
+        self.assertEqual(setup.readiness, "ready")
+
+    def test_httpx_execute_rejects_wrong_executable_before_running_target_command(self):
+        wrong_help = subprocess.CompletedProcess(
+            args=("httpx", "-h"),
+            returncode=0,
+            stdout="Usage: httpx [OPTIONS] URL\n",
+            stderr="",
+        )
+
+        with patch("osint_toolkit.adapter_runner.shutil.which", return_value="C:\\Python\\Scripts\\httpx.exe"), patch(
+            "osint_toolkit.adapter_probe.subprocess.run",
+            return_value=wrong_help,
+        ):
+            findings = run_adapter_findings(
+                "projectdiscovery/httpx",
+                ScanTarget(kind="domain", value="example.com"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "wrong_executable")
+        self.assertIn("ProjectDiscovery httpx", findings[0].evidence)
 
     def test_setup_reports_not_configured_for_dataset_adapter(self):
         setup = build_adapter_setup(find_adapter("WebBreacher/WhatsMyName"))

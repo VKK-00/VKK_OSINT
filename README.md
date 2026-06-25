@@ -315,7 +315,7 @@ python -m osint_toolkit adapter-setup --status partial_native --format markdown
 python -m osint_toolkit adapter-setup --format json
 ```
 
-Команда не устанавливает внешние инструменты сама. Она даёт проверяемый setup plan, а фактическая установка upstream CLI остаётся отдельным операторским действием. Для SpiderFoot нужно дополнительно указать `SPIDERFOOT_SF_PATH` — путь к локальному upstream `sf.py`; без него readiness будет `config_missing`. Для Social Analyzer нужно указать `SOCIAL_ANALYZER_APP_JS` — путь к локальному upstream `app.js` после `npm install`. Для Blackbird нужно указать `BLACKBIRD_DIR` — путь к локальному upstream checkout с `blackbird.py`, установленными requirements и его `results/` папкой.
+Команда не устанавливает внешние инструменты сама. Она даёт проверяемый setup plan, а фактическая установка upstream CLI остаётся отдельным операторским действием. Для SpiderFoot нужно дополнительно указать `SPIDERFOOT_SF_PATH` — путь к локальному upstream `sf.py`; без него readiness будет `config_missing`. Для Social Analyzer нужно указать `SOCIAL_ANALYZER_APP_JS` — путь к локальному upstream `app.js` после `npm install`. Для Blackbird нужно указать `BLACKBIRD_DIR` — путь к локальному upstream checkout с `blackbird.py`, установленными requirements и его `results/` папкой. Для ProjectDiscovery `httpx` readiness дополнительно проверяет help flags `-tech-detect` и `-status-code`; если PATH указывает на другой `httpx`, статус будет `wrong_executable`, и такой adapter не попадёт в execution allowlist.
 
 ### `adapter-profiles`
 

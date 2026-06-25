@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 from .adapter_parsers import parse_adapter_output
+from .adapter_probe import probe_adapter_executable
 from .adapters import find_adapter
 from .engine import Finding, ScanTarget
 
@@ -115,6 +116,24 @@ def run_adapter_findings(
                 confidence="high",
                 evidence=f"Executable is not available on PATH: {command[0]}",
                 metadata={**adapter.to_dict(), "command": command_text, "stdin_lines": str(command_input_lines)},
+            ),
+        )
+    probe = probe_adapter_executable(adapter, (executable,))
+    if probe.readiness != "ready":
+        return (
+            Finding(
+                module="external-adapter",
+                source=adapter.repository,
+                target=target.value,
+                status=probe.readiness,
+                confidence="high",
+                evidence=probe.note or f"Executable did not match expected upstream CLI: {executable}",
+                metadata={
+                    **adapter.to_dict(),
+                    "command": command_text,
+                    "executable_path": executable,
+                    "stdin_lines": str(command_input_lines),
+                },
             ),
         )
 

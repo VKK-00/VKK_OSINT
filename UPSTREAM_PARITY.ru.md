@@ -348,6 +348,7 @@ python -m osint_toolkit adapter-setup <repository>
 - adapter profile `domain-recon` for passive domain/web upstream adapters;
 - adapter profile `broad-recon` for broad recon suites BBOT/SpiderFoot/Argus;
 - install/config/readiness metadata in `AdapterSpec`;
+- `wrong_executable` readiness for known executable-name collisions, currently ProjectDiscovery `httpx` vs unrelated `httpx` binaries;
 - `adapter-setup` command for setup plans, docs URLs, PATH/env readiness.
 
 Gap:

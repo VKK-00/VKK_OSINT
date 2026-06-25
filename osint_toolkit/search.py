@@ -802,6 +802,7 @@ def _adapter_step(target: ScanTarget, setup: AdapterSetup, command: str) -> Plan
             "optional_env": list(setup.optional_env),
             "executable": setup.executable,
             "executable_path": setup.executable_path,
+            "readiness_note": setup.readiness_note,
         },
     )
 
@@ -889,6 +890,8 @@ def _adapter_reason(setup: AdapterSetup) -> str:
         return "Adapter executable is not on PATH."
     if setup.readiness == "config_missing":
         return "Adapter executable is available but required environment variables are missing."
+    if setup.readiness == "wrong_executable":
+        return setup.readiness_note or "Executable is available but does not match the expected upstream CLI."
     if setup.readiness == "restricted":
         return "Adapter is restricted and is not part of normal fan-out execution."
     return "Adapter has no executable command configured yet."

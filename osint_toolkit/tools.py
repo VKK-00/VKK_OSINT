@@ -25,6 +25,7 @@ class ToolReadiness:
     required_env: tuple[str, ...] = ()
     missing_env: tuple[str, ...] = ()
     optional_env: tuple[str, ...] = ()
+    readiness_note: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -40,6 +41,7 @@ class ToolReadiness:
             "required_env": list(self.required_env),
             "missing_env": list(self.missing_env),
             "optional_env": list(self.optional_env),
+            "readiness_note": self.readiness_note,
         }
 
 
@@ -74,6 +76,7 @@ def build_profile_tool_readiness(
                 required_env=setup.required_env,
                 missing_env=setup.missing_env,
                 optional_env=setup.optional_env,
+                readiness_note=setup.readiness_note,
             )
         )
     local_tools_by_name = {tool.name: tool for tool in LOCAL_TOOLS}
@@ -155,7 +158,7 @@ def format_install_plan(rows: tuple[ToolReadiness, ...], *, output_format: str =
             "|---|---|---|---|---|---|",
         ]
         for row in install_rows:
-            action = row.install_command or row.install_note or row.install_kind or "Review upstream docs."
+            action = _tool_action(row)
             docs = f"[docs]({row.docs_url})" if row.docs_url else "-"
             lines.append(
                 f"| {row.kind} | {_escape(row.name)} | {row.readiness} | {_escape(action)} | "
@@ -170,7 +173,7 @@ def format_install_plan(rows: tuple[ToolReadiness, ...], *, output_format: str =
                     row.kind,
                     _short(row.name, 38),
                     row.readiness,
-                    _short(row.install_command or row.install_note or row.install_kind or "Review upstream docs.", 72),
+                    _short(_tool_action(row), 72),
                     _short(", ".join(row.required_env) or "-", 28),
                 )
                 for row in install_rows
@@ -267,10 +270,14 @@ def _install_row(row: ToolReadiness) -> dict[str, str]:
         "kind": row.kind,
         "name": row.name,
         "readiness": row.readiness,
-        "install": row.install_command or row.install_note or row.install_kind or "Review upstream docs.",
+        "install": _tool_action(row),
         "required_env": ", ".join(row.required_env),
         "docs_url": row.docs_url,
     }
+
+
+def _tool_action(row: ToolReadiness) -> str:
+    return row.readiness_note or row.install_command or row.install_note or row.install_kind or "Review upstream docs."
 
 
 def _rows_csv(rows: tuple[ToolReadiness, ...]) -> str:
@@ -290,6 +297,7 @@ def _rows_csv(rows: tuple[ToolReadiness, ...]) -> str:
             "required_env",
             "missing_env",
             "optional_env",
+            "readiness_note",
         ),
         lineterminator="\n",
     )

@@ -193,7 +193,9 @@ CLI работает в пяти режимах:
   - Поддерживает `smicallef/spiderfoot` JSON/stdout events: `INTERNET_NAME`, `DOMAIN_NAME`, `EMAILADDR`, `WEBLINK`, `IP_ADDRESS`, `TCP_PORT_OPEN`, `PHONE_NUMBER`, `HUMAN_NAME`, `TECHNOLOGY`, ASN и vulnerability/finding events нормализуются в `Finding`.
 - `osint_toolkit/adapter_setup.py`
   - `AdapterSetup` — readiness/install/config view для adapter.
-  - `build_adapter_setup()` — проверка executable в `PATH`, install command, docs URL и env readiness.
+  - `build_adapter_setup()` — проверка executable в `PATH`, install command, docs URL, env readiness и allowlisted executable identity probes.
+- `osint_toolkit/adapter_probe.py`
+  - `probe_adapter_executable()` — лёгкие проверки неоднозначных executables; сейчас ProjectDiscovery `httpx` проверяется по help flags, чтобы unrelated Python `httpx` не считался ready.
 - `osint_toolkit/adapter_runner.py`
   - `run_adapter()` — обратно совместимый single-summary wrapper.
   - `run_adapter_findings()` — dry-run или явный запуск внешнего CLI adapter без shell, с parser findings после успешного запуска.
@@ -304,7 +306,7 @@ Adapter setup-поток:
 
 1. Пользователь запускает `python -m osint_toolkit adapter-setup [repo]`.
 2. `build_adapter_setup()` читает install/config metadata из `AdapterSpec`.
-3. Проверяется наличие executable в `PATH` и обязательных переменных окружения.
+3. Проверяется наличие executable в `PATH`, обязательных переменных окружения и allowlisted executable identity probes для неоднозначных CLI.
 4. Результат выводится как table/Markdown/CSV/JSON, без автоматической установки внешнего инструмента.
 
 Investigation-поток:
@@ -759,3 +761,4 @@ osint-toolkit stats
 - 2026-06-25: `toolbox --serve` получил `/api/tools` и кнопки Tools/Install/Env, чтобы profile readiness/install/env views были доступны из того же окна без shell и без вывода значений env variables.
 - 2026-06-25: `SearchProfile.derived_target_kinds` добавлен в planner/custom profile schema; `email-full`/`safe`/`all-safe` теперь выводят domain и username targets из email seed, а `web-full`/`passive-recon`/`safe`/`all-safe` выводят URL host как domain target и включают derived fan-out в plan/execution/report/case metadata.
 - 2026-06-25: `classify_target()` переведён на hostname-based social URL routing для Instagram, Telegram и поддерживаемых RU social hosts, чтобы `search auto <social-url>` выбирал platform modules и не ловил ложные substring-совпадения.
+- 2026-06-25: adapter readiness получил статус `wrong_executable` и allowlisted probe для `projectdiscovery/httpx`; `search`/`tools`/doctor/direct runner теперь не считают unrelated `httpx` в PATH готовым ProjectDiscovery adapter.
