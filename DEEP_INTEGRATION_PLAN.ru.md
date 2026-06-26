@@ -611,6 +611,7 @@ Notes:
 58. Done: add native email local-part profile hints so role/shared mailboxes are skipped while handle/person-like local parts produce username/name/category graph clues without account-enumeration.
 59. Done: add native email hosted-provider attribution from MX/NS/TXT clues, exposing provider entities and graph edges without extra API calls.
 60. Done: add native email certificate-transparency domain correlation via `crt.sh`, exposing subdomain entities and graph edges from the email seed.
+61. Done: extend native email provider attribution with email security and transactional provider signatures including Mimecast, Proofpoint, Barracuda, Cisco Secure Email, Trend Micro, Mailgun, SendGrid, Postmark, Mandrill, SparkPost, Mailjet and Brevo.
 
 ## Definition of done
 

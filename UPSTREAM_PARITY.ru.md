@@ -135,7 +135,7 @@ Gap до полного 1:1:
 - DMARC classifier через `_dmarc.<domain>` TXT: наличие записи, multiple-record warning, `p=`, `sp=`, alignment, percent и report URI tags;
 - additional TXT classifiers для `_mta-sts.<domain>` MTA-STS, `_smtp._tls.<domain>` TLS-RPT и `default._bimi.<domain>` BIMI;
 - public TXT service signals для root-domain TXT: Google/Microsoft/Yandex/Mail.ru и другие verification markers без раскрытия token values в signal finding;
-- hosted email provider attribution по MX/NS/TXT clues для Google Workspace, Microsoft 365, Yandex Mail, Mail.ru, Proton Mail, Zoho, Fastmail, Amazon SES, iCloud и Cloudflare Email Routing с `provider` entities/graph edges;
+- hosted email provider attribution по MX/NS/TXT clues для Google Workspace, Microsoft 365, Yandex Mail, Mail.ru, Proton Mail, Zoho, Fastmail, Amazon SES, iCloud, Cloudflare Email Routing, Mimecast, Proofpoint, Barracuda, Cisco Secure Email, Trend Micro Email Security, Mailgun, SendGrid, Postmark, Mandrill, SparkPost, Mailjet и Brevo с `provider` entities/graph edges;
 - certificate transparency domain correlation для email domain через `crt.sh`: subdomains сохраняются как `subdomain` entities и graph edges от email seed;
 - native local-part profile hints: role/shared mailboxes are skipped, handle-like local parts become username candidates, and person-like plus-addressed local parts expose `name`, `base_local_part`, `plus_tag`, `category` and graph edges;
 - executable adapter target для `alpkeskin/mosint`: `mosint --silent <email> --output <temp.json>`;
@@ -159,7 +159,7 @@ Gap:
 
 План:
 
-1. Native: дальше расширять DNS слой до дополнительных provider signatures и domain-correlation signals.
+1. Native: дальше расширять DNS слой до дополнительных domain-correlation signals и редких provider signatures по мере появления проверяемых fixtures.
 2. Adapter: `mosint`, `h8mail`, `pwnedOrNot`, `user-scanner`.
 3. Restricted adapter: `holehe`, `email2phonenumber`, любые recovery/account-enumeration flows.
 

@@ -28,7 +28,7 @@ CLI работает в пяти режимах:
 - username public profile checks по 2014 активным URL/check-шаблонам: 38 curated правил, импорт Sherlock `data.json` GET/POST entries, импорт WhatsMyName `wmn-data.json` GET/POST entries и sanitized Maigret site rules, совместимые по классу задачи с Sherlock/Maigret/WhatsMyName/Nexfil;
 - platform-specific username rules: несовместимые site checks возвращаются как `skipped`, без построения заведомо неверного URL;
 - content marker rules для live username checks: profile markers повышают confidence, soft-404 markers дают `not_found`;
-- email baseline checks: синтаксис, live domain resolution, MX/NS/TXT lookup, SPF, DMARC, MTA-STS, TLS-RPT, BIMI и TXT service signal classification;
+- email baseline checks: синтаксис, local-part profile hints, live domain resolution, MX/NS/TXT lookup, hosted provider attribution, certificate transparency domain correlation, SPF, DMARC, MTA-STS, TLS-RPT, BIMI и TXT service signal classification;
 - phone baseline checks: нормализация, E.164-like validation и country-prefix signal;
 - domain baseline recon: DNS resolution, HTTP/HTTPS metadata, bounded same-site crawler, robots/sitemap discovery, public email/phone/social link extraction, presence security headers, certificate transparency subdomain discovery, RDAP registration lookup и raw WHOIS fallback;
 - Telegram baseline: handle/post URL normalization и optional live public metadata;
@@ -134,7 +134,7 @@ CLI работает в пяти режимах:
   - `PersonNameScanModule` — safe person-name expansion в bounded username-кандидаты, по умолчанию до 24 вариантов.
   - `generate_username_candidates()` — стабильные варианты `firstlast`, `first.last`, `first_initial_last`, reverse-order handles, common given-name aliases, bundled RU/UA alias resource, operator-provided aliases, handle suffixes и RU/UA transliteration.
 - `osint_toolkit/modules/email.py`
-  - `EmailScanModule` — базовая проверка email: синтаксис, доменное разрешение, MX/NS/TXT lookup, SPF/DMARC/MTA-STS/TLS-RPT/BIMI и TXT service signal findings.
+  - `EmailScanModule` — базовая проверка email: синтаксис, local-part profile hints, доменное разрешение, MX/NS/TXT lookup, provider attribution, CT domain correlation, SPF/DMARC/MTA-STS/TLS-RPT/BIMI и TXT service signal findings.
 - `osint_toolkit/email_auth.py`
   - `classify_spf_policy()` — классификация SPF из доменного TXT: отсутствие, multiple SPF warning, `all` policy, include/redirect counts.
   - `classify_dmarc_policy()` — классификация DMARC из `_dmarc.<domain>` TXT: отсутствие, multiple DMARC warning, `p=`, `sp=`, alignment, percent и report URI tags.
@@ -392,7 +392,7 @@ Search:
 
 Email DNS/auth enrichment:
 
-`email -> domain -> socket.getaddrinfo + nslookup MX/TXT -> SPF classifier + nslookup _dmarc TXT -> DMARC classifier -> Finding[]`
+`email -> local-part profile + domain -> socket.getaddrinfo + nslookup MX/NS/TXT -> provider/TXT/SPF classifiers + crt.sh CT correlation + nslookup _dmarc/_mta-sts/_smtp._tls/default._bimi TXT -> DMARC/MTA-STS/TLS-RPT/BIMI classifiers -> Finding[]/Entity[]/GraphEdge[]`
 
 Person expansion:
 
@@ -438,7 +438,7 @@ Instagram live-модуль использует публичную HTML/meta/JS
 
 Social live-модуль для VK/OK/Yandex/Mail.ru использует только публичную HTML/meta информацию страницы профиля, группы или публичного profile-like URL. API tokens, login/session/cookies и приватные endpoints не используются.
 
-Email live-модуль использует `socket.getaddrinfo()` и системный `nslookup` для MX/TXT. TXT результата домена достаточно для SPF classifier, а DMARC classifier делает отдельный TXT lookup по `_dmarc.<domain>`. Если `nslookup` недоступен, результат DNS-записи возвращается как `missing`, а не как падение команды.
+Email live-модуль использует `socket.getaddrinfo()`, системный `nslookup` для MX/NS/TXT и bounded HTTP lookup к `crt.sh` для CT correlation. TXT результата домена достаточно для TXT service, provider и SPF classifiers, а DMARC/MTA-STS/TLS-RPT/BIMI classifiers делают отдельные TXT lookups по `_dmarc.<domain>`, `_mta-sts.<domain>`, `_smtp._tls.<domain>` и `default._bimi.<domain>`. Если `nslookup` недоступен, результат DNS-записи возвращается как `missing`, а не как падение команды.
 
 SQLite используется локально через стандартную библиотеку `sqlite3`; внешнего сервера БД нет.
 
@@ -477,7 +477,7 @@ External adapters должны подключать upstream CLI/API без ко
 - Windows runtime env refresh — при запуске CLI и при toolbox `/api/tools` перечитываются user/machine `PATH` и известные OSINT env variable names; значения текущего процесса остаются приоритетными для явных override.
 - `scan --live` — явное разрешение сетевых проверок.
 - `scan --timeout` — HTTP timeout.
-- `scan email --live` — дополнительно делает domain resolution, MX/TXT lookup, SPF classification и DMARC lookup/classification.
+- `scan email --live` — дополнительно делает domain resolution, MX/NS/TXT lookup, provider attribution, CT domain correlation, SPF/DMARC/MTA-STS/TLS-RPT/BIMI classification и TXT service signal classification.
 - `scan --region` — фильтр URL-шаблонов или workflow по региону.
 - `investigate --person` — повторяемое имя человека для username expansion.
 - `investigate --include-adapters` — добавить dry-run команды совместимых upstream adapters.
@@ -673,7 +673,7 @@ osint-toolkit stats
 - Первый native username module уже импортирует Sherlock GET/POST site dataset, WhatsMyName GET/POST dataset и sanitized Maigret site rules, покрывает URL-template/status-code слой, Sherlock response-url `errorUrl`, часть platform syntax rules, custom headers, POST bodies, базовый HTTP retry/backoff и часть content marker rules, но не всю логику Sherlock/Maigret/WhatsMyName: Maigret engine templates/activation/recursive/reporting logic ещё не встроены, нет полного набора WAF/error-handling rules, site-specific rate-limit tuning и enrichment.
 - Social Analyzer adapter по умолчанию использует fast JSON mode, `--filter good,maybe`, `--profiles detected` и optional `--countries ru|ua`; web/API UI, screenshots/OCR, slow/special modes, full metadata/screenshot pipeline и Node version enforcement остаются upstream/операторской ответственностью.
 - Blackbird adapter по умолчанию использует `--json --no-update --timeout 30` для username/email и читает только свежие JSON exports; upstream AI profiling, PDF/CSV/DUMP exports, proxy/permutation options, update workflow и enhanced Instagram session metadata пока остаются операторскими/upstream режимами.
-- Native email module делает syntax validation, local-part profile hints, MX/NS/TXT lookup, hosted provider attribution, certificate transparency domain correlation, SPF/DMARC/MTA-STS/TLS-RPT/BIMI classifiers и root TXT service signal classifier. Local-part profile слой отделяет role/shared mailboxes от handle/person-like clues, сохраняет `username`, `name`, `base_local_part`, `plus_tag` и `category` без сетевых запросов. Provider attribution использует уже полученные MX/NS/TXT clues и создаёт `provider` entities/graph edges для Google Workspace, Microsoft 365, Yandex Mail, Mail.ru, Proton Mail, Zoho, Fastmail, Amazon SES, iCloud и Cloudflare Email Routing. Email-domain CT correlation через `crt.sh` создаёт `subdomain` entities/graph edges от email seed. Native breach lookup, local cache и own API enrichment пока не реализованы; Mosint/h8mail покрывают часть enrichment через external adapters.
+- Native email module делает syntax validation, local-part profile hints, MX/NS/TXT lookup, hosted provider attribution, certificate transparency domain correlation, SPF/DMARC/MTA-STS/TLS-RPT/BIMI classifiers и root TXT service signal classifier. Local-part profile слой отделяет role/shared mailboxes от handle/person-like clues, сохраняет `username`, `name`, `base_local_part`, `plus_tag` и `category` без сетевых запросов. Provider attribution использует уже полученные MX/NS/TXT clues и создаёт `provider` entities/graph edges для Google Workspace, Microsoft 365, Yandex Mail, Mail.ru, Proton Mail, Zoho, Fastmail, Amazon SES, iCloud, Cloudflare Email Routing, Mimecast, Proofpoint, Barracuda, Cisco Secure Email, Trend Micro Email Security, Mailgun, SendGrid, Postmark, Mandrill, SparkPost, Mailjet и Brevo. Email-domain CT correlation через `crt.sh` создаёт `subdomain` entities/graph edges от email seed. Native breach lookup, local cache и own API enrichment пока не реализованы; Mosint/h8mail покрывают часть enrichment через external adapters.
 - Native phone module делает E.164-like normalization, country-prefix signal и статические numbering-plan hints для Украины и зоны `+7`: тип линии, `country_code`, украинский mobile allocation carrier, fixed-line location и RU/KZ split для известных NDC. Это не live carrier lookup: переносимость номера может изменить фактического оператора. Reputation lookup и external API enrichment остаются только через adapters/будущие интеграции.
 - Native web/domain crawler уже собирает robots/sitemap URLs, robots disallow paths, same-site URLs, external URLs, social URLs, public emails и E.164-like phones, но остаётся bounded и mostly HTML/XML/text-only: нет headless browser, JavaScript rendering, form submission, full robots policy enforcement и широкого SpiderFoot/Photon-style обхода.
 - BBOT adapter по умолчанию запускает только passive `subdomain-enum`; explicit `bbot-passive-web` profile добавляет `subdomain-enum web-basic`, а `bbot-passive-email` profile добавляет `email-enum`. Оба дополнительных route требуют `-rf passive` и исключают active/aggressive/deadly/portscan/screenshot flags. Deadly modules, web screenshots, dir busting и aggressive web scan не включаются без отдельного решения.
@@ -784,6 +784,7 @@ osint-toolkit stats
 - 2026-06-26: native email baseline получил `local-part-profile` finding: role/shared mailboxes помечаются как skipped, handle/person-like local parts дают `username`/`name`/`plus_tag` clues и graph edges без внешних API.
 - 2026-06-26: native email baseline получил `email-provider-signals` finding: hosted provider attribution строится по MX/NS/TXT clues и создаёт `provider` entities/graph edges без дополнительных DNS/API запросов.
 - 2026-06-26: native email baseline получил `email-domain-ct` finding: live scan переиспользует `crt.sh` certificate transparency parser из domain module и создаёт `subdomain` clues/graph edges от email seed.
+- 2026-06-26: `email-provider-signals` расширен email security/transactional signatures: Mimecast, Proofpoint, Barracuda, Cisco Secure Email, Trend Micro Email Security, Mailgun, SendGrid, Postmark, Mandrill, SparkPost, Mailjet и Brevo.
 - 2026-06-26: `investigate --person` теперь протягивает person-candidate provenance в downstream native username findings и adapter findings: `derived_from_person`, `person_candidate_rank`, `person_candidate_score`, `person_candidate_strategy`, `person_platform_hints`.
 - 2026-06-26: native phone baseline расширен статическими numbering-plan hints для Украины и зоны `+7`: `line_type`, `country_code`, украинский mobile allocation carrier, fixed-line location и RU/KZ NDC split с явной оговоркой про portability.
 - 2026-06-25: добавлен `smicallef/spiderfoot` external adapter в passive CLI режиме: runner требует `SPIDERFOOT_SF_PATH`, запускает upstream `sf.py` через Python, блокирует `--execute` при missing required env и parser нормализует SpiderFoot JSON/stdout events в entities/graph signals.

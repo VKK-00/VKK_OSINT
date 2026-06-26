@@ -156,6 +156,57 @@ class EmailAuthTests(unittest.TestCase):
         self.assertIn("microsoft_365", policy.metadata["providers"])
         self.assertIn("yandex_mail", policy.metadata["providers"])
 
+    def test_classify_email_provider_signals_detects_security_and_transactional_providers(self):
+        policy = classify_email_provider_signals(
+            "example.com",
+            DnsLookupResult(
+                domain="example.com",
+                record_type="MX",
+                status="candidate",
+                records=(
+                    "10 eu-smtp-inbound-1.mimecast.com",
+                    "20 example-com.mail.protection.pphosted.com",
+                    "30 d12345a.ess.barracudanetworks.com",
+                    "40 mxa.mailgun.org",
+                    "50 mx.sendgrid.net",
+                    "60 inbound.pm.mtasv.net",
+                    "70 mx1.iphmx.com",
+                    "80 in.tmes.trendmicro.com",
+                ),
+            ),
+            DnsLookupResult(domain="example.com", record_type="NS", status="candidate", records=()),
+            DnsLookupResult(
+                domain="example.com",
+                record_type="TXT",
+                status="candidate",
+                records=(
+                    "v=spf1 include:_netblocks.mimecast.com include:spf.pphosted.com "
+                    "include:spf.ess.barracudanetworks.com include:mailgun.org "
+                    "include:sendgrid.net include:spf.mtasv.net include:spf.mandrillapp.com "
+                    "include:_spf.sparkpostmail.com include:spf.mailjet.com include:spf.brevo.com -all",
+                ),
+            ),
+        )
+
+        self.assertEqual(policy.status, "candidate")
+        for provider in (
+            "barracuda",
+            "brevo",
+            "cisco_secure_email",
+            "mailgun",
+            "mailjet",
+            "mandrill",
+            "mimecast",
+            "postmark",
+            "proofpoint",
+            "sendgrid",
+            "sparkpost",
+            "trend_micro_email_security",
+        ):
+            self.assertIn(provider, policy.metadata["providers"])
+        self.assertIn("mimecast:mx", policy.metadata["provider_signals"])
+        self.assertIn("proofpoint:txt", policy.metadata["provider_signals"])
+
 
 if __name__ == "__main__":
     unittest.main()
