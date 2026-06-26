@@ -93,6 +93,7 @@ CLI работает в пяти режимах:
 - `osint_toolkit/resources/sherlock_data.json` — встроенный snapshot Sherlock `sherlock_project/resources/data.json`, commit `206068d`, MIT license.
 - `osint_toolkit/resources/whatsmyname_wmn_data.json` — встроенный snapshot WhatsMyName `wmn-data.json`, commit `7c44595`, CC BY-SA 4.0 license.
 - `osint_toolkit/resources/maigret_sites.json` — sanitized projection Maigret `maigret/resources/data.json`, commit `2484509`, MIT license.
+- `osint_toolkit/resources/person_aliases_ru_ua.json` — локальный curated RU/UA alias resource для person-derived username candidates.
 - `osint_toolkit/resources/THIRD_PARTY_NOTICES.txt` — notice по скопированному upstream dataset.
 - `tests/` — unittest-тесты.
 - `README.md` — пользовательская инструкция.
@@ -131,7 +132,7 @@ CLI работает в пяти режимах:
   - `HttpResult.body_text` — ограниченный текст ответа для content marker checks.
 - `osint_toolkit/modules/person.py`
   - `PersonNameScanModule` — safe person-name expansion в bounded username-кандидаты, по умолчанию до 24 вариантов.
-  - `generate_username_candidates()` — стабильные варианты `firstlast`, `first.last`, `first_initial_last`, reverse-order handles, common given-name aliases, operator-provided aliases, handle suffixes и RU/UA transliteration.
+  - `generate_username_candidates()` — стабильные варианты `firstlast`, `first.last`, `first_initial_last`, reverse-order handles, common given-name aliases, bundled RU/UA alias resource, operator-provided aliases, handle suffixes и RU/UA transliteration.
 - `osint_toolkit/modules/email.py`
   - `EmailScanModule` — базовая проверка email: синтаксис, доменное разрешение, MX/NS/TXT lookup, SPF/DMARC/MTA-STS/TLS-RPT/BIMI и TXT service signal findings.
 - `osint_toolkit/email_auth.py`
@@ -668,7 +669,7 @@ osint-toolkit stats
 
 - Каталог основан на snapshot от 2026-06-24; GitHub stars и актуальность проектов меняются.
 - Качество и безопасность внешних репозиториев не аудированы.
-- Native person-name expansion использует шаблоны имени/фамилии, reverse-order variants, initials, curated common given-name aliases, operator-provided alias dictionaries, handle suffixes, deterministic candidate score/rank, platform hints и RU/UA transliteration; bundled historical alias datasets пока не добавлены.
+- Native person-name expansion использует шаблоны имени/фамилии, reverse-order variants, initials, curated common given-name aliases, bundled `resources/person_aliases_ru_ua.json`, operator-provided alias dictionaries, handle suffixes, deterministic candidate score/rank, platform hints и RU/UA transliteration. Alias resource расширяемый, но не является полным реестром всех исторических/локальных вариантов имён.
 - Первый native username module уже импортирует Sherlock GET/POST site dataset, WhatsMyName GET/POST dataset и sanitized Maigret site rules, покрывает URL-template/status-code слой, Sherlock response-url `errorUrl`, часть platform syntax rules, custom headers, POST bodies, базовый HTTP retry/backoff и часть content marker rules, но не всю логику Sherlock/Maigret/WhatsMyName: Maigret engine templates/activation/recursive/reporting logic ещё не встроены, нет полного набора WAF/error-handling rules, site-specific rate-limit tuning и enrichment.
 - Social Analyzer adapter по умолчанию использует fast JSON mode, `--filter good,maybe`, `--profiles detected` и optional `--countries ru|ua`; web/API UI, screenshots/OCR, slow/special modes, full metadata/screenshot pipeline и Node version enforcement остаются upstream/операторской ответственностью.
 - Blackbird adapter по умолчанию использует `--json --no-update --timeout 30` для username/email и читает только свежие JSON exports; upstream AI profiling, PDF/CSV/DUMP exports, proxy/permutation options, update workflow и enhanced Instagram session metadata пока остаются операторскими/upstream режимами.
@@ -708,7 +709,7 @@ osint-toolkit stats
 - При изменении Instagram/social public metadata layer обновлять `modules/instagram.py`, graph/entity mapping, CLI/investigation tests, README и parity-карту.
 - При изменении VK/OK RU social public metadata layer обновлять `modules/social.py`, graph/entity mapping, CLI/investigation tests, README и parity-карту.
 - При изменении DNS lookup или email auth classification обновлять `dns_lookup.py`, `email_auth.py`, email tests, README и parity-карту.
-- При изменении person-name expansion обновлять `modules/person.py`, graph/entity mapping, investigation tests и parity-карту.
+- При изменении person-name expansion обновлять `modules/person.py`, `resources/person_aliases_ru_ua.json`, graph/entity mapping, investigation tests и parity-карту.
 - При подключении upstream-проекта обновлять `adapters.py`, указать лицензию, режим интеграции и parity gap.
 - При изменении adapter profiles обновлять `adapters.py`, CLI-тесты, README и parity-карту.
 - При изменении install/config требований, target-specific command templates или route fallback adapters обновлять `AdapterSpec`, `adapter_runtime.py`, `adapter_setup.py`, `doctor.py`, tests и README.
@@ -779,6 +780,7 @@ osint-toolkit stats
 - 2026-06-25: добавлен explicit `bbot-passive-web` profile и adapter variant `blacklanternsecurity/bbot-passive-web`: `subdomain-enum web-basic` запускается только с `-rf passive` и исключением active/aggressive/deadly/portscan/screenshot flags, а output переиспользует BBOT parser.
 - 2026-06-26: добавлен explicit `bbot-passive-email` profile и adapter variant `blacklanternsecurity/bbot-passive-email`: `email-enum` запускается только с `-rf passive` и исключением active/aggressive/deadly/portscan/screenshot flags, переиспользует BBOT parser и BBOT Docker fallback.
 - 2026-06-26: native person-name expansion получил deterministic `candidate_score`, `candidate_rank` и `platform_hints`, чтобы derived username fan-out начинался с более специфичных `first_last`/`first.last`/operator alias кандидатов, а одиночные имена уходили ниже.
+- 2026-06-26: person-name expansion подключил bundled RU/UA alias resource `resources/person_aliases_ru_ua.json`; alias-derived candidates сохраняют `osint-toolkit-ru-ua-aliases` в `source_projects`.
 - 2026-06-26: `investigate --person` теперь протягивает person-candidate provenance в downstream native username findings и adapter findings: `derived_from_person`, `person_candidate_rank`, `person_candidate_score`, `person_candidate_strategy`, `person_platform_hints`.
 - 2026-06-26: native phone baseline расширен статическими numbering-plan hints для Украины и зоны `+7`: `line_type`, `country_code`, украинский mobile allocation carrier, fixed-line location и RU/KZ NDC split с явной оговоркой про portability.
 - 2026-06-25: добавлен `smicallef/spiderfoot` external adapter в passive CLI режиме: runner требует `SPIDERFOOT_SF_PATH`, запускает upstream `sf.py` через Python, блокирует `--execute` при missing required env и parser нормализует SpiderFoot JSON/stdout events в entities/graph signals.

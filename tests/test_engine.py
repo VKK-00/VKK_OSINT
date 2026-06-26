@@ -534,6 +534,16 @@ class EngineTests(unittest.TestCase):
         self.assertIn("linkedin", by_username["olena.ivanenko"].platform_hints)
         self.assertIn("low-specificity", by_username["olena"].platform_hints)
 
+    def test_person_name_helpers_use_bundled_ru_ua_alias_resource(self):
+        self.assertEqual(normalize_person_name("Олексій Шевченко"), "oleksii shevchenko")
+        candidates = generate_username_candidates("oleksii shevchenko")
+        by_username = {candidate.username: candidate for candidate in candidates}
+
+        self.assertIn("leshashevchenko", by_username)
+        self.assertEqual(by_username["leshashevchenko"].strategy, "alias_last_joined")
+        self.assertIn("osint-toolkit-ru-ua-aliases", by_username["leshashevchenko"].source_projects)
+        self.assertIn("instagram", by_username["leshashevchenko"].platform_hints)
+
     def test_person_name_helpers_include_operator_aliases(self):
         candidates = generate_username_candidates(
             "volodymyr zelenskyy",

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
+from functools import lru_cache
+from importlib import resources
 
 from ..engine import Finding, RunConfig, ScanTarget
 
@@ -9,6 +12,8 @@ TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
 HANDLE_SUFFIXES = ("official", "real", "online")
 MAX_GENERATED_CANDIDATES = 64
 DEFAULT_SOURCE_PROJECTS = ("maigret", "sherlock", "linkedin2username", "dorks-collections-list")
+RU_UA_ALIAS_SOURCE = "osint-toolkit-ru-ua-aliases"
+PERSON_ALIAS_RESOURCE = "person_aliases_ru_ua.json"
 STRATEGY_BASE_SCORES = {
     "operator_alias": 98,
     "operator_alias_last_joined": 92,
@@ -266,19 +271,52 @@ def _operator_alias_candidates(aliases: tuple[str, ...], last: str) -> tuple[Use
 
 
 def _alias_candidates(first: str, last: str) -> tuple[UsernameCandidate, ...]:
-    aliases = GIVEN_NAME_ALIASES.get(first, ())
     candidates: list[UsernameCandidate] = []
-    for alias in aliases:
+    for alias, source_projects in _given_name_alias_entries(first):
         candidates.extend(
             [
-                UsernameCandidate(alias, "given_name_alias"),
-                UsernameCandidate(alias + last, "alias_last_joined"),
-                UsernameCandidate(f"{alias}.{last}", "alias_dot_last"),
-                UsernameCandidate(f"{alias}_{last}", "alias_underscore_last"),
-                UsernameCandidate(alias[0] + last, "alias_initial_last"),
+                UsernameCandidate(alias, "given_name_alias", source_projects=source_projects),
+                UsernameCandidate(alias + last, "alias_last_joined", source_projects=source_projects),
+                UsernameCandidate(f"{alias}.{last}", "alias_dot_last", source_projects=source_projects),
+                UsernameCandidate(f"{alias}_{last}", "alias_underscore_last", source_projects=source_projects),
+                UsernameCandidate(alias[0] + last, "alias_initial_last", source_projects=source_projects),
             ]
         )
     return tuple(candidates)
+
+
+def _given_name_alias_entries(first: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    sources_by_alias: dict[str, tuple[str, ...]] = {}
+    for alias in GIVEN_NAME_ALIASES.get(first, ()):
+        sources_by_alias[alias] = DEFAULT_SOURCE_PROJECTS
+    for alias in _bundled_given_name_aliases().get(first, ()):
+        current = sources_by_alias.get(alias, ())
+        sources_by_alias[alias] = _dedupe_strings(current + DEFAULT_SOURCE_PROJECTS + (RU_UA_ALIAS_SOURCE,))
+    return tuple((alias, sources) for alias, sources in sources_by_alias.items())
+
+
+@lru_cache(maxsize=1)
+def _bundled_given_name_aliases() -> dict[str, tuple[str, ...]]:
+    try:
+        text = resources.files("osint_toolkit").joinpath("resources", PERSON_ALIAS_RESOURCE).read_text(encoding="utf-8")
+        raw = json.loads(text)
+    except (FileNotFoundError, json.JSONDecodeError, ModuleNotFoundError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+
+    aliases: dict[str, tuple[str, ...]] = {}
+    for raw_name, raw_aliases in raw.items():
+        name = _username_token(_transliterate(str(raw_name).casefold()))
+        if not name or not isinstance(raw_aliases, list):
+            continue
+        values: list[str] = []
+        for raw_alias in raw_aliases:
+            alias = _username_token(_transliterate(str(raw_alias).casefold()))
+            if alias and alias != name:
+                values.append(alias)
+        aliases[name] = _dedupe_strings(tuple(values))
+    return aliases
 
 
 def _suffix_candidates(first: str, last: str) -> tuple[UsernameCandidate, ...]:
@@ -317,7 +355,7 @@ def _dedupe_candidates(candidates: tuple[UsernameCandidate, ...]) -> tuple[Usern
         if not _is_username_candidate(username):
             continue
         key = username.lower()
-        enriched = _enrich_candidate(username, candidate.strategy)
+        enriched = _enrich_candidate(username, candidate.strategy, source_projects=candidate.source_projects)
         current = best_by_key.get(key)
         if current is None or enriched.score > current[0].score:
             best_by_key[key] = (enriched, index)
@@ -328,13 +366,18 @@ def _dedupe_candidates(candidates: tuple[UsernameCandidate, ...]) -> tuple[Usern
     return tuple(candidate for candidate, _ in ranked[:MAX_GENERATED_CANDIDATES])
 
 
-def _enrich_candidate(username: str, strategy: str) -> UsernameCandidate:
+def _enrich_candidate(
+    username: str,
+    strategy: str,
+    *,
+    source_projects: tuple[str, ...] = DEFAULT_SOURCE_PROJECTS,
+) -> UsernameCandidate:
     return UsernameCandidate(
         username=username,
         strategy=strategy,
         score=_candidate_score(username, strategy),
         platform_hints=_platform_hints(username, strategy),
-        source_projects=DEFAULT_SOURCE_PROJECTS,
+        source_projects=source_projects,
     )
 
 
