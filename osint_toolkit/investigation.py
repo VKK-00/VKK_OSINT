@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -78,24 +78,31 @@ def run_investigation(
     for target in targets:
         findings.extend(_native_scan(engine, target, config, native_kinds=native_kinds))
 
+    person_candidate_context = _person_candidate_context(tuple(findings))
     scan_targets = _scan_targets_with_person_expansions(targets, tuple(findings))
     for target in scan_targets[len(targets) :]:
-        findings.extend(_native_scan(engine, target, config, native_kinds=native_kinds))
+        target_findings = _native_scan(engine, target, config, native_kinds=native_kinds)
+        findings.extend(_annotate_person_candidate_findings(target, target_findings, person_candidate_context))
 
     adapter_findings: list[Finding] = []
     if include_adapters:
         if adapter_workers < 1:
             raise ValueError("adapter_workers must be at least 1.")
         for target in scan_targets:
+            target_adapter_findings = _adapter_runs(
+                target,
+                adapter_limit,
+                execute=execute_adapters,
+                allow_restricted=allow_restricted_adapters,
+                timeout=adapter_timeout,
+                repositories=adapter_repositories,
+                workers=adapter_workers,
+            )
             adapter_findings.extend(
-                _adapter_runs(
+                _annotate_person_candidate_findings(
                     target,
-                    adapter_limit,
-                    execute=execute_adapters,
-                    allow_restricted=allow_restricted_adapters,
-                    timeout=adapter_timeout,
-                    repositories=adapter_repositories,
-                    workers=adapter_workers,
+                    target_adapter_findings,
+                    person_candidate_context,
                 )
             )
     entities = merge_entities(
@@ -315,6 +322,59 @@ def _scan_targets_with_person_expansions(
             seen.add(key)
             expanded.append(target)
     return tuple(expanded)
+
+
+def _person_candidate_context(findings: tuple[Finding, ...]) -> dict[str, dict[str, str]]:
+    context: dict[str, dict[str, str]] = {}
+    for finding in findings:
+        if finding.module != "person-name-expansion" or finding.status != "candidate":
+            continue
+        username = finding.metadata.get("username", "").strip()
+        if not username:
+            continue
+        candidate = {
+            "derived_from_person": finding.target,
+            "person_normalized_name": finding.metadata.get("normalized_name", ""),
+            "person_candidate_rank": finding.metadata.get("candidate_rank", ""),
+            "person_candidate_score": finding.metadata.get("candidate_score", ""),
+            "person_candidate_strategy": finding.metadata.get("strategy", ""),
+            "person_platform_hints": finding.metadata.get("platform_hints", ""),
+        }
+        key = username.lower()
+        existing = context.get(key)
+        if existing is None or _context_rank(candidate) < _context_rank(existing):
+            context[key] = candidate
+    return context
+
+
+def _annotate_person_candidate_findings(
+    target: ScanTarget,
+    findings: tuple[Finding, ...],
+    person_candidate_context: dict[str, dict[str, str]],
+) -> tuple[Finding, ...]:
+    if target.kind != "username" or not findings:
+        return findings
+    context = person_candidate_context.get(target.value.lower())
+    if not context:
+        return findings
+    return tuple(
+        replace(finding, metadata={**finding.metadata, **context})
+        for finding in findings
+    )
+
+
+def _context_rank(context: dict[str, str]) -> tuple[int, int]:
+    return (
+        _safe_int(context.get("person_candidate_rank", ""), default=9999),
+        -_safe_int(context.get("person_candidate_score", ""), default=0),
+    )
+
+
+def _safe_int(value: str, *, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _target_key(target: ScanTarget) -> tuple[str, str, str]:

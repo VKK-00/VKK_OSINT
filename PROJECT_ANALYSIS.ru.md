@@ -340,7 +340,7 @@ Investigation-поток:
 4. Derived username targets прогоняются через native username scan и, при `--include-adapters`, через совместимые adapters.
 5. При `--execute-adapters` совместимые adapters запускаются через `run_adapter_findings()`; stdout/stderr parser добавляет дополнительные adapter findings. Для domain seeds профиль `domain-recon` может добавить Subfinder/httpx/passive Amass/theHarvester/BBOT/BBOT email-enum/SpiderFoot, `bbot-passive-web` добавляет explicit broader passive BBOT route, `bbot-passive-email` добавляет explicit passive BBOT email route, а профиль `broad-recon` может добавить BBOT/SpiderFoot/Argus; их parsed findings входят в тот же graph.
 6. `entities.py` извлекает и объединяет сущности из входных целей, `Finding.url`, `Finding.evidence` и `Finding.metadata`.
-7. `graph.py` строит связи между сущностями, включая `person -> username -> url`, `domain|url -> page_contact_email`, `domain|url -> page_contact_phone`, `domain|url -> sitemap_url`, `domain|url -> robots_disallow_path`, `domain|url -> discovered/social URL`, `domain -> ip|port|technology`, `instagram -> public profile metadata` и `social -> VK/OK public profile metadata`.
+7. `graph.py` строит связи между сущностями, включая `person -> username -> url`, `domain|url -> page_contact_email`, `domain|url -> page_contact_phone`, `domain|url -> sitemap_url`, `domain|url -> robots_disallow_path`, `domain|url -> discovered/social URL`, `domain -> ip|port|technology`, `instagram -> public profile metadata` и `social -> VK/OK public profile metadata`. Derived username findings сохраняют person-candidate provenance в metadata: исходный person target, rank, score, strategy и platform hints.
 8. Если указан `--case-db`, `CaseStore` сохраняет кейс в SQLite до вывода отчёта; `--scope-note` сохраняется в metadata без изменения таблиц findings/entities/edges.
 9. Отчёт выводится как Markdown или JSON; Markdown содержит `Entity Summary`, `Graph Edges`, native findings, adapter dry-runs или executed adapter findings и review checklist.
 
@@ -395,7 +395,7 @@ Email DNS/auth enrichment:
 
 Person expansion:
 
-`person seed -> PersonNameScanModule -> username candidates -> derived username ScanTarget[] -> UsernameScanModule/adapters -> Entity[]/GraphEdge[]`
+`person seed -> PersonNameScanModule -> ranked username candidates -> derived username ScanTarget[] -> UsernameScanModule/adapters + person-candidate provenance -> Entity[]/GraphEdge[]`
 
 Instagram:
 
@@ -779,6 +779,7 @@ osint-toolkit stats
 - 2026-06-25: добавлен explicit `bbot-passive-web` profile и adapter variant `blacklanternsecurity/bbot-passive-web`: `subdomain-enum web-basic` запускается только с `-rf passive` и исключением active/aggressive/deadly/portscan/screenshot flags, а output переиспользует BBOT parser.
 - 2026-06-26: добавлен explicit `bbot-passive-email` profile и adapter variant `blacklanternsecurity/bbot-passive-email`: `email-enum` запускается только с `-rf passive` и исключением active/aggressive/deadly/portscan/screenshot flags, переиспользует BBOT parser и BBOT Docker fallback.
 - 2026-06-26: native person-name expansion получил deterministic `candidate_score`, `candidate_rank` и `platform_hints`, чтобы derived username fan-out начинался с более специфичных `first_last`/`first.last`/operator alias кандидатов, а одиночные имена уходили ниже.
+- 2026-06-26: `investigate --person` теперь протягивает person-candidate provenance в downstream native username findings и adapter findings: `derived_from_person`, `person_candidate_rank`, `person_candidate_score`, `person_candidate_strategy`, `person_platform_hints`.
 - 2026-06-25: добавлен `smicallef/spiderfoot` external adapter в passive CLI режиме: runner требует `SPIDERFOOT_SF_PATH`, запускает upstream `sf.py` через Python, блокирует `--execute` при missing required env и parser нормализует SpiderFoot JSON/stdout events в entities/graph signals.
 - 2026-06-25: добавлен `jasonxtn/argus` interactive external adapter: runner поддерживает scripted stdin, профиль `broad-recon` объединяет BBOT/SpiderFoot/Argus, parser нормализует Argus stdout/cache-like output в URLs, emails, phones, subdomains, IPs, ports и technologies.
 - 2026-06-25: Argus parser получил `target_kind`/`target_value` provenance metadata и regression fixtures для domain, email, phone и username target modes.

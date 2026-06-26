@@ -605,6 +605,7 @@ Notes:
 52. Done: add opt-in `--adapter-workers` parallel fan-out for ready adapters in `search --execute-adapters`, `investigate --execute-adapters`, image-derived execution and served toolbox jobs, while preserving default sequential mode and stable finding order.
 53. Done: add BBOT passive `email-enum` adapter/profile with Docker fallback/parser reuse, search/toolbox exposure and tests for command rendering, readiness, parsing and execution.
 54. Done: add deterministic person-derived username ranking with `candidate_score`, `candidate_rank` and `platform_hints` so person search fan-out prioritizes specific handles and operator aliases over low-specificity first-name candidates.
+55. Done: propagate person-candidate provenance into downstream native username findings and adapter findings so reports explain which `search person` candidate produced each profile check.
 
 ## Definition of done
 

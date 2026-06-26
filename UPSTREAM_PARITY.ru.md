@@ -80,6 +80,7 @@ python -m osint_toolkit scan username <username> --live
 - executable adapter для `thewhiteh4t/nexfil`: `nexfil -u <username>` запускается в isolated temporary workdir/HOME;
 - parser для Nexfil stdout/autosaved TXT reports: найденные URL -> `candidate`, `Total Hits/Timeouts/Errors` -> summary metadata;
 - `investigate --person` автоматически прогоняет derived username targets через native username scan и совместимые adapters при `--include-adapters`.
+- downstream native username findings и adapter findings сохраняют person-candidate provenance (`derived_from_person`, rank, score, strategy, platform hints), чтобы найденный profile signal можно было связать с исходным ФИО-кандидатом.
 
 Связанные upstream-проекты:
 

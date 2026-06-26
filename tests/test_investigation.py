@@ -673,6 +673,19 @@ class InvestigationTests(unittest.TestCase):
         self.assertIn(("person", "ivan petrenko", "generated_username_candidate", "username", "vanyapetrenko"), edges)
         self.assertIn(("username", "ivanpetrenko", "produced_url", "url", "https://github.com/ivanpetrenko"), edges)
 
+        github = next(
+            finding
+            for finding in result.findings
+            if finding.module == "username-public-profiles"
+            and finding.target == "ivanpetrenko"
+            and finding.source == "GitHub"
+        )
+        self.assertEqual(github.metadata["derived_from_person"], "Ivan Petrenko")
+        self.assertEqual(github.metadata["person_candidate_rank"], "1")
+        self.assertEqual(github.metadata["person_candidate_score"], "91")
+        self.assertEqual(github.metadata["person_candidate_strategy"], "first_last_joined")
+        self.assertIn("github", github.metadata["person_platform_hints"])
+
     def test_person_target_uses_operator_aliases(self):
         result = run_investigation(
             (ScanTarget(kind="person", value="Volodymyr Zelenskyy"),),
@@ -700,6 +713,10 @@ class InvestigationTests(unittest.TestCase):
         self.assertTrue(all(finding.status == "planned" for finding in result.adapter_findings))
         self.assertNotIn("Ivan Petrenko", {finding.target for finding in result.adapter_findings})
         self.assertIn("ivanpetrenko", {finding.target for finding in result.adapter_findings})
+        first_adapter = next(finding for finding in result.adapter_findings if finding.target == "ivanpetrenko")
+        self.assertEqual(first_adapter.metadata["derived_from_person"], "Ivan Petrenko")
+        self.assertEqual(first_adapter.metadata["person_candidate_rank"], "1")
+        self.assertEqual(first_adapter.metadata["person_candidate_score"], "91")
 
 
 if __name__ == "__main__":
