@@ -14,6 +14,7 @@ from .engine import ScanTarget
 BBOT_REPOSITORIES = {
     "blacklanternsecurity/bbot",
     "blacklanternsecurity/bbot-passive-web",
+    "blacklanternsecurity/bbot-passive-email",
 }
 BBOT_DOCKER_ROUTE = "bbot-docker"
 BBOT_DOCKER_IMAGE = "blacklanternsecurity/bbot:stable"

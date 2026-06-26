@@ -224,6 +224,7 @@ SEARCH_PROFILES: tuple[SearchProfile, ...] = (
             "url-archive",
             "domain-recon",
             "bbot-passive-web",
+            "bbot-passive-email",
             "broad-recon",
         ),
         adapter_repositories=("Yvesssn/DetectDee",),
@@ -294,7 +295,7 @@ SEARCH_PROFILES: tuple[SearchProfile, ...] = (
         description="Domain/URL native recon plus passive and broad recon adapters.",
         target_kinds=("domain", "url"),
         native_kinds=("domain", "url"),
-        adapter_profiles=("domain-recon", "bbot-passive-web", "broad-recon", "url-archive"),
+        adapter_profiles=("domain-recon", "bbot-passive-web", "bbot-passive-email", "broad-recon", "url-archive"),
         derived_target_kinds=("domain",),
     ),
     SearchProfile(

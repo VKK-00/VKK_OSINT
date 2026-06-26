@@ -314,6 +314,7 @@ Gap:
 - parser для theHarvester generated JSON/stdout output: `emails`, `hosts`, `vhosts`, `interesting_urls`, `trello_urls`, `api_endpoints`, `ips`, `asns` и people fields нормализуются в `Finding`/entities/graph signals; `resource/type/source` rows, `*_by_source` maps и nested `source_results` сохраняют provider/source в `source_label`;
 - executable adapter target для `blacklanternsecurity/bbot`: `bbot -t <target> -p subdomain-enum -rf passive -o <tempdir> -n osint-toolkit`;
 - explicit broader passive adapter variant для `blacklanternsecurity/bbot-passive-web`: `bbot -t <target> -p subdomain-enum web-basic -rf passive -ef active aggressive deadly portscan web-screenshots -o <tempdir> -n osint-toolkit`;
+- explicit passive email-enum adapter variant для `blacklanternsecurity/bbot-passive-email`: `bbot -t <target> -p email-enum -rf passive -ef active aggressive deadly portscan web-screenshots -o <tempdir> -n osint-toolkit`;
 - parser для BBOT generated JSON/NDJSON/stdout events: `DNS_NAME`, `EMAIL_ADDRESS`, `URL`, `IP_ADDRESS`, `OPEN_TCP_PORT`, `TECHNOLOGY`, `FINDING` и `VULNERABILITY` нормализуются в `Finding`/entities/graph signals;
 - executable adapter target для `smicallef/spiderfoot`: `<SPIDERFOOT_PYTHON|python> <SPIDERFOOT_SF_PATH> -s <target> -u passive -o json -q`;
 - parser для SpiderFoot JSON/stdout events: `INTERNET_NAME`, `DOMAIN_NAME`, `EMAILADDR`, `WEBLINK`, `IP_ADDRESS`, `TCP_PORT_OPEN`, `PHONE_NUMBER`, `HUMAN_NAME`, `TECHNOLOGY`, ASN и vulnerability/finding events нормализуются в `Finding`/entities/graph signals; покрыты examples для domain, email, phone и username target modes с `target_kind`/`target_value` provenance metadata;
@@ -321,6 +322,7 @@ Gap:
 - parser для Argus stdout/cache-like output: URL, email, phone, host/subdomain, IP, port и technology signals нормализуются в `Finding`/entities/graph signals; покрыты examples для domain, email, phone и username target modes с `target_kind`/`target_value` provenance metadata;
 - adapter profile `domain-recon` для Subfinder/httpx/passive Amass/theHarvester/BBOT/SpiderFoot.
 - adapter profile `bbot-passive-web` для более широкого passive BBOT route без active/aggressive/deadly/portscan/screenshot flags.
+- adapter profile `bbot-passive-email` для explicit passive BBOT `email-enum` route без active/aggressive/deadly/portscan/screenshot flags.
 - adapter profile `broad-recon` для BBOT/SpiderFoot/Argus как более широких recon suites.
 
 Gap:
@@ -329,7 +331,7 @@ Gap:
 - raw WHOIS full-text export is intentionally not included in reports; parser keeps domain-level fields only by default;
 - crawler bounded и mostly HTML/XML/text-only: нет JavaScript rendering, form submission, full robots policy enforcement, authentication, headless browser или broad SpiderFoot/Photon-style crawling;
 - нет SpiderFoot web/API server connector и full module policy mapping;
-- нет активных Amass/bruteforce modes, BBOT active/deadly/portscan/screenshot modules, broader SpiderFoot/Argus use cases, theHarvester screenshots или API endpoint scans по умолчанию.
+- нет активных Amass/bruteforce modes, BBOT active/deadly/portscan/screenshot modules, broader SpiderFoot/Argus use cases, theHarvester screenshots или active API endpoint scans по умолчанию.
 
 План:
 
@@ -387,6 +389,7 @@ python -m osint_toolkit adapter-setup <repository>
 - adapter-specific parser for Owez/yark generated `yark.json` archive output and temporary archive execution route;
 - adapter profile `domain-recon` for passive domain/web upstream adapters;
 - adapter profile `bbot-passive-web` for the explicit broader passive BBOT `subdomain-enum web-basic` route;
+- adapter profile `bbot-passive-email` for the explicit passive BBOT `email-enum` route;
 - adapter profile `broad-recon` for broad recon suites BBOT/SpiderFoot/Argus;
 - install/config/readiness metadata in `AdapterSpec`;
 - `wrong_executable` readiness for known executable-name collisions through declarative probes for Subfinder, ProjectDiscovery `httpx`, Amass, theHarvester, BBOT and PhoneInfoga;

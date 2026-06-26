@@ -241,6 +241,7 @@ class AdapterSetupTests(unittest.TestCase):
         theharvester = find_adapter("laramies/theHarvester")
         bbot = find_adapter("blacklanternsecurity/bbot")
         bbot_passive_web = find_adapter("blacklanternsecurity/bbot-passive-web")
+        bbot_passive_email = find_adapter("blacklanternsecurity/bbot-passive-email")
         spiderfoot = find_adapter("smicallef/spiderfoot")
         argus = find_adapter("jasonxtn/argus")
 
@@ -291,10 +292,31 @@ class AdapterSetupTests(unittest.TestCase):
             ),
         )
         self.assertEqual(bbot_passive_web.render_command(ScanTarget(kind="username", value="@example_user")), ())
+        self.assertEqual(
+            bbot_passive_email.render_command(ScanTarget(kind="domain", value="example.com")),
+            (
+                "bbot",
+                "-t",
+                "example.com",
+                "-p",
+                "email-enum",
+                "-rf",
+                "passive",
+                "-ef",
+                "active",
+                "aggressive",
+                "deadly",
+                "portscan",
+                "web-screenshots",
+            ),
+        )
+        self.assertEqual(bbot_passive_email.render_command(ScanTarget(kind="username", value="@example_user")), ())
         self.assertEqual(bbot.render_output_dir_args("C:\\tmp\\bbot"), ("-o", "C:\\tmp\\bbot", "-n", "osint-toolkit"))
         self.assertEqual(bbot.generated_output_patterns, ("*.json",))
         self.assertEqual(bbot_passive_web.render_output_dir_args("C:\\tmp\\bbot"), ("-o", "C:\\tmp\\bbot", "-n", "osint-toolkit"))
         self.assertEqual(bbot_passive_web.generated_output_patterns, ("*.json",))
+        self.assertEqual(bbot_passive_email.render_output_dir_args("C:\\tmp\\bbot"), ("-o", "C:\\tmp\\bbot", "-n", "osint-toolkit"))
+        self.assertEqual(bbot_passive_email.generated_output_patterns, ("*.json",))
 
         with patch.dict(os.environ, {"SPIDERFOOT_SF_PATH": "C:\\tools\\spiderfoot\\sf.py"}):
             self.assertEqual(
@@ -368,6 +390,13 @@ class AdapterSetupTests(unittest.TestCase):
         self.assertEqual(bbot_passive_web_setup.readiness, "missing")
         self.assertEqual(bbot_passive_web_setup.install_kind, "pipx")
         self.assertEqual(bbot_passive_web_setup.install_command, "pipx install bbot")
+
+        with patch("osint_toolkit.adapter_setup.shutil.which", return_value=""):
+            bbot_passive_email_setup = build_adapter_setup(find_adapter("blacklanternsecurity/bbot-passive-email"))
+
+        self.assertEqual(bbot_passive_email_setup.readiness, "missing")
+        self.assertEqual(bbot_passive_email_setup.install_kind, "pipx")
+        self.assertEqual(bbot_passive_email_setup.install_command, "pipx install bbot")
 
         with patch.dict(os.environ, {}, clear=True), patch("osint_toolkit.adapter_setup.shutil.which", return_value="C:\\Python\\python.exe"):
             spiderfoot_missing_config = build_adapter_setup(spiderfoot)

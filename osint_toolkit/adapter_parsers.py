@@ -70,6 +70,7 @@ PARSER_REPOSITORIES = {
     "laramies/theHarvester",
     "blacklanternsecurity/bbot",
     "blacklanternsecurity/bbot-passive-web",
+    "blacklanternsecurity/bbot-passive-email",
     "smicallef/spiderfoot",
     "jasonxtn/argus",
     "Owez/yark",
@@ -137,7 +138,11 @@ def parse_adapter_output(
         return _amass_findings(repository, target, text)
     if repository == "laramies/theHarvester":
         return _theharvester_findings(repository, target, text)
-    if repository in {"blacklanternsecurity/bbot", "blacklanternsecurity/bbot-passive-web"}:
+    if repository in {
+        "blacklanternsecurity/bbot",
+        "blacklanternsecurity/bbot-passive-web",
+        "blacklanternsecurity/bbot-passive-email",
+    }:
         return _bbot_findings(repository, target, text)
     if repository == "smicallef/spiderfoot":
         return _spiderfoot_findings(repository, target, text)

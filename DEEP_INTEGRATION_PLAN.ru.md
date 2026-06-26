@@ -418,6 +418,7 @@ Done:
 
 - Maigret richer dossier fields: site metadata, probe URL, rank/similarity flags, extracted contact/profile fields, activity counters, external/profile image URLs and related usernames now normalize into unified metadata/entities/graph signals.
 - BBOT broader passive preset: added explicit `bbot-passive-web` profile and `blacklanternsecurity/bbot-passive-web` adapter variant for `subdomain-enum web-basic` constrained by `-rf passive` and `-ef active aggressive deadly portscan web-screenshots`.
+- BBOT passive email preset: added explicit `bbot-passive-email` profile and `blacklanternsecurity/bbot-passive-email` adapter variant for `email-enum` constrained by `-rf passive` and `-ef active aggressive deadly portscan web-screenshots`.
 - theHarvester API/source attribution: parser preserves `source_label` for record-level `resource/type/source` rows, source maps such as `emails_by_source`/`hosts_by_source`, and nested `source_results` provider payloads.
 
 ## Unified output model
@@ -602,6 +603,7 @@ Notes:
 50. Done: add `case-export` handoff packages and served toolbox `Export`, writing case JSON/Markdown, CSV findings/sources/targets/entities/edges, metadata, graph summary, manifest SHA-256 checksums and optional zip.
 51. Done: add `cases-export` bulk handoff packages and served toolbox `Export list`, applying workflow/profile/scope filters and writing per-case folders, `bulk_manifest.json` and optional zip.
 52. Done: add opt-in `--adapter-workers` parallel fan-out for ready adapters in `search --execute-adapters`, `investigate --execute-adapters`, image-derived execution and served toolbox jobs, while preserving default sequential mode and stable finding order.
+53. Done: add BBOT passive `email-enum` adapter/profile with Docker fallback/parser reuse, search/toolbox exposure and tests for command rendering, readiness, parsing and execution.
 
 ## Definition of done
 

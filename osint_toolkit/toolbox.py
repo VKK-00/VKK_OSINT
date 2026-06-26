@@ -447,6 +447,17 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     required_inputs=("domain", "adapter_limit", "adapter_workers", "out"),
                     badges=("bbot-passive-web", "passive"),
                 ),
+                ToolboxCommand(
+                    "BBOT passive email enum",
+                    "BBOT email-enum preset, только passive modules и без active/deadly/portscan/screenshots.",
+                    (
+                        "python -m osint_toolkit investigate --domain {domain} "
+                        "--include-adapters --adapter-profile bbot-passive-email "
+                        "--adapter-limit {adapter_limit} --adapter-workers {adapter_workers} --out {out}"
+                    ),
+                    required_inputs=("domain", "adapter_limit", "adapter_workers", "out"),
+                    badges=("bbot-passive-email", "passive"),
+                ),
             ),
         ),
         ToolboxSection(

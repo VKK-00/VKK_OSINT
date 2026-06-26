@@ -1056,6 +1056,18 @@ class AdapterParserTests(unittest.TestCase):
         self.assertEqual(findings[0].metadata["parser"], "bbot")
         self.assertEqual(findings[0].metadata["repository"], "blacklanternsecurity/bbot-passive-web")
 
+    def test_parse_bbot_passive_email_alias_uses_bbot_parser(self):
+        findings = parse_adapter_output(
+            "blacklanternsecurity/bbot-passive-email",
+            ScanTarget(kind="domain", value="example.com"),
+            '{"type":"EMAIL_ADDRESS","data":"admin@example.com","module":"emailformat","scope_description":"in-scope"}',
+        )
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].metadata["parser"], "bbot")
+        self.assertEqual(findings[0].metadata["repository"], "blacklanternsecurity/bbot-passive-email")
+        self.assertEqual(findings[0].metadata["email"], "admin@example.com")
+
     def test_parse_spiderfoot_json_events(self):
         findings = parse_adapter_output(
             "smicallef/spiderfoot",
@@ -2070,6 +2082,75 @@ class AdapterParserTests(unittest.TestCase):
         self.assertIn("-ef active aggressive deadly portscan web-screenshots", findings[0].metadata["command"])
         self.assertTrue(any(finding.metadata.get("parser") == "bbot" for finding in findings[1:]))
         self.assertTrue(any(finding.url == "https://www.example.com/login" for finding in findings[1:]))
+
+    def test_run_bbot_passive_email_adapter_uses_passive_email_command(self):
+        def fake_run(args, **kwargs):
+            if tuple(args) == ("bbot", "-h"):
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="bbot usage\n  -t TARGET\n  -p PRESET\n  -rf FLAG\n  -ef FLAG\n", stderr="")
+            if tuple(args) == (
+                "bbot",
+                "-t",
+                "example.com",
+                "-p",
+                "email-enum",
+                "-rf",
+                "passive",
+                "-ef",
+                "active",
+                "aggressive",
+                "deadly",
+                "portscan",
+                "web-screenshots",
+                "--dry-run",
+                "-y",
+            ):
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="dry run ok\n", stderr="")
+            self.assertEqual(
+                args[:14],
+                [
+                    "bbot",
+                    "-t",
+                    "example.com",
+                    "-p",
+                    "email-enum",
+                    "-rf",
+                    "passive",
+                    "-ef",
+                    "active",
+                    "aggressive",
+                    "deadly",
+                    "portscan",
+                    "web-screenshots",
+                    "-o",
+                ],
+            )
+            output_dir = Path(args[args.index("-o") + 1])
+            scan_dir = output_dir / "osint-toolkit"
+            scan_dir.mkdir(parents=True, exist_ok=True)
+            (scan_dir / "output.json").write_text(
+                '{"type":"EMAIL_ADDRESS","data":"admin@example.com","module":"emailformat","scope_description":"in-scope"}\n',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="Scan complete\n", stderr="")
+
+        with patch.dict(os.environ, {"BBOT_RUNNER": "native"}), patch(
+            "osint_toolkit.adapter_runner.shutil.which",
+            return_value="bbot",
+        ), patch(
+            "osint_toolkit.adapter_runner.subprocess.run",
+            side_effect=fake_run,
+        ):
+            findings = run_adapter_findings(
+                "blacklanternsecurity/bbot-passive-email",
+                ScanTarget(kind="domain", value="example.com"),
+                execute=True,
+            )
+
+        self.assertEqual(findings[0].status, "completed")
+        self.assertIn("email-enum", findings[0].metadata["command"])
+        self.assertIn("-ef active aggressive deadly portscan web-screenshots", findings[0].metadata["command"])
+        self.assertTrue(any(finding.metadata.get("parser") == "bbot" for finding in findings[1:]))
+        self.assertTrue(any(finding.metadata.get("email") == "admin@example.com" for finding in findings[1:]))
 
     def test_run_user_scanner_adapter_adds_parsed_json_results_after_execution(self):
         completed = subprocess.CompletedProcess(

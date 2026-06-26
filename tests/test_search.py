@@ -261,6 +261,9 @@ class SearchPlanTests(unittest.TestCase):
         self.assertIn("blacklanternsecurity/bbot-passive-web", sources)
         self.assertIn("web-basic", sources["blacklanternsecurity/bbot-passive-web"].command)
         self.assertIn("-rf passive", sources["blacklanternsecurity/bbot-passive-web"].command)
+        self.assertIn("blacklanternsecurity/bbot-passive-email", sources)
+        self.assertIn("email-enum", sources["blacklanternsecurity/bbot-passive-email"].command)
+        self.assertIn("-rf passive", sources["blacklanternsecurity/bbot-passive-email"].command)
         self.assertIn("url", native_kinds_for_plan(plan))
         self.assertIn("domain", native_kinds_for_plan(plan))
 
