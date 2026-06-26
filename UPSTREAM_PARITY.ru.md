@@ -177,7 +177,8 @@ Gap:
 
 - `python -m osint_toolkit scan phone <number>`;
 - E.164-like нормализация;
-- базовый country-prefix signal для `+380`, `+7` и нескольких глобальных префиксов.
+- базовый country-prefix signal для `+380`, `+7` и нескольких глобальных префиксов;
+- native numbering-plan hints для Украины и зоны `+7`: `line_type`, `country_code`, украинские mobile allocation carrier hints, fixed-line location hints и RU/KZ split для известных NDC.
 - `sundowndev/phoneinfoga` как safe external adapter через `phoneinfoga scan -n <number>`;
 - parser фактического PhoneInfoga CLI stdout `Results for <scanner>` и REST/API-like JSON для `local`, `numverify`, `googlesearch`, `googlecse`, `ovh`;
 - graph/entities mapping для `normalized`, `country`, `country_code`, `carrier`, `line_type`, `location`, `number_range`, `zip_code`, Google dork URL и CSE result URL;
@@ -186,7 +187,7 @@ Gap:
 
 Gap:
 
-- нет carrier/type lookup;
+- нет live carrier lookup; native carrier/type слой является статическим numbering-plan allocation hint и помечает риск mobile number portability;
 - нет reputation lookup;
 - нет внешних API;
 - GPL-код PhoneInfoga не копируется в native Python-код; паритет делается через внешний CLI/API output ingestion, чтобы не смешивать copyleft-код с основным пакетом.
@@ -194,7 +195,7 @@ Gap:
 
 План:
 
-1. Native: нормализация номера, country code, форматирование, базовая валидация.
+1. Native: расширять локальные numbering-plan hints только из проверяемых публичных источников и держать portability caveat рядом с carrier allocation.
 2. Adapter: расширять `phoneinfoga` parser при появлении новых scanner output fields.
 3. Restricted adapter: phone-to-account checks.
 

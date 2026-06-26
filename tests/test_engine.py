@@ -15,7 +15,7 @@ from osint_toolkit.modules import DomainScanModule, EmailScanModule, InstagramPu
 from osint_toolkit.modules.domain import normalize_domain, parse_crtsh_subdomains, parse_rdap_domain_record
 from osint_toolkit.modules.instagram import extract_instagram_public_metadata, normalize_instagram_target
 from osint_toolkit.modules.person import generate_username_candidates, normalize_person_name
-from osint_toolkit.modules.phone import detect_country, is_e164_like, normalize_phone
+from osint_toolkit.modules.phone import detect_country, detect_numbering_plan, is_e164_like, normalize_phone
 from osint_toolkit.modules.ru_ua_sources import RuUaSourcePackModule
 from osint_toolkit.modules.social import extract_social_public_metadata, normalize_social_target
 from osint_toolkit.modules.telegram import TelegramScanModule, normalize_telegram_target
@@ -1239,15 +1239,34 @@ class EngineTests(unittest.TestCase):
     def test_phone_scan_normalizes_and_detects_ukraine_prefix(self):
         engine = Engine([PhoneScanModule()])
         findings = engine.scan(ScanTarget(kind="phone", value="+380 44 123 45 67"), RunConfig())
+        sources = {finding.source: finding for finding in findings}
 
         self.assertEqual(findings[0].status, "valid")
         self.assertEqual(findings[0].metadata["normalized"], "+380441234567")
         self.assertEqual(findings[1].metadata["country"], "Ukraine")
+        self.assertEqual(sources["numbering-plan"].metadata["line_type"], "fixed")
+        self.assertEqual(sources["numbering-plan"].metadata["location"], "Kyiv")
+        self.assertEqual(sources["numbering-plan"].metadata["national_destination_code"], "44")
 
     def test_phone_helpers(self):
         self.assertEqual(normalize_phone("00380 44 123 45 67"), "+380441234567")
         self.assertTrue(is_e164_like("+380441234567"))
         self.assertEqual(detect_country("+70000000000"), ("Russia/Kazakhstan", "ru"))
+
+        ua_mobile = detect_numbering_plan("+380671234567")
+        self.assertIsNotNone(ua_mobile)
+        self.assertEqual(ua_mobile.carrier, "Kyivstar")
+        self.assertEqual(ua_mobile.line_type, "mobile")
+        self.assertIn("portability", ua_mobile.note)
+
+        ru_mobile = detect_numbering_plan("+79001234567")
+        self.assertIsNotNone(ru_mobile)
+        self.assertEqual(ru_mobile.country_code, "RU")
+        self.assertEqual(ru_mobile.line_type, "mobile")
+
+        kz_number = detect_numbering_plan("+77011234567")
+        self.assertIsNotNone(kz_number)
+        self.assertEqual(kz_number.country_code, "KZ")
 
     def test_adapter_manifest_has_partial_native_and_restricted_items(self):
         partial = filter_adapters("partial_native")
@@ -1379,6 +1398,8 @@ class EngineTests(unittest.TestCase):
         self.assertIn(("domain", "example.com"), entity_keys)
         self.assertIn(("normalized-value", "+380441234567"), entity_keys)
         self.assertIn(("country", "ukraine"), entity_keys)
+        self.assertIn(("line-type", "fixed"), entity_keys)
+        self.assertIn(("location", "kyiv"), entity_keys)
         self.assertIn(("telegram", "@durov"), entity_keys)
         self.assertIn(("url", "https://t.me/durov"), entity_keys)
 
@@ -1389,6 +1410,8 @@ class EngineTests(unittest.TestCase):
         self.assertIn(("email", "email_domain", "domain", "example.com"), edge_keys)
         self.assertIn(("phone", "normalized_as", "normalized-value", "+380441234567"), edge_keys)
         self.assertIn(("phone", "country_hint", "country", "ukraine"), edge_keys)
+        self.assertIn(("phone", "line_type_hint", "line-type", "fixed"), edge_keys)
+        self.assertIn(("phone", "location_hint", "location", "kyiv"), edge_keys)
         self.assertIn(("telegram", "produced_url", "url", "https://t.me/durov"), edge_keys)
         self.assertIn(("url", "telegram_url_for", "telegram", "@durov"), edge_keys)
 

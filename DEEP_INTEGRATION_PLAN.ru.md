@@ -606,6 +606,7 @@ Notes:
 53. Done: add BBOT passive `email-enum` adapter/profile with Docker fallback/parser reuse, search/toolbox exposure and tests for command rendering, readiness, parsing and execution.
 54. Done: add deterministic person-derived username ranking with `candidate_score`, `candidate_rank` and `platform_hints` so person search fan-out prioritizes specific handles and operator aliases over low-specificity first-name candidates.
 55. Done: propagate person-candidate provenance into downstream native username findings and adapter findings so reports explain which `search person` candidate produced each profile check.
+56. Done: add native phone numbering-plan hints for Ukraine and `+7` zone targets, including line type, country code, Ukrainian mobile allocation carrier, fixed-line location and RU/KZ NDC split with portability caveats.
 
 ## Definition of done
 
