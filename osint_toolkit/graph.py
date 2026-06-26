@@ -788,6 +788,8 @@ def _metadata_edge(key: str) -> tuple[str, str] | None:
         "asn": ("has_asn", "asn"),
         "port": ("open_port", "port"),
         "technology": ("uses_technology", "technology"),
+        "provider": ("uses_provider", "provider"),
+        "providers": ("uses_provider", "provider"),
     }
     return mapping.get(key)
 
@@ -817,6 +819,8 @@ def _metadata_values(key: str, value: str) -> tuple[str, ...]:
         "external_url",
         "social_profile",
         "ip",
+        "provider",
+        "providers",
     }:
         parts = [part.strip() for part in value.replace("|", ",").split(",")]
         return tuple(part for part in parts if part)

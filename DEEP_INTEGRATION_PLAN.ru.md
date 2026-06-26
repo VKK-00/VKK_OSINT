@@ -609,6 +609,7 @@ Notes:
 56. Done: add native phone numbering-plan hints for Ukraine and `+7` zone targets, including line type, country code, Ukrainian mobile allocation carrier, fixed-line location and RU/KZ NDC split with portability caveats.
 57. Done: add bundled RU/UA person alias resource for person-derived username candidates, preserving `osint-toolkit-ru-ua-aliases` provenance in `source_projects`.
 58. Done: add native email local-part profile hints so role/shared mailboxes are skipped while handle/person-like local parts produce username/name/category graph clues without account-enumeration.
+59. Done: add native email hosted-provider attribution from MX/NS/TXT clues, exposing provider entities and graph edges without extra API calls.
 
 ## Definition of done
 

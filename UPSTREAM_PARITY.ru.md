@@ -135,6 +135,7 @@ Gap до полного 1:1:
 - DMARC classifier через `_dmarc.<domain>` TXT: наличие записи, multiple-record warning, `p=`, `sp=`, alignment, percent и report URI tags;
 - additional TXT classifiers для `_mta-sts.<domain>` MTA-STS, `_smtp._tls.<domain>` TLS-RPT и `default._bimi.<domain>` BIMI;
 - public TXT service signals для root-domain TXT: Google/Microsoft/Yandex/Mail.ru и другие verification markers без раскрытия token values в signal finding;
+- hosted email provider attribution по MX/NS/TXT clues для Google Workspace, Microsoft 365, Yandex Mail, Mail.ru, Proton Mail, Zoho, Fastmail, Amazon SES, iCloud и Cloudflare Email Routing с `provider` entities/graph edges;
 - native local-part profile hints: role/shared mailboxes are skipped, handle-like local parts become username candidates, and person-like plus-addressed local parts expose `name`, `base_local_part`, `plus_tag`, `category` and graph edges;
 - executable adapter target для `alpkeskin/mosint`: `mosint --silent <email> --output <temp.json>`;
 - parser для Mosint upstream JSON: verification, EmailRep, BreachDirectory, HaveIBeenPwned, Hunter related emails/domains, Google/Paste URLs, social flags, DNS records и ipapi metadata нормализуются в `Finding`/entities; password/hash/sha1-like values редактируются;
@@ -157,7 +158,7 @@ Gap:
 
 План:
 
-1. Native: дальше расширять DNS слой до richer provider attribution и optional CT/domain correlation.
+1. Native: дальше расширять DNS слой до optional CT/domain correlation и дополнительных provider signatures.
 2. Adapter: `mosint`, `h8mail`, `pwnedOrNot`, `user-scanner`.
 3. Restricted adapter: `holehe`, `email2phonenumber`, любые recovery/account-enumeration flows.
 

@@ -1141,7 +1141,7 @@ class EngineTests(unittest.TestCase):
         findings = engine.scan(ScanTarget(kind="email", value="person@example.com"), RunConfig())
         sources = {finding.source: finding for finding in findings}
 
-        self.assertEqual(len(findings), 12)
+        self.assertEqual(len(findings), 13)
         self.assertEqual(findings[0].source, "syntax")
         self.assertEqual(findings[0].status, "valid")
         self.assertEqual(sources["local-part-profile"].status, "candidate")
@@ -1154,6 +1154,7 @@ class EngineTests(unittest.TestCase):
             "ns-records",
             "txt-records",
             "txt-service-signals",
+            "email-provider-signals",
             "spf-policy",
             "dmarc-policy",
             "mta-sts-policy",
@@ -1184,7 +1185,7 @@ class EngineTests(unittest.TestCase):
                     domain=domain,
                     record_type=record_type,
                     status="candidate",
-                    records=("10 mail.example.com",),
+                    records=("10 aspmx.l.google.com", "20 example-com.mail.protection.outlook.com"),
                 )
             if record_type == "NS":
                 return DnsLookupResult(
@@ -1225,7 +1226,10 @@ class EngineTests(unittest.TestCase):
                 domain=domain,
                 record_type=record_type,
                 status="candidate",
-                records=("v=spf1 include:_spf.example.com -all", "google-site-verification=abc"),
+                records=(
+                    "v=spf1 include:_spf.google.com include:spf.protection.outlook.com -all",
+                    "google-site-verification=abc",
+                ),
             )
 
         with patch("osint_toolkit.modules.email.socket.getaddrinfo", return_value=[(socket.AF_INET, None, None, "", ("93.184.216.34", 0))]), patch(
@@ -1239,15 +1243,22 @@ class EngineTests(unittest.TestCase):
 
         sources = {finding.source: finding for finding in findings}
         self.assertEqual(sources["domain-resolution"].status, "candidate")
-        self.assertEqual(sources["mx-records"].metadata["records"], "10 mail.example.com")
+        self.assertEqual(
+            sources["mx-records"].metadata["records"],
+            "10 aspmx.l.google.com | 20 example-com.mail.protection.outlook.com",
+        )
         self.assertEqual(sources["ns-records"].metadata["records"], "ns1.example.com")
         self.assertEqual(
             sources["txt-records"].metadata["records"],
-            "v=spf1 include:_spf.example.com -all | google-site-verification=abc",
+            "v=spf1 include:_spf.google.com include:spf.protection.outlook.com -all"
+            " | google-site-verification=abc",
         )
         self.assertEqual(sources["txt-service-signals"].metadata["signal_types"], "google_site_verification")
+        self.assertEqual(sources["email-provider-signals"].status, "candidate")
+        self.assertIn("google_workspace", sources["email-provider-signals"].metadata["providers"])
+        self.assertIn("microsoft_365", sources["email-provider-signals"].metadata["providers"])
         self.assertEqual(sources["spf-policy"].metadata["policy"], "hardfail")
-        self.assertEqual(sources["spf-policy"].metadata["include_count"], "1")
+        self.assertEqual(sources["spf-policy"].metadata["include_count"], "2")
         self.assertEqual(sources["dmarc-policy"].metadata["policy"], "reject")
         self.assertEqual(sources["mta-sts-policy"].metadata["id"], "20260624")
         self.assertEqual(sources["tls-rpt-policy"].metadata["rua"], "mailto:tls@example.com")

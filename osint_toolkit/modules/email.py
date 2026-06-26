@@ -9,6 +9,7 @@ from ..email_auth import (
     EmailAuthPolicy,
     classify_bimi_policy,
     classify_dmarc_policy,
+    classify_email_provider_signals,
     classify_mta_sts_policy,
     classify_spf_policy,
     classify_tls_rpt_policy,
@@ -107,6 +108,7 @@ class EmailScanModule:
             findings.append(_planned_dns_record_finding(self.name, value, domain, "NS"))
             findings.append(_planned_dns_record_finding(self.name, value, domain, "TXT"))
             findings.append(_planned_email_auth_finding(self.name, value, domain, "txt-service-signals"))
+            findings.append(_planned_email_auth_finding(self.name, value, domain, "email-provider-signals"))
             findings.append(_planned_email_auth_finding(self.name, value, domain, "spf-policy"))
             findings.append(_planned_email_auth_finding(self.name, value, domain, "dmarc-policy"))
             findings.append(_planned_email_auth_finding(self.name, value, domain, "mta-sts-policy"))
@@ -149,6 +151,13 @@ class EmailScanModule:
         findings.append(_dns_record_finding(self.name, value, ns_result))
         findings.append(_dns_record_finding(self.name, value, txt_result))
         findings.append(_email_auth_finding(self.name, value, classify_txt_service_signals(domain, txt_result)))
+        findings.append(
+            _email_auth_finding(
+                self.name,
+                value,
+                classify_email_provider_signals(domain, mx_result, ns_result, txt_result),
+            )
+        )
         findings.append(_email_auth_finding(self.name, value, classify_spf_policy(domain, txt_result)))
 
         dmarc_result = lookup_dns_records(f"_dmarc.{domain}", "TXT", timeout=config.timeout)
@@ -301,8 +310,13 @@ def _planned_email_auth_finding(module: str, email: str, domain: str, source: st
         "tls-rpt-policy": "TLS-RPT",
         "bimi-policy": "BIMI",
         "txt-service-signals": "TXT service signals",
+        "email-provider-signals": "hosted email provider signals",
     }.get(source, source)
-    action = f"classify {label}" if source == "txt-service-signals" else f"classify {label} policy"
+    action = (
+        f"classify {label}"
+        if source in {"txt-service-signals", "email-provider-signals"}
+        else f"classify {label} policy"
+    )
     return Finding(
         module=module,
         source=source,

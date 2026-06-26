@@ -236,6 +236,68 @@ def classify_txt_service_signals(domain: str, txt_result: DnsLookupResult) -> Em
     )
 
 
+def classify_email_provider_signals(
+    domain: str,
+    mx_result: DnsLookupResult,
+    ns_result: DnsLookupResult,
+    txt_result: DnsLookupResult,
+) -> EmailAuthPolicy:
+    records: list[tuple[str, str]] = []
+    for result in (mx_result, ns_result, txt_result):
+        if result.status == "candidate":
+            records.extend((result.record_type.lower(), record) for record in result.records)
+
+    if not records:
+        statuses = {
+            "mx": mx_result.status,
+            "ns": ns_result.status,
+            "txt": txt_result.status,
+        }
+        return EmailAuthPolicy(
+            source="email-provider-signals",
+            status="not_found",
+            confidence="low",
+            evidence="No DNS records were available for email provider attribution.",
+            metadata={
+                "domain": domain,
+                "lookup_statuses": ", ".join(f"{key}:{value}" for key, value in statuses.items()),
+            },
+        )
+
+    provider_signals: dict[str, set[str]] = {}
+    for record_type, record in records:
+        for provider, signal in _email_provider_record_signals(record_type, record):
+            provider_signals.setdefault(provider, set()).add(signal)
+
+    if not provider_signals:
+        return EmailAuthPolicy(
+            source="email-provider-signals",
+            status="not_found",
+            confidence="medium",
+            evidence="No recognized hosted email provider signals found in MX/NS/TXT records.",
+            metadata={"domain": domain, "provider_count": "0"},
+        )
+
+    providers = tuple(sorted(provider_signals))
+    signal_values = tuple(
+        f"{provider}:{signal}"
+        for provider in providers
+        for signal in sorted(provider_signals[provider])
+    )
+    return EmailAuthPolicy(
+        source="email-provider-signals",
+        status="candidate",
+        confidence="medium",
+        evidence=f"Detected hosted email provider signals: {', '.join(providers)}.",
+        metadata={
+            "domain": domain,
+            "provider_count": str(len(providers)),
+            "providers": ", ".join(providers),
+            "provider_signals": ", ".join(signal_values),
+        },
+    )
+
+
 def _classify_single_txt_policy(
     domain: str,
     result: DnsLookupResult,
@@ -380,6 +442,42 @@ def _txt_service_signal(record: str) -> str:
         if normalized.startswith(marker):
             return label
     return ""
+
+
+def _email_provider_record_signals(record_type: str, record: str) -> tuple[tuple[str, str], ...]:
+    normalized = record.strip().casefold()
+    if not normalized:
+        return ()
+
+    rules = (
+        ("google_workspace", "mx", ("google.com", "googlemail.com")),
+        ("google_workspace", "txt", ("include:_spf.google.com", "google-site-verification=")),
+        ("microsoft_365", "mx", ("protection.outlook.com", "mail.protection.outlook.com")),
+        ("microsoft_365", "txt", ("include:spf.protection.outlook.com", "ms=", "v=msv1")),
+        ("yandex_mail", "mx", ("mx.yandex.", "yandex.net")),
+        ("yandex_mail", "ns", ("yandex.", "yandex.net")),
+        ("yandex_mail", "txt", ("include:_spf.yandex.net", "yandex-verification:", "yandex-verification=")),
+        ("mailru", "mx", ("mxs.mail.ru", "mail.ru")),
+        ("mailru", "txt", ("include:_spf.mail.ru", "mailru-verification:", "mailru-verification=")),
+        ("proton_mail", "mx", ("protonmail", "proton.ch")),
+        ("proton_mail", "txt", ("include:_spf.protonmail.ch", "protonmail-verification=")),
+        ("zoho_mail", "mx", ("zoho.com", "zoho.eu")),
+        ("zoho_mail", "txt", ("zoho-verification=", "include:zoho.")),
+        ("fastmail", "mx", ("messagingengine.com",)),
+        ("fastmail", "txt", ("include:spf.messagingengine.com",)),
+        ("amazon_ses", "mx", ("inbound-smtp", ".amazonaws.com")),
+        ("amazon_ses", "txt", ("amazonses:", "include:amazonses.com")),
+        ("apple_icloud", "mx", ("icloud.com",)),
+        ("apple_icloud", "txt", ("apple-domain-verification=", "include:icloud.com")),
+        ("cloudflare_email_routing", "mx", (".mx.cloudflare.net",)),
+    )
+    signals: list[tuple[str, str]] = []
+    for provider, expected_type, markers in rules:
+        if expected_type != record_type:
+            continue
+        if any(marker in normalized for marker in markers):
+            signals.append((provider, record_type))
+    return tuple(signals)
 
 
 def _dedupe(values: tuple[str, ...]) -> tuple[str, ...]:

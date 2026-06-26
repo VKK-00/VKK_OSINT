@@ -81,6 +81,10 @@ def entities_from_findings(findings: tuple[Finding, ...]) -> tuple[Entity, ...]:
                 for username in _split_metadata_values(value):
                     entities.append(Entity("username", username, source, finding.confidence, "metadata:related_usernames"))
                 continue
+            if key in {"provider", "providers"}:
+                for provider in _split_metadata_values(value):
+                    entities.append(Entity("provider", provider, source, finding.confidence, f"metadata:{key}"))
+                continue
             if key in {
                 "crawled_urls",
                 "discovered_urls",
@@ -285,6 +289,8 @@ def _metadata_entity_kind(key: str) -> str:
         "asn",
         "port",
         "technology",
+        "provider",
+        "providers",
     }
     return key if key in supported else ""
 

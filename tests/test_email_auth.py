@@ -4,6 +4,7 @@ from osint_toolkit.dns_lookup import DnsLookupResult
 from osint_toolkit.email_auth import (
     classify_bimi_policy,
     classify_dmarc_policy,
+    classify_email_provider_signals,
     classify_mta_sts_policy,
     classify_spf_policy,
     classify_tls_rpt_policy,
@@ -124,6 +125,36 @@ class EmailAuthTests(unittest.TestCase):
         self.assertIn("google_site_verification", policy.metadata["signal_types"])
         self.assertIn("microsoft_365_verification", policy.metadata["signal_types"])
         self.assertIn("yandex_verification", policy.metadata["signal_types"])
+
+    def test_classify_email_provider_signals_uses_mx_ns_and_txt_records(self):
+        policy = classify_email_provider_signals(
+            "example.com",
+            DnsLookupResult(
+                domain="example.com",
+                record_type="MX",
+                status="candidate",
+                records=("10 aspmx.l.google.com", "20 example-com.mail.protection.outlook.com"),
+            ),
+            DnsLookupResult(
+                domain="example.com",
+                record_type="NS",
+                status="candidate",
+                records=("ns1.yandex.net",),
+            ),
+            DnsLookupResult(
+                domain="example.com",
+                record_type="TXT",
+                status="candidate",
+                records=("v=spf1 include:_spf.google.com include:spf.protection.outlook.com -all",),
+            ),
+        )
+
+        self.assertEqual(policy.source, "email-provider-signals")
+        self.assertEqual(policy.status, "candidate")
+        self.assertEqual(policy.metadata["provider_count"], "3")
+        self.assertIn("google_workspace", policy.metadata["providers"])
+        self.assertIn("microsoft_365", policy.metadata["providers"])
+        self.assertIn("yandex_mail", policy.metadata["providers"])
 
 
 if __name__ == "__main__":

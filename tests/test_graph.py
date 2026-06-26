@@ -184,6 +184,33 @@ class GraphAnalysisTests(unittest.TestCase):
         self.assertIn(("phone", "+380441234567", "location_hint", "location", "Kyiv"), edge_keys)
         self.assertIn(("phone", "+380441234567", "postal_code_hint", "postal-code", "01001"), edge_keys)
 
+    def test_provider_metadata_edges(self):
+        target = ScanTarget(kind="email", value="person@example.com")
+        findings = (
+            Finding(
+                module="email-baseline",
+                source="email-provider-signals",
+                target="person@example.com",
+                status="candidate",
+                confidence="medium",
+                evidence="Detected hosted email provider signals.",
+                metadata={"domain": "example.com", "providers": "google_workspace, microsoft_365"},
+            ),
+        )
+
+        entities = merge_entities(entities_from_targets((target,)), entities_from_findings(findings))
+        entity_keys = {(entity.kind, entity.value.lower()) for entity in entities}
+        self.assertIn(("provider", "google_workspace"), entity_keys)
+        self.assertIn(("provider", "microsoft_365"), entity_keys)
+
+        edges = graph_edges_from_case((target,), findings, entities)
+        edge_keys = {
+            (edge.source_kind, edge.source_value, edge.relation, edge.target_kind, edge.target_value)
+            for edge in edges
+        }
+        self.assertIn(("email", "person@example.com", "uses_provider", "provider", "google_workspace"), edge_keys)
+        self.assertIn(("email", "person@example.com", "uses_provider", "provider", "microsoft_365"), edge_keys)
+
     def test_certificate_transparency_subdomain_metadata_edges(self):
         target = ScanTarget(kind="domain", value="example.com")
         findings = (
