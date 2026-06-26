@@ -355,6 +355,7 @@ python -m osint_toolkit adapter-setup <repository>
 - required environment variables guard before external process execution;
 - no shell execution;
 - timeout handling;
+- opt-in parallel execution via `--adapter-workers` for ready adapters of one target, with default sequential execution and stable result ordering;
 - restricted adapter guard via `--allow-restricted`;
 - `run_adapter_findings()` returns summary + parsed findings;
 - adapter summary findings and parsed adapter findings include execution provenance metadata: command, execution route, executable path, return code, start/end timestamps, duration, timeout, generated output count and parser version;

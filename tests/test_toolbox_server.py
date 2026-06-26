@@ -70,6 +70,7 @@ class ToolboxServerTests(unittest.TestCase):
                         "profile": "phone-full",
                         "execute_adapters": True,
                         "adapter_limit": 0,
+                        "adapter_workers": 2,
                         "out": "reports/phone.md",
                         "case_db": "cases.sqlite",
                         "case_id": "cli-smoke-phone",
@@ -82,6 +83,7 @@ class ToolboxServerTests(unittest.TestCase):
                 self.assertEqual(job["status"], "completed", job)
                 self.assertEqual(job["returncode"], 0)
                 self.assertTrue(job["report_available"])
+                self.assertIn("--adapter-workers 2", job["command_preview"])
 
                 report = self._request_text(f"{base_url}/api/jobs/{job_id}/report", auth=token)
                 self.assertIn("## Phone Sources", report)
@@ -94,6 +96,7 @@ class ToolboxServerTests(unittest.TestCase):
                     auth=token,
                 )
                 self.assertEqual(case["metadata"]["scope_note"], "cli toolbox smoke")
+                self.assertEqual(case["metadata"]["adapter_workers"], 2)
                 self.assertTrue(Path(tmpdir, "toolbox.html").exists())
                 self.assertTrue(Path(tmpdir, "reports", "phone.md").exists())
             finally:

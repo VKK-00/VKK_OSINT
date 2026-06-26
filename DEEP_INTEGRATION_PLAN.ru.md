@@ -465,7 +465,7 @@ Deliverables:
 - ready-only `--execute-adapters` path for external adapters;
 - local image tool execution with derived seed routing.
 
-Status: planner, ready-only external adapter execution and image local-tool execution are implemented in the current codebase.
+Status: planner, ready-only external adapter execution, opt-in parallel adapter workers and image local-tool execution are implemented in the current codebase.
 
 Tests:
 
@@ -601,6 +601,7 @@ Notes:
 49. Done: add `case-show --format csv` as flat saved-case findings export with `case_id`, collection, source/status/confidence/evidence and `metadata_json` provenance.
 50. Done: add `case-export` handoff packages and served toolbox `Export`, writing case JSON/Markdown, CSV findings/sources/targets/entities/edges, metadata, graph summary, manifest SHA-256 checksums and optional zip.
 51. Done: add `cases-export` bulk handoff packages and served toolbox `Export list`, applying workflow/profile/scope filters and writing per-case folders, `bulk_manifest.json` and optional zip.
+52. Done: add opt-in `--adapter-workers` parallel fan-out for ready adapters in `search --execute-adapters`, `investigate --execute-adapters`, image-derived execution and served toolbox jobs, while preserving default sequential mode and stable finding order.
 
 ## Definition of done
 

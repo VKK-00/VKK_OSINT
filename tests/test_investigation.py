@@ -1,6 +1,7 @@
 import os
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -92,6 +93,53 @@ class InvestigationTests(unittest.TestCase):
         report = render_investigation_markdown(result)
         self.assertIn("## Adapter Findings", report)
         self.assertIn("external-adapter-parser", report)
+
+    def test_execute_adapters_can_run_with_parallel_workers_preserving_order(self):
+        barrier = threading.Barrier(2)
+        active_lock = threading.Lock()
+        active_count = 0
+        max_active_count = 0
+
+        def fake_run_adapter_findings(repository, target, **kwargs):
+            nonlocal active_count, max_active_count
+            self.assertTrue(kwargs["execute"])
+            self.assertEqual(target.kind, "username")
+            with active_lock:
+                active_count += 1
+                max_active_count = max(max_active_count, active_count)
+            try:
+                barrier.wait(timeout=2)
+                return (
+                    Finding(
+                        module="external-adapter",
+                        source=repository,
+                        target=target.value,
+                        status="completed",
+                        confidence="medium",
+                        evidence=f"{repository} completed",
+                    ),
+                )
+            finally:
+                with active_lock:
+                    active_count -= 1
+
+        with patch(
+            "osint_toolkit.investigation.run_adapter_findings",
+            side_effect=fake_run_adapter_findings,
+        ):
+            result = run_investigation(
+                (ScanTarget(kind="username", value="example_user"),),
+                include_adapters=True,
+                execute_adapters=True,
+                adapter_repositories=("sherlock-project/sherlock", "soxoj/maigret"),
+                adapter_workers=2,
+            )
+
+        self.assertGreaterEqual(max_active_count, 2)
+        self.assertEqual(
+            [finding.source for finding in result.adapter_findings],
+            ["sherlock-project/sherlock", "soxoj/maigret"],
+        )
 
     def test_execute_user_scanner_adapter_adds_parsed_entities_and_edges(self):
         completed = subprocess.CompletedProcess(

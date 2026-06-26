@@ -62,6 +62,7 @@ TOOLBOX_INPUTS: tuple[ToolboxInput, ...] = (
     ToolboxInput("profile_excluded", "Profile excluded repos", "megadose/holehe"),
     ToolboxInput("profile_note", "Profile note", "Case scope reviewed"),
     ToolboxInput("adapter_limit", "Лимит adapters", "3", "number"),
+    ToolboxInput("adapter_workers", "Adapter workers", "1", "number"),
     ToolboxInput("case_db", "SQLite case DB", "cases.sqlite"),
     ToolboxInput("case_id", "Case ID", "case-001"),
     ToolboxInput("scope_note", "Scope note", "internal validation scope"),
@@ -105,11 +106,11 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     "Запускает ready local image tools, извлекает derived seeds и пишет unified report/case.",
                     (
                         'python -m osint_toolkit search image "{image_path}" '
-                        "--profile image-full --execute-adapters --adapter-limit {adapter_limit} "
+                        "--profile image-full --execute-adapters --adapter-limit {adapter_limit} --adapter-workers {adapter_workers} "
                         "--out {out} --case-db {case_db} --case-id {case_id} "
                         '[[--scope-note "{scope_note}"]]'
                     ),
-                    required_inputs=("image_path", "adapter_limit", "out", "case_db", "case_id"),
+                    required_inputs=("image_path", "adapter_limit", "adapter_workers", "out", "case_db", "case_id"),
                     badges=("execute", "image-full", "local-tools"),
                     note="Face-ID не выполняется; derived URL/email/phone/username/domain seeds идут в обычный search fan-out.",
                 ),
@@ -177,10 +178,10 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                         '[[--telegram {telegram}]] [[--instagram {instagram}]] '
                         '[[--social {social}]] [[--ru-ua {ruua}]] [[--region {region}]] '
                         '--include-adapters '
-                        '--adapter-profile username-full --adapter-limit {adapter_limit} '
+                        '--adapter-profile username-full --adapter-limit {adapter_limit} --adapter-workers {adapter_workers} '
                         '--out {out}'
                     ),
-                    required_inputs=("title", "adapter_limit", "out"),
+                    required_inputs=("title", "adapter_limit", "adapter_workers", "out"),
                     badges=("case", "multi-seed", "dry-run adapters"),
                     note=(
                         "Заполняй только те поля, которые реально извлечены с изображения. "
@@ -240,11 +241,11 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     (
                         'python -m osint_toolkit search person "{person}" '
                         "--profile person-full --region {region} --execute-adapters "
-                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--adapter-limit {adapter_limit} --adapter-workers {adapter_workers} --out {out} "
                         "--case-db {case_db} --case-id {case_id} "
                         '[[--scope-note "{scope_note}"]]'
                     ),
-                    required_inputs=("person", "region", "adapter_limit", "out", "case_db", "case_id"),
+                    required_inputs=("person", "region", "adapter_limit", "adapter_workers", "out", "case_db", "case_id"),
                     badges=("execute", "ready-only"),
                     note="Missing/config/restricted tools остаются видимыми в Fan-out Plan, но не запускаются.",
                 ),
@@ -264,11 +265,11 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     (
                         "python -m osint_toolkit search username {username} "
                         "--profile username-full --region {region} --execute-adapters "
-                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--adapter-limit {adapter_limit} --adapter-workers {adapter_workers} --out {out} "
                         "--case-db {case_db} --case-id {case_id} "
                         '[[--scope-note "{scope_note}"]]'
                     ),
-                    required_inputs=("username", "region", "adapter_limit", "out", "case_db", "case_id"),
+                    required_inputs=("username", "region", "adapter_limit", "adapter_workers", "out", "case_db", "case_id"),
                     badges=("execute", "ready-only"),
                     note="Restricted adapters через search execution не запускаются.",
                 ),
@@ -285,10 +286,10 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     (
                         "python -m osint_toolkit investigate --username {username} "
                         "--region {region} --include-adapters "
-                        "--adapter-profile username-full --adapter-limit {adapter_limit} "
+                        "--adapter-profile username-full --adapter-limit {adapter_limit} --adapter-workers {adapter_workers} "
                         "--out {out}"
                     ),
-                    required_inputs=("username", "region", "adapter_limit", "out"),
+                    required_inputs=("username", "region", "adapter_limit", "adapter_workers", "out"),
                     badges=("username-full", "report"),
                 ),
                 ToolboxCommand(
@@ -328,11 +329,11 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     (
                         "python -m osint_toolkit search email {email} "
                         "--profile email-full --execute-adapters "
-                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--adapter-limit {adapter_limit} --adapter-workers {adapter_workers} --out {out} "
                         "--case-db {case_db} --case-id {case_id} "
                         '[[--scope-note "{scope_note}"]]'
                     ),
-                    required_inputs=("email", "adapter_limit", "out", "case_db", "case_id"),
+                    required_inputs=("email", "adapter_limit", "adapter_workers", "out", "case_db", "case_id"),
                     badges=("execute", "ready-only"),
                     note="holehe/email2phonenumber остаются restricted/excluded и не запускаются.",
                 ),
@@ -352,11 +353,11 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     (
                         "python -m osint_toolkit search phone {phone} "
                         "--profile phone-full --execute-adapters "
-                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--adapter-limit {adapter_limit} --adapter-workers {adapter_workers} --out {out} "
                         "--case-db {case_db} --case-id {case_id} "
                         '[[--scope-note "{scope_note}"]]'
                     ),
-                    required_inputs=("phone", "adapter_limit", "out", "case_db", "case_id"),
+                    required_inputs=("phone", "adapter_limit", "adapter_workers", "out", "case_db", "case_id"),
                     badges=("execute", "ready-only"),
                     note="Phone-to-account restricted checks не запускаются через search execution.",
                 ),
@@ -383,11 +384,11 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     (
                         "python -m osint_toolkit search domain {domain} "
                         "--profile passive-recon --execute-adapters "
-                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--adapter-limit {adapter_limit} --adapter-workers {adapter_workers} --out {out} "
                         "--case-db {case_db} --case-id {case_id} "
                         '[[--scope-note "{scope_note}"]]'
                     ),
-                    required_inputs=("domain", "adapter_limit", "out", "case_db", "case_id"),
+                    required_inputs=("domain", "adapter_limit", "adapter_workers", "out", "case_db", "case_id"),
                     badges=("execute", "ready-only"),
                 ),
                 ToolboxCommand(
@@ -406,11 +407,11 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     (
                         "python -m osint_toolkit search url {url} "
                         "--profile web-full --execute-adapters "
-                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--adapter-limit {adapter_limit} --adapter-workers {adapter_workers} --out {out} "
                         "--case-db {case_db} --case-id {case_id} "
                         '[[--scope-note "{scope_note}"]]'
                     ),
-                    required_inputs=("url", "adapter_limit", "out", "case_db", "case_id"),
+                    required_inputs=("url", "adapter_limit", "adapter_workers", "out", "case_db", "case_id"),
                     badges=("execute", "ready-only"),
                 ),
                 ToolboxCommand(
@@ -419,9 +420,9 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     (
                         "python -m osint_toolkit investigate --domain {domain} "
                         "--include-adapters --adapter-profile domain-recon "
-                        "--adapter-limit {adapter_limit} --out {out}"
+                        "--adapter-limit {adapter_limit} --adapter-workers {adapter_workers} --out {out}"
                     ),
-                    required_inputs=("domain", "adapter_limit", "out"),
+                    required_inputs=("domain", "adapter_limit", "adapter_workers", "out"),
                     badges=("domain-recon", "passive"),
                 ),
                 ToolboxCommand(
@@ -430,9 +431,9 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     (
                         "python -m osint_toolkit investigate --domain {domain} "
                         "--include-adapters --adapter-profile broad-recon "
-                        "--adapter-limit {adapter_limit} --out {out}"
+                        "--adapter-limit {adapter_limit} --adapter-workers {adapter_workers} --out {out}"
                     ),
-                    required_inputs=("domain", "adapter_limit", "out"),
+                    required_inputs=("domain", "adapter_limit", "adapter_workers", "out"),
                     badges=("broad-recon", "scope review"),
                 ),
                 ToolboxCommand(
@@ -441,9 +442,9 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     (
                         "python -m osint_toolkit investigate --domain {domain} "
                         "--include-adapters --adapter-profile bbot-passive-web "
-                        "--adapter-limit {adapter_limit} --out {out}"
+                        "--adapter-limit {adapter_limit} --adapter-workers {adapter_workers} --out {out}"
                     ),
-                    required_inputs=("domain", "adapter_limit", "out"),
+                    required_inputs=("domain", "adapter_limit", "adapter_workers", "out"),
                     badges=("bbot-passive-web", "passive"),
                 ),
             ),
@@ -478,11 +479,11 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     (
                         "python -m osint_toolkit search username {username} "
                         "--profile ru-ua-full --region {region} --execute-adapters "
-                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--adapter-limit {adapter_limit} --adapter-workers {adapter_workers} --out {out} "
                         "--case-db {case_db} --case-id {case_id} "
                         '[[--scope-note "{scope_note}"]]'
                     ),
-                    required_inputs=("username", "region", "adapter_limit", "out", "case_db", "case_id"),
+                    required_inputs=("username", "region", "adapter_limit", "adapter_workers", "out", "case_db", "case_id"),
                     badges=("execute", "ru-ua-full"),
                 ),
                 ToolboxCommand(
@@ -505,11 +506,11 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                     (
                         "python -m osint_toolkit search social {social} "
                         "--profile social-full --region {region} --execute-adapters "
-                        "--adapter-limit {adapter_limit} --out {out} "
+                        "--adapter-limit {adapter_limit} --adapter-workers {adapter_workers} --out {out} "
                         "--case-db {case_db} --case-id {case_id} "
                         '[[--scope-note "{scope_note}"]]'
                     ),
-                    required_inputs=("social", "region", "adapter_limit", "out", "case_db", "case_id"),
+                    required_inputs=("social", "region", "adapter_limit", "adapter_workers", "out", "case_db", "case_id"),
                     badges=("execute", "social-full"),
                 ),
             ),
@@ -531,9 +532,9 @@ def toolbox_sections() -> tuple[ToolboxSection, ...]:
                         "--case-db {case_db} --case-id {case_id} "
                         '[[--scope-note "{scope_note}"]] '
                         "--include-adapters --adapter-profile username-full "
-                        "--adapter-limit {adapter_limit} --out {out}"
+                        "--adapter-limit {adapter_limit} --adapter-workers {adapter_workers} --out {out}"
                     ),
-                    required_inputs=("title", "case_db", "case_id", "adapter_limit", "out"),
+                    required_inputs=("title", "case_db", "case_id", "adapter_limit", "adapter_workers", "out"),
                     badges=("case-db", "report"),
                 ),
                 ToolboxCommand(
@@ -1293,6 +1294,7 @@ def render_toolbox_html(*, backend_url: str = "", backend_auth: str = "") -> str
         execute_adapters: execute,
         format: execute ? "markdown" : "markdown",
         adapter_limit: Number(readValue("adapter_limit") || "20"),
+        adapter_workers: Number(readValue("adapter_workers") || "1"),
         out: readValue("out"),
         case_db: readValue("case_db"),
         case_id: readValue("case_id"),
@@ -2233,7 +2235,7 @@ def _command_for_profile(profile: AdapterProfile) -> ToolboxCommand:
     command = (
         f"python -m osint_toolkit investigate {seed_flag} "
         f"--include-adapters --adapter-profile {profile.name} "
-        "--adapter-limit {adapter_limit} --out {out}"
+        "--adapter-limit {adapter_limit} --adapter-workers {adapter_workers} --out {out}"
     )
     if "username" in profile.target_kinds:
         command = command.replace(" investigate ", " investigate --region {region} ", 1)
@@ -2246,7 +2248,7 @@ def _command_for_profile(profile: AdapterProfile) -> ToolboxCommand:
         title=profile.name,
         description=profile.description,
         command_template=command,
-        required_inputs=required + ("adapter_limit", "out"),
+        required_inputs=required + ("adapter_limit", "adapter_workers", "out"),
         badges=profile.target_kinds,
         note=note,
     )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -52,6 +53,7 @@ def run_investigation(
     allow_restricted_adapters: bool = False,
     adapter_timeout: float = 60.0,
     adapter_limit: int | None = 20,
+    adapter_workers: int = 1,
     http_retries: int = 1,
     http_backoff: float = 1.0,
     request_delay: float = 0.0,
@@ -82,6 +84,8 @@ def run_investigation(
 
     adapter_findings: list[Finding] = []
     if include_adapters:
+        if adapter_workers < 1:
+            raise ValueError("adapter_workers must be at least 1.")
         for target in scan_targets:
             adapter_findings.extend(
                 _adapter_runs(
@@ -91,6 +95,7 @@ def run_investigation(
                     allow_restricted=allow_restricted_adapters,
                     timeout=adapter_timeout,
                     repositories=adapter_repositories,
+                    workers=adapter_workers,
                 )
             )
     entities = merge_entities(
@@ -230,21 +235,34 @@ def _adapter_runs(
     allow_restricted: bool,
     timeout: float,
     repositories: tuple[str, ...],
+    workers: int,
 ) -> tuple[Finding, ...]:
     compatible = _adapters_for_target(target, repositories)
     if limit is not None:
         compatible = compatible[:limit]
-    findings: list[Finding] = []
-    for adapter in compatible:
-        findings.extend(
-            run_adapter_findings(
-                adapter.repository,
-                target,
-                execute=execute,
-                allow_restricted=allow_restricted,
-                timeout=timeout,
-            )
+    if not compatible:
+        return ()
+    if workers < 1:
+        raise ValueError("workers must be at least 1.")
+
+    def run_one(adapter: AdapterSpec) -> tuple[Finding, ...]:
+        return run_adapter_findings(
+            adapter.repository,
+            target,
+            execute=execute,
+            allow_restricted=allow_restricted,
+            timeout=timeout,
         )
+
+    findings: list[Finding] = []
+    if workers > 1 and len(compatible) > 1:
+        with ThreadPoolExecutor(max_workers=min(workers, len(compatible))) as executor:
+            for adapter_findings in executor.map(run_one, compatible):
+                findings.extend(adapter_findings)
+        return tuple(findings)
+
+    for adapter in compatible:
+        findings.extend(run_one(adapter))
     return tuple(findings)
 
 

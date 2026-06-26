@@ -65,7 +65,7 @@ CLI работает в пяти режимах:
 - adapter doctor: проверка фактической доступности upstream CLI в `PATH`;
 - profile tools workflow: `tools doctor/install-plan/env --profile ...` показывает readiness, install/config actions и env variable names без значений; `tools install <profile>` добавляет dry-run/`--execute` слой для allowlisted missing tools;
 - custom search profiles: `--profile-file` загружает JSON profiles с валидацией target kinds, adapter profiles, repositories и local tools;
-- unified search planner/executor: `search` классифицирует один seed, выбирает default/full или custom profile, строит план native/adapters/local-tools, показывает readiness/missing/config/restricted/excluded статусы, запускает ready non-restricted adapters и выполняет local image tools при `--execute-adapters`, а `--install-missing` использует resolved profile для dry-run/explicit install mode;
+- unified search planner/executor: `search` классифицирует один seed, выбирает default/full или custom profile, строит план native/adapters/local-tools, показывает readiness/missing/config/restricted/excluded статусы, запускает ready non-restricted adapters последовательно или через явный `--adapter-workers`, выполняет local image tools при `--execute-adapters`, а `--install-missing` использует resolved profile для dry-run/explicit install mode;
 - investigation runner: один кейс, несколько seed-типов, entity summary, graph edges, единый Markdown/JSON отчёт;
 - executed adapter ingestion inside investigation: явный `--execute-adapters` добавляет parsed upstream CLI findings в entities, graph edges и case store;
 - SQLite case store: сохранение и повторный просмотр кейсов, targets, entities, edges, findings и workflow/profile/scope policy metadata;
@@ -293,7 +293,7 @@ Toolbox-поток:
 
 Search-поток:
 
-1. Пользователь запускает `python -m osint_toolkit search <kind|auto> <value> --profile <profile>` с `--plan-only`, `--execute-adapters` или `--install-missing`.
+1. Пользователь запускает `python -m osint_toolkit search <kind|auto> <value> --profile <profile>` с `--plan-only`, `--execute-adapters` или `--install-missing`; для execution mode можно явно задать `--adapter-workers N`.
 2. `classify_target()` определяет target kind для `auto`.
 3. `build_search_plan()` выбирает profile: например phone -> `phone-full`, email -> `email-full`, image -> `image-full`.
 4. Planner добавляет built-in native steps, разворачивает adapter profiles через `expand_adapter_repositories()` и проверяет readiness через `build_adapter_setup()`.
@@ -302,7 +302,7 @@ Search-поток:
 7. В plan-only режиме результат выводится как table/Markdown/CSV/JSON через `format_search_plan()`. Missing/config/restricted tools остаются строками плана, а не ошибками.
 8. В `--install-missing` режиме resolved profile передаётся в `build_profile_tool_readiness()`/`build_tool_install_results()`: dry-run показывает install actions, а реальный запуск разрешён только через отдельный `--execute-install`; режим взаимоисключён с plan/execution modes.
 9. В adapter execution режиме `ready_adapter_repositories()` выбирает только `stage=adapter,status=ready,readiness=ready` и отсекает restricted entries даже при `--include-restricted`.
-10. `run_investigation()` получает исходный target, derived targets из `SearchPlan`, native target kinds из planned native steps и allowlist ready repositories, запускает только planned native target kinds и внешние adapters через существующий `run_adapter_findings()`, затем сохраняет Markdown/JSON report и SQLite case при `--out`/`--case-db`; execution report добавляет source summary (`Phone Sources`, `Email Sources`, `Web Sources`, `Image Sources` или общий `Source Summary`) с подсчётом findings/status/confidence/signals по источникам и run-level колонками `Runs`/`Routes`/`Exit`/`Duration ms`/`Parser`, а JSON отдаёт это как `source_summary`; adapter summary findings и parsed adapter findings сохраняют execution provenance в metadata: command, execution route, executable path, return code, start/end timestamps, duration, timeout, generated output count и parser version; `--scope-note` попадает в case metadata как текстовый контекст/рамки проверки.
+10. `run_investigation()` получает исходный target, derived targets из `SearchPlan`, native target kinds из planned native steps и allowlist ready repositories, запускает только planned native target kinds и внешние adapters через существующий `run_adapter_findings()`; при `--adapter-workers > 1` ready adapters одного target запускаются параллельно, но findings возвращаются в порядке allowlist. Затем сохраняется Markdown/JSON report и SQLite case при `--out`/`--case-db`; execution report добавляет source summary (`Phone Sources`, `Email Sources`, `Web Sources`, `Image Sources` или общий `Source Summary`) с подсчётом findings/status/confidence/signals по источникам и run-level колонками `Runs`/`Routes`/`Exit`/`Duration ms`/`Parser`, а JSON отдаёт это как `source_summary`; adapter summary findings и parsed adapter findings сохраняют execution provenance в metadata: command, execution route, executable path, return code, start/end timestamps, duration, timeout, generated output count и parser version; `--scope-note` попадает в case metadata как текстовый контекст/рамки проверки.
 11. Для `image` target `run_image_search()` запускает ready local tools, добавляет missing/error/timeout findings по остальным local tools, извлекает URL/email/phone/username/domain clues и маршрутизирует derived targets через обычный `search`/`run_investigation()` flow.
 
 Scan-поток:
@@ -461,6 +461,7 @@ External adapters должны подключать upstream CLI/API без ко
 - `search --profile-file` — JSON-файл custom search profiles; файл принимает top-level list или объект `{"profiles": [...]}` и валидируется перед планированием.
 - `search --plan-only` — вывести план без запуска tools.
 - `search --execute-adapters` — запустить только ready non-restricted adapters из SearchPlan и записать unified report/case.
+- `search --adapter-workers` — число параллельных ready adapter workers в execution mode; default `1` сохраняет последовательный запуск.
 - `search --install-missing [--execute-install]` — использовать resolved search profile для install dry-run или явного запуска allowlisted install commands; режим не пишет report/case.
 - `search image ... --execute-adapters` — запустить ready local image tools, извлечь derived seeds и записать unified report/case.
 - `search --include-restricted` — показать restricted tools в плане с явной маркировкой.
@@ -484,6 +485,7 @@ External adapters должны подключать upstream CLI/API без ко
 - `investigate --execute-adapters` — явно запустить совместимые upstream CLI adapters после `--include-adapters`.
 - `investigate --allow-restricted-adapters` — разрешить restricted adapters только вместе с `--execute-adapters` после scope review.
 - `investigate --adapter-timeout` — timeout для внешних adapter CLI.
+- `investigate --adapter-workers` — число параллельных adapter workers для одного target; default `1`.
 - `investigate --format markdown|json` — формат отчёта по кейсу.
 - `investigate --case-db` — SQLite-файл для сохранения кейса.
 - `investigate --case-id` — стабильный ID кейса, если нужен повторяемый ключ.
@@ -822,6 +824,7 @@ osint-toolkit stats
 - 2026-06-26: `case-show --format csv` добавлен как flat findings export для saved cases: строки включают `case_id`, `collection`, source/status/confidence/evidence и `metadata_json` для audit/provenance.
 - 2026-06-26: добавлен `case-export` handoff package и served toolbox `Export`: пакет содержит case JSON/Markdown, CSV findings/sources/targets/entities/edges, metadata, graph summary, manifest с SHA-256 и optional zip.
 - 2026-06-26: добавлен `cases-export` bulk handoff package и served toolbox `Export list`: применяет workflow/profile/scope filters, пишет подпапку на каждый matched case, `bulk_manifest.json` и optional zip.
+- 2026-06-26: добавлен `--adapter-workers` для `search --execute-adapters` и `investigate --execute-adapters`: ready adapters одного target можно запускать параллельно, default `1` сохраняет последовательный режим, а порядок findings остаётся стабильным.
 - 2026-06-25: Blackbird и SpiderFoot adapters получили env-backed venv executable support через `BLACKBIRD_PYTHON` и `SPIDERFOOT_PYTHON`; pwnedOrNot переведён на `-e <email> -n`, а локальная all-safe toolchain проверена через `tools doctor --profile all-safe`.
 - 2026-06-25: добавлен Windows runtime env refresh для CLI и toolbox `/api/tools`: user/machine `PATH` и известные OSINT env variables подхватываются из системного окружения, поэтому newly installed user-local tools видны без рестарта текущего терминала.
 - 2026-06-25: добавлен pwnedOrNot stdout parser: HIBP breach summary и breach rows нормализуются в `Finding`/entities, а dump/password output помечается как credential-exposure без переноса чувствительных значений.

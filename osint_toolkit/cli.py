@@ -255,6 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--adapter-timeout", type=float, default=60.0)
     search.add_argument("--install-timeout", type=float, default=300.0)
     search.add_argument("--adapter-limit", type=int, default=20)
+    search.add_argument("--adapter-workers", type=int, default=1, help="Parallel ready adapter workers for execution mode.")
     search.add_argument("--derived-limit", type=int, default=20, help="Maximum image-derived seeds to route into normal search.")
     search.set_defaults(handler=handle_search)
 
@@ -279,6 +280,7 @@ def build_parser() -> argparse.ArgumentParser:
     investigate.add_argument("--allow-restricted-adapters", action="store_true", help="Allow restricted adapters during --execute-adapters after scope review.")
     investigate.add_argument("--adapter-timeout", type=float, default=60.0)
     investigate.add_argument("--adapter-limit", type=int, default=20)
+    investigate.add_argument("--adapter-workers", type=int, default=1, help="Parallel adapter workers for execution mode.")
     investigate.add_argument("--timeout", type=float, default=10.0)
     investigate.add_argument("--http-retries", type=int, default=1, help="Retry 429/temporary 5xx HTTP responses this many times.")
     investigate.add_argument("--http-backoff", type=float, default=1.0, help="Base backoff seconds for HTTP retries.")
@@ -590,12 +592,15 @@ def handle_search(args: argparse.Namespace) -> int:
         return 0
     if args.case_id and not args.case_db:
         raise ValueError("--case-id requires --case-db.")
+    if args.adapter_workers < 1:
+        raise ValueError("--adapter-workers must be at least 1.")
     if plan.target.kind == "image":
         execution = run_image_search(
             plan,
             timeout=args.timeout,
             adapter_timeout=args.adapter_timeout,
             adapter_limit=args.adapter_limit,
+            adapter_workers=args.adapter_workers,
             derived_limit=args.derived_limit,
         )
         content = render_image_search_execution(plan, execution, output_format=args.format)
@@ -636,6 +641,7 @@ def handle_search(args: argparse.Namespace) -> int:
         allow_restricted_adapters=False,
         adapter_timeout=args.adapter_timeout,
         adapter_limit=args.adapter_limit,
+        adapter_workers=args.adapter_workers,
         adapter_repositories=executable_adapters,
         native_kinds=native_kinds_for_plan(plan),
     )
@@ -772,6 +778,7 @@ def _search_case_metadata(
         "timeout": args.timeout,
         "adapter_timeout": args.adapter_timeout,
         "adapter_limit": args.adapter_limit,
+        "adapter_workers": args.adapter_workers,
     }
 
 
@@ -789,6 +796,8 @@ def handle_investigate(args: argparse.Namespace) -> int:
         raise ValueError("--execute-adapters requires --include-adapters.")
     if args.allow_restricted_adapters and not args.execute_adapters:
         raise ValueError("--allow-restricted-adapters requires --execute-adapters.")
+    if args.adapter_workers < 1:
+        raise ValueError("--adapter-workers must be at least 1.")
     adapter_repositories = expand_adapter_repositories(
         tuple(args.adapter_profile),
         tuple(args.adapter),
@@ -803,6 +812,7 @@ def handle_investigate(args: argparse.Namespace) -> int:
         allow_restricted_adapters=args.allow_restricted_adapters,
         adapter_timeout=args.adapter_timeout,
         adapter_limit=args.adapter_limit,
+        adapter_workers=args.adapter_workers,
         http_retries=args.http_retries,
         http_backoff=args.http_backoff,
         request_delay=args.request_delay,
@@ -853,6 +863,7 @@ def _investigation_case_metadata(
         "expanded_adapter_repositories": list(adapter_repositories),
         "adapter_timeout": args.adapter_timeout,
         "adapter_limit": args.adapter_limit,
+        "adapter_workers": args.adapter_workers,
         "timeout": args.timeout,
     }
 

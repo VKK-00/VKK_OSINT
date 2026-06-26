@@ -484,6 +484,7 @@ class ToolboxJobRunner:
         execute_adapters = bool(payload.get("execute_adapters", False))
         include_restricted = bool(payload.get("include_restricted", False))
         adapter_limit = _int_value(payload, "adapter_limit", default=20, minimum=0, maximum=500)
+        adapter_workers = _int_value(payload, "adapter_workers", default=1, minimum=1, maximum=32)
         derived_limit = _int_value(payload, "derived_limit", default=20, minimum=0, maximum=500)
         scope_note = str(payload.get("scope_note", "")).strip()
         timeout = _float_value(payload, "timeout", default=10.0, minimum=0.1, maximum=3600.0)
@@ -514,6 +515,8 @@ class ToolboxJobRunner:
             str(adapter_timeout),
             "--adapter-limit",
             str(adapter_limit),
+            "--adapter-workers",
+            str(adapter_workers),
             "--derived-limit",
             str(derived_limit),
         ]

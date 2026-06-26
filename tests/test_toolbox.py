@@ -29,6 +29,8 @@ class ToolboxTests(unittest.TestCase):
         self.assertIn("python -m osint_toolkit search image", html)
         self.assertIn("python -m osint_toolkit search person", html)
         self.assertIn("--execute-adapters", html)
+        self.assertIn("--adapter-workers", html)
+        self.assertIn("adapter_workers", html)
         self.assertIn("ready-only", html)
         self.assertIn("Image local execution", html)
         self.assertIn("python -m osint_toolkit tools doctor --profile all-safe", html)

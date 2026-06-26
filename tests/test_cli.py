@@ -1119,6 +1119,8 @@ class CliTests(unittest.TestCase):
                 "--execute-adapters",
                 "--adapter-limit",
                 "0",
+                "--adapter-workers",
+                "2",
                 "--out",
                 str(report_path),
                 "--case-db",
@@ -1154,6 +1156,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(payload["metadata"]["requested_profile"], "phone-full")
             self.assertEqual(payload["metadata"]["search_profile"]["name"], "phone-full")
             self.assertEqual(payload["metadata"]["executed_adapters"], [])
+            self.assertEqual(payload["metadata"]["adapter_workers"], 2)
             self.assertEqual(payload["metadata"]["scope_note"], "phone validation scope")
 
     def test_search_execute_adapters_runs_image_local_tools_and_saves_case(self):

@@ -51,6 +51,7 @@ def run_image_search(
     timeout: float = 60.0,
     adapter_timeout: float = 60.0,
     adapter_limit: int | None = 20,
+    adapter_workers: int = 1,
     derived_limit: int = 20,
 ) -> ImageSearchExecution:
     if plan.target.kind != "image":
@@ -75,6 +76,7 @@ def run_image_search(
             allow_restricted_adapters=False,
             adapter_timeout=adapter_timeout,
             adapter_limit=adapter_limit,
+            adapter_workers=adapter_workers,
             adapter_repositories=executable_adapters,
         )
 
