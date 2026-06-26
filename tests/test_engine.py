@@ -13,6 +13,7 @@ from osint_toolkit.http_client import HttpClient, HttpResult
 from osint_toolkit.investigation import render_investigation_json, render_investigation_markdown, run_investigation
 from osint_toolkit.modules import DomainScanModule, EmailScanModule, InstagramPublicProfileModule, PersonNameScanModule, PhoneScanModule, SocialPublicProfileModule, UsernameScanModule, WebMetadataModule
 from osint_toolkit.modules.domain import normalize_domain, parse_crtsh_subdomains, parse_rdap_domain_record
+from osint_toolkit.modules.email import profile_email_local_part
 from osint_toolkit.modules.instagram import extract_instagram_public_metadata, normalize_instagram_target
 from osint_toolkit.modules.person import generate_username_candidates, normalize_person_name
 from osint_toolkit.modules.phone import detect_country, detect_numbering_plan, is_e164_like, normalize_phone
@@ -1138,30 +1139,43 @@ class EngineTests(unittest.TestCase):
     def test_email_scan_validates_syntax_and_plans_domain_resolution(self):
         engine = Engine([EmailScanModule()])
         findings = engine.scan(ScanTarget(kind="email", value="person@example.com"), RunConfig())
+        sources = {finding.source: finding for finding in findings}
 
-        self.assertEqual(len(findings), 11)
+        self.assertEqual(len(findings), 12)
         self.assertEqual(findings[0].source, "syntax")
         self.assertEqual(findings[0].status, "valid")
-        self.assertEqual(findings[1].source, "domain-resolution")
-        self.assertEqual(findings[1].status, "planned")
-        self.assertEqual(findings[2].source, "mx-records")
-        self.assertEqual(findings[2].status, "planned")
-        self.assertEqual(findings[3].source, "ns-records")
-        self.assertEqual(findings[3].status, "planned")
-        self.assertEqual(findings[4].source, "txt-records")
-        self.assertEqual(findings[4].status, "planned")
-        self.assertEqual(findings[5].source, "txt-service-signals")
-        self.assertEqual(findings[5].status, "planned")
-        self.assertEqual(findings[6].source, "spf-policy")
-        self.assertEqual(findings[6].status, "planned")
-        self.assertEqual(findings[7].source, "dmarc-policy")
-        self.assertEqual(findings[7].status, "planned")
-        self.assertEqual(findings[8].source, "mta-sts-policy")
-        self.assertEqual(findings[8].status, "planned")
-        self.assertEqual(findings[9].source, "tls-rpt-policy")
-        self.assertEqual(findings[9].status, "planned")
-        self.assertEqual(findings[10].source, "bimi-policy")
-        self.assertEqual(findings[10].status, "planned")
+        self.assertEqual(sources["local-part-profile"].status, "candidate")
+        self.assertEqual(sources["local-part-profile"].metadata["username"], "person")
+        self.assertEqual(sources["local-part-profile"].metadata["local_part_category"], "handle_like")
+        self.assertEqual(sources["local-part-profile"].metadata["category"], "handle_like")
+        for source in (
+            "domain-resolution",
+            "mx-records",
+            "ns-records",
+            "txt-records",
+            "txt-service-signals",
+            "spf-policy",
+            "dmarc-policy",
+            "mta-sts-policy",
+            "tls-rpt-policy",
+            "bimi-policy",
+        ):
+            self.assertEqual(sources[source].status, "planned")
+
+    def test_email_local_part_profile_classifies_role_and_person_handles(self):
+        role = profile_email_local_part("support")
+        self.assertEqual(role.status, "skipped")
+        self.assertEqual(role.metadata["local_part_category"], "role")
+        self.assertEqual(role.metadata["category"], "role")
+        self.assertNotIn("username", role.metadata)
+
+        tagged = profile_email_local_part("john.doe+github")
+        self.assertEqual(tagged.status, "candidate")
+        self.assertEqual(tagged.metadata["username"], "john.doe")
+        self.assertEqual(tagged.metadata["name"], "john doe")
+        self.assertEqual(tagged.metadata["plus_tag"], "github")
+        self.assertEqual(tagged.metadata["local_part_category"], "person_like")
+        self.assertEqual(tagged.metadata["category"], "person_like")
 
     def test_email_scan_live_adds_mx_and_txt_records(self):
         def fake_lookup(domain, record_type, *, timeout=10.0):
@@ -1406,6 +1420,8 @@ class EngineTests(unittest.TestCase):
         entity_keys = {(entity.kind, entity.value.lower()) for entity in result.entities}
         self.assertIn(("email", "person@example.com"), entity_keys)
         self.assertIn(("domain", "example.com"), entity_keys)
+        self.assertIn(("username", "person"), entity_keys)
+        self.assertIn(("source-category", "handle_like"), entity_keys)
         self.assertIn(("normalized-value", "+380441234567"), entity_keys)
         self.assertIn(("country", "ukraine"), entity_keys)
         self.assertIn(("line-type", "fixed"), entity_keys)
@@ -1418,6 +1434,8 @@ class EngineTests(unittest.TestCase):
             for edge in result.edges
         }
         self.assertIn(("email", "email_domain", "domain", "example.com"), edge_keys)
+        self.assertIn(("email", "generated_username_candidate", "username", "person"), edge_keys)
+        self.assertIn(("email", "categorized_as", "source-category", "handle_like"), edge_keys)
         self.assertIn(("phone", "normalized_as", "normalized-value", "+380441234567"), edge_keys)
         self.assertIn(("phone", "country_hint", "country", "ukraine"), edge_keys)
         self.assertIn(("phone", "line_type_hint", "line-type", "fixed"), edge_keys)

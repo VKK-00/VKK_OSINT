@@ -135,6 +135,7 @@ Gap до полного 1:1:
 - DMARC classifier через `_dmarc.<domain>` TXT: наличие записи, multiple-record warning, `p=`, `sp=`, alignment, percent и report URI tags;
 - additional TXT classifiers для `_mta-sts.<domain>` MTA-STS, `_smtp._tls.<domain>` TLS-RPT и `default._bimi.<domain>` BIMI;
 - public TXT service signals для root-domain TXT: Google/Microsoft/Yandex/Mail.ru и другие verification markers без раскрытия token values в signal finding;
+- native local-part profile hints: role/shared mailboxes are skipped, handle-like local parts become username candidates, and person-like plus-addressed local parts expose `name`, `base_local_part`, `plus_tag`, `category` and graph edges;
 - executable adapter target для `alpkeskin/mosint`: `mosint --silent <email> --output <temp.json>`;
 - parser для Mosint upstream JSON: verification, EmailRep, BreachDirectory, HaveIBeenPwned, Hunter related emails/domains, Google/Paste URLs, social flags, DNS records и ipapi metadata нормализуются в `Finding`/entities; password/hash/sha1-like values редактируются;
 - executable adapter target для `khast3x/h8mail`: `h8mail -t <email> --hide -j <temp.json>`;

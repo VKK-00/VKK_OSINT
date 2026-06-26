@@ -20,6 +20,40 @@ EMAIL_RE = re.compile(
     r"^(?P<local>[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+)@(?P<domain>[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+)$",
     re.IGNORECASE,
 )
+ROLE_LOCAL_PARTS = {
+    "abuse",
+    "admin",
+    "billing",
+    "contact",
+    "hello",
+    "help",
+    "hostmaster",
+    "info",
+    "jobs",
+    "marketing",
+    "media",
+    "news",
+    "no-reply",
+    "noreply",
+    "office",
+    "postmaster",
+    "press",
+    "privacy",
+    "sales",
+    "security",
+    "support",
+    "team",
+    "webmaster",
+}
+
+
+@dataclass(frozen=True)
+class LocalPartProfile:
+    status: str
+    confidence: str
+    category: str
+    evidence: str
+    metadata: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -43,6 +77,7 @@ class EmailScanModule:
             )
 
         domain = match.group("domain").lower()
+        local_part = match.group("local")
         findings = [
             Finding(
                 module=self.name,
@@ -51,9 +86,10 @@ class EmailScanModule:
                 status="valid",
                 confidence="high",
                 evidence="Email syntax is valid.",
-                metadata={"domain": domain, "local_length": str(len(match.group('local')))},
+                metadata={"domain": domain, "local_length": str(len(local_part))},
             )
         ]
+        findings.append(_local_part_profile_finding(self.name, value, local_part, domain))
 
         if not config.live:
             findings.append(
@@ -125,6 +161,100 @@ class EmailScanModule:
         findings.append(_email_auth_finding(self.name, value, classify_tls_rpt_policy(domain, tls_rpt_result)))
         findings.append(_email_auth_finding(self.name, value, classify_bimi_policy(domain, bimi_result)))
         return tuple(findings)
+
+
+def _local_part_profile_finding(module: str, email: str, local_part: str, domain: str) -> Finding:
+    profile = profile_email_local_part(local_part)
+    metadata = {"domain": domain, **profile.metadata}
+    return Finding(
+        module=module,
+        source="local-part-profile",
+        target=email,
+        status=profile.status,
+        confidence=profile.confidence,
+        evidence=profile.evidence,
+        metadata=metadata,
+    )
+
+
+def profile_email_local_part(local_part: str) -> LocalPartProfile:
+    normalized = local_part.strip().lower()
+    base, tag = _split_plus_tag(normalized)
+    metadata = {
+        "local_part": normalized,
+        "base_local_part": base,
+        "local_part_category": "",
+        "category": "",
+    }
+    if tag:
+        metadata["plus_tag"] = tag
+
+    if base in ROLE_LOCAL_PARTS:
+        metadata["local_part_category"] = "role"
+        metadata["category"] = "role"
+        return LocalPartProfile(
+            status="skipped",
+            confidence="high",
+            category="role",
+            evidence="Local part appears to be a shared or role mailbox, not a person handle.",
+            metadata=metadata,
+        )
+
+    username = _username_from_local_part(base)
+    if not username:
+        metadata["local_part_category"] = "opaque"
+        metadata["category"] = "opaque"
+        return LocalPartProfile(
+            status="skipped",
+            confidence="medium",
+            category="opaque",
+            evidence="Local part is not a stable username candidate.",
+            metadata=metadata,
+        )
+
+    metadata["username"] = username
+    person_name = _person_name_from_local_part(base)
+    if person_name:
+        metadata["local_part_category"] = "person_like"
+        metadata["category"] = "person_like"
+        metadata["name"] = person_name
+        evidence = "Local part looks like a person-name handle; verify before treating it as an identity clue."
+    else:
+        metadata["local_part_category"] = "handle_like"
+        metadata["category"] = "handle_like"
+        evidence = "Local part looks like a username handle; verify before treating it as an identity clue."
+    if tag:
+        evidence += " Plus-addressing tag was separated from the base handle."
+    return LocalPartProfile(
+        status="candidate",
+        confidence="medium",
+        category=metadata["local_part_category"],
+        evidence=evidence,
+        metadata=metadata,
+    )
+
+
+def _split_plus_tag(local_part: str) -> tuple[str, str]:
+    if "+" not in local_part:
+        return local_part, ""
+    base, tag = local_part.split("+", 1)
+    return base.strip("._-"), tag.strip("._-")
+
+
+def _username_from_local_part(local_part: str) -> str:
+    username = local_part.strip("._-")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{2,31}", username):
+        return ""
+    return username
+
+
+def _person_name_from_local_part(local_part: str) -> str:
+    parts = [part for part in re.split(r"[._-]+", local_part.strip("._-")) if part]
+    if len(parts) != 2:
+        return ""
+    if not all(re.fullmatch(r"[a-z]{2,32}", part) for part in parts):
+        return ""
+    return " ".join(parts)
 
 
 def _planned_dns_record_finding(module: str, email: str, domain: str, record_type: str) -> Finding:

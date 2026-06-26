@@ -608,6 +608,7 @@ Notes:
 55. Done: propagate person-candidate provenance into downstream native username findings and adapter findings so reports explain which `search person` candidate produced each profile check.
 56. Done: add native phone numbering-plan hints for Ukraine and `+7` zone targets, including line type, country code, Ukrainian mobile allocation carrier, fixed-line location and RU/KZ NDC split with portability caveats.
 57. Done: add bundled RU/UA person alias resource for person-derived username candidates, preserving `osint-toolkit-ru-ua-aliases` provenance in `source_projects`.
+58. Done: add native email local-part profile hints so role/shared mailboxes are skipped while handle/person-like local parts produce username/name/category graph clues without account-enumeration.
 
 ## Definition of done
 
