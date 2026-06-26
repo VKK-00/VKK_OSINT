@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import socket
 from dataclasses import dataclass
+from urllib.parse import quote
 
 from ..dns_lookup import DnsLookupResult, lookup_dns_records
 from ..email_auth import (
@@ -16,6 +17,8 @@ from ..email_auth import (
     classify_txt_service_signals,
 )
 from ..engine import Finding, RunConfig, ScanTarget
+from ..http_client import HttpClient
+from .domain import CT_SUBDOMAIN_LIMIT, parse_crtsh_subdomains
 
 EMAIL_RE = re.compile(
     r"^(?P<local>[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+)@(?P<domain>[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+)$",
@@ -109,6 +112,7 @@ class EmailScanModule:
             findings.append(_planned_dns_record_finding(self.name, value, domain, "TXT"))
             findings.append(_planned_email_auth_finding(self.name, value, domain, "txt-service-signals"))
             findings.append(_planned_email_auth_finding(self.name, value, domain, "email-provider-signals"))
+            findings.append(_planned_email_auth_finding(self.name, value, domain, "email-domain-ct"))
             findings.append(_planned_email_auth_finding(self.name, value, domain, "spf-policy"))
             findings.append(_planned_email_auth_finding(self.name, value, domain, "dmarc-policy"))
             findings.append(_planned_email_auth_finding(self.name, value, domain, "mta-sts-policy"))
@@ -158,6 +162,13 @@ class EmailScanModule:
                 classify_email_provider_signals(domain, mx_result, ns_result, txt_result),
             )
         )
+        client = HttpClient(
+            timeout=config.timeout,
+            user_agent=config.user_agent,
+            retries=config.http_retries,
+            backoff_seconds=config.http_backoff,
+        )
+        findings.append(_email_domain_ct_finding(self.name, value, domain, client))
         findings.append(_email_auth_finding(self.name, value, classify_spf_policy(domain, txt_result)))
 
         dmarc_result = lookup_dns_records(f"_dmarc.{domain}", "TXT", timeout=config.timeout)
@@ -266,6 +277,92 @@ def _person_name_from_local_part(local_part: str) -> str:
     return " ".join(parts)
 
 
+def _email_domain_ct_finding(module: str, email: str, domain: str, client: HttpClient) -> Finding:
+    url = _crtsh_url(domain)
+    result = client.check(url, fetch_title=True, headers={"Accept": "application/json"})
+    metadata = {
+        "domain": domain,
+        "provider": "crt.sh",
+        "requested_url": url,
+        "http_attempts": str(result.attempts),
+    }
+    if result.status_code is None or result.status_code >= 400:
+        return Finding(
+            module=module,
+            source="email-domain-ct",
+            target=email,
+            status="error",
+            url=result.final_url or url,
+            http_status=result.status_code,
+            confidence="low",
+            evidence=result.error or f"HTTP {result.status_code}",
+            metadata=metadata,
+        )
+    if not result.body_text:
+        return Finding(
+            module=module,
+            source="email-domain-ct",
+            target=email,
+            status="error",
+            url=result.final_url or url,
+            http_status=result.status_code,
+            confidence="low",
+            evidence="crt.sh returned no JSON body for email domain correlation.",
+            metadata=metadata,
+        )
+
+    try:
+        subdomains = parse_crtsh_subdomains(result.body_text, domain)
+    except ValueError as exc:
+        return Finding(
+            module=module,
+            source="email-domain-ct",
+            target=email,
+            status="error",
+            url=result.final_url or url,
+            http_status=result.status_code,
+            confidence="low",
+            evidence=str(exc),
+            metadata=metadata,
+        )
+
+    limited = subdomains[:CT_SUBDOMAIN_LIMIT]
+    metadata.update(
+        {
+            "subdomain_count": str(len(subdomains)),
+            "subdomains": ", ".join(limited),
+            "truncated": "yes" if len(subdomains) > len(limited) else "no",
+        }
+    )
+    if not subdomains:
+        return Finding(
+            module=module,
+            source="email-domain-ct",
+            target=email,
+            status="not_found",
+            url=result.final_url or url,
+            http_status=result.status_code,
+            confidence="medium",
+            evidence="No subdomains found in certificate transparency records for the email domain.",
+            metadata=metadata,
+        )
+    return Finding(
+        module=module,
+        source="email-domain-ct",
+        target=email,
+        status="candidate",
+        url=result.final_url or url,
+        http_status=result.status_code,
+        confidence="medium",
+        evidence=f"Found {len(subdomains)} unique subdomain(s) for the email domain in certificate transparency records.",
+        metadata=metadata,
+    )
+
+
+def _crtsh_url(domain: str) -> str:
+    return f"https://crt.sh/?q={quote(f'%.{domain}', safe='')}&output=json"
+
+
 def _planned_dns_record_finding(module: str, email: str, domain: str, record_type: str) -> Finding:
     return Finding(
         module=module,
@@ -311,6 +408,7 @@ def _planned_email_auth_finding(module: str, email: str, domain: str, source: st
         "bimi-policy": "BIMI",
         "txt-service-signals": "TXT service signals",
         "email-provider-signals": "hosted email provider signals",
+        "email-domain-ct": "certificate transparency domain correlation",
     }.get(source, source)
     action = (
         f"classify {label}"

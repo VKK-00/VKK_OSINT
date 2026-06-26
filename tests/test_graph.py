@@ -238,6 +238,33 @@ class GraphAnalysisTests(unittest.TestCase):
         self.assertIn(("domain", "example.com", "discovered_subdomain", "subdomain", "api.example.com"), edge_keys)
         self.assertIn(("domain", "example.com", "discovered_subdomain", "subdomain", "www.example.com"), edge_keys)
 
+    def test_email_domain_ct_subdomain_metadata_edges(self):
+        target = ScanTarget(kind="email", value="person@example.com")
+        findings = (
+            Finding(
+                module="email-baseline",
+                source="email-domain-ct",
+                target="person@example.com",
+                status="candidate",
+                confidence="medium",
+                evidence="Found certificate transparency subdomains for the email domain.",
+                metadata={"domain": "example.com", "subdomains": "api.example.com, www.example.com"},
+            ),
+        )
+
+        entities = merge_entities(entities_from_targets((target,)), entities_from_findings(findings))
+        entity_keys = {(entity.kind, entity.value.lower()) for entity in entities}
+        self.assertIn(("subdomain", "api.example.com"), entity_keys)
+        self.assertIn(("subdomain", "www.example.com"), entity_keys)
+
+        edges = graph_edges_from_case((target,), findings, entities)
+        edge_keys = {
+            (edge.source_kind, edge.source_value, edge.relation, edge.target_kind, edge.target_value)
+            for edge in edges
+        }
+        self.assertIn(("email", "person@example.com", "discovered_subdomain", "subdomain", "api.example.com"), edge_keys)
+        self.assertIn(("email", "person@example.com", "discovered_subdomain", "subdomain", "www.example.com"), edge_keys)
+
     def test_rdap_metadata_edges(self):
         target = ScanTarget(kind="domain", value="example.com")
         findings = (

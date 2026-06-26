@@ -1141,7 +1141,7 @@ class EngineTests(unittest.TestCase):
         findings = engine.scan(ScanTarget(kind="email", value="person@example.com"), RunConfig())
         sources = {finding.source: finding for finding in findings}
 
-        self.assertEqual(len(findings), 13)
+        self.assertEqual(len(findings), 14)
         self.assertEqual(findings[0].source, "syntax")
         self.assertEqual(findings[0].status, "valid")
         self.assertEqual(sources["local-part-profile"].status, "candidate")
@@ -1155,6 +1155,7 @@ class EngineTests(unittest.TestCase):
             "txt-records",
             "txt-service-signals",
             "email-provider-signals",
+            "email-domain-ct",
             "spf-policy",
             "dmarc-policy",
             "mta-sts-policy",
@@ -1179,6 +1180,14 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(tagged.metadata["category"], "person_like")
 
     def test_email_scan_live_adds_mx_and_txt_records(self):
+        ct_body = """
+        [
+          {"name_value": "api.example.com\\n*.wild.example.com"},
+          {"common_name": "www.example.com"},
+          {"name_value": "external.test"}
+        ]
+        """
+
         def fake_lookup(domain, record_type, *, timeout=10.0):
             if record_type == "MX":
                 return DnsLookupResult(
@@ -1235,7 +1244,14 @@ class EngineTests(unittest.TestCase):
         with patch("osint_toolkit.modules.email.socket.getaddrinfo", return_value=[(socket.AF_INET, None, None, "", ("93.184.216.34", 0))]), patch(
             "osint_toolkit.modules.email.lookup_dns_records",
             side_effect=fake_lookup,
-        ):
+        ), patch("osint_toolkit.modules.email.HttpClient") as http_client:
+            http_client.return_value.check.return_value = HttpResult(
+                url="https://crt.sh/?q=%25.example.com&output=json",
+                final_url="https://crt.sh/?q=%25.example.com&output=json",
+                status_code=200,
+                body_text=ct_body,
+                content_type="application/json",
+            )
             findings = Engine([EmailScanModule()]).scan(
                 ScanTarget(kind="email", value="person@example.com"),
                 RunConfig(live=True),
@@ -1257,6 +1273,9 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(sources["email-provider-signals"].status, "candidate")
         self.assertIn("google_workspace", sources["email-provider-signals"].metadata["providers"])
         self.assertIn("microsoft_365", sources["email-provider-signals"].metadata["providers"])
+        self.assertEqual(sources["email-domain-ct"].status, "candidate")
+        self.assertEqual(sources["email-domain-ct"].metadata["subdomain_count"], "3")
+        self.assertEqual(sources["email-domain-ct"].metadata["subdomains"], "api.example.com, wild.example.com, www.example.com")
         self.assertEqual(sources["spf-policy"].metadata["policy"], "hardfail")
         self.assertEqual(sources["spf-policy"].metadata["include_count"], "2")
         self.assertEqual(sources["dmarc-policy"].metadata["policy"], "reject")
