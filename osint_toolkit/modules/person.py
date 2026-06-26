@@ -8,6 +8,35 @@ from ..engine import Finding, RunConfig, ScanTarget
 TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
 HANDLE_SUFFIXES = ("official", "real", "online")
 MAX_GENERATED_CANDIDATES = 64
+DEFAULT_SOURCE_PROJECTS = ("maigret", "sherlock", "linkedin2username", "dorks-collections-list")
+STRATEGY_BASE_SCORES = {
+    "operator_alias": 98,
+    "operator_alias_last_joined": 92,
+    "operator_alias_dot_last": 90,
+    "operator_alias_underscore_last": 88,
+    "first_last_joined": 88,
+    "first_dot_last": 86,
+    "first_underscore_last": 84,
+    "first_initial_last": 82,
+    "first_dash_last": 80,
+    "first_last_initial": 78,
+    "last_first_joined": 76,
+    "last_dot_first": 74,
+    "last_underscore_first": 72,
+    "last_dash_first": 70,
+    "last_first_initial": 68,
+    "alias_last_joined": 78,
+    "alias_dot_last": 76,
+    "alias_underscore_last": 74,
+    "alias_initial_last": 70,
+    "given_name_alias": 58,
+    "full_name_joined": 82,
+    "first_middle_initials_last": 80,
+    "initials": 46,
+    "initial_pair": 44,
+    "handle_suffix": 52,
+    "first": 42,
+}
 
 GIVEN_NAME_ALIASES = {
     "aleksandr": ("alex", "sasha", "san", "sanya"),
@@ -93,6 +122,9 @@ TRANSLITERATION_TABLE = str.maketrans(
 class UsernameCandidate:
     username: str
     strategy: str
+    score: int = 0
+    platform_hints: tuple[str, ...] = ()
+    source_projects: tuple[str, ...] = DEFAULT_SOURCE_PROJECTS
 
 
 @dataclass(frozen=True)
@@ -139,15 +171,22 @@ class PersonNameScanModule:
                 target=target.value,
                 status="candidate",
                 confidence="low",
-                evidence=f"Candidate username: {candidate.username}. Verify before use.",
+                evidence=(
+                    f"Candidate username: {candidate.username} "
+                    f"(score {candidate.score}; hints: {', '.join(candidate.platform_hints)}). "
+                    "Verify before use."
+                ),
                 metadata={
                     "normalized_name": normalized_name,
                     "username": candidate.username,
                     "strategy": candidate.strategy,
-                    "source_projects": "maigret, sherlock, linkedin2username, dorks-collections-list",
+                    "candidate_rank": str(index),
+                    "candidate_score": str(candidate.score),
+                    "platform_hints": ", ".join(candidate.platform_hints),
+                    "source_projects": ", ".join(candidate.source_projects),
                 },
             )
-            for candidate in candidates
+            for index, candidate in enumerate(candidates, start=1)
         )
 
 
@@ -272,18 +311,89 @@ def _username_handle(value: str) -> str:
 
 
 def _dedupe_candidates(candidates: tuple[UsernameCandidate, ...]) -> tuple[UsernameCandidate, ...]:
-    seen: set[str] = set()
-    deduped: list[UsernameCandidate] = []
-    for candidate in candidates:
+    best_by_key: dict[str, tuple[UsernameCandidate, int]] = {}
+    for index, candidate in enumerate(candidates):
         username = candidate.username.strip(".-_")
         if not _is_username_candidate(username):
             continue
         key = username.lower()
+        enriched = _enrich_candidate(username, candidate.strategy)
+        current = best_by_key.get(key)
+        if current is None or enriched.score > current[0].score:
+            best_by_key[key] = (enriched, index)
+    ranked = sorted(
+        best_by_key.values(),
+        key=lambda item: (-item[0].score, item[1], item[0].username),
+    )
+    return tuple(candidate for candidate, _ in ranked[:MAX_GENERATED_CANDIDATES])
+
+
+def _enrich_candidate(username: str, strategy: str) -> UsernameCandidate:
+    return UsernameCandidate(
+        username=username,
+        strategy=strategy,
+        score=_candidate_score(username, strategy),
+        platform_hints=_platform_hints(username, strategy),
+        source_projects=DEFAULT_SOURCE_PROJECTS,
+    )
+
+
+def _candidate_score(username: str, strategy: str) -> int:
+    score = STRATEGY_BASE_SCORES.get(strategy, 50)
+    length = len(username)
+    if 8 <= length <= 24:
+        score += 3
+    elif length < 5:
+        score -= 8
+    elif length > 32:
+        score -= 5
+    if username.count(".") == 1 and "dot" in strategy:
+        score += 2
+    if username.count("_") == 1 and "underscore" in strategy:
+        score += 1
+    if "-" in username and "dash" not in strategy and strategy != "operator_alias":
+        score -= 3
+    return max(1, min(100, score))
+
+
+def _platform_hints(username: str, strategy: str) -> tuple[str, ...]:
+    hints: list[str] = []
+    if strategy.startswith("operator_alias"):
+        hints.extend(("known-alias", "instagram", "telegram", "vk"))
+    elif strategy in {"first_last_joined", "full_name_joined", "first_middle_initials_last"}:
+        hints.extend(("github", "gitlab", "linkedin", "facebook", "instagram"))
+    elif "dot" in strategy:
+        hints.extend(("linkedin", "facebook", "instagram", "telegram"))
+    elif "underscore" in strategy:
+        hints.extend(("instagram", "telegram", "vk", "ok.ru"))
+    elif "dash" in strategy:
+        hints.extend(("github", "gitlab", "linkedin", "telegram"))
+    elif "initial" in strategy:
+        hints.extend(("linkedin", "facebook", "github"))
+    elif "alias" in strategy:
+        hints.extend(("instagram", "telegram", "vk", "ok.ru"))
+    elif strategy == "handle_suffix":
+        hints.extend(("instagram", "telegram", "tiktok"))
+    elif strategy == "first":
+        hints.extend(("low-specificity", "manual-review"))
+    else:
+        hints.extend(("username-search", "manual-review"))
+
+    if "." in username and "linkedin" not in hints:
+        hints.insert(0, "linkedin")
+    if "_" in username and "instagram" not in hints:
+        hints.insert(0, "instagram")
+    return _dedupe_strings(tuple(hints))
+
+
+def _dedupe_strings(values: tuple[str, ...]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in values:
+        key = value.lower()
         if key not in seen:
             seen.add(key)
-            deduped.append(UsernameCandidate(username, candidate.strategy))
-        if len(deduped) >= MAX_GENERATED_CANDIDATES:
-            break
+            deduped.append(value)
     return tuple(deduped)
 
 

@@ -508,6 +508,10 @@ class EngineTests(unittest.TestCase):
         strategies = {finding.metadata["strategy"] for finding in findings}
 
         self.assertEqual(findings[0].metadata["normalized_name"], "ivan petrenko")
+        self.assertEqual(findings[0].metadata["username"], "ivanpetrenko")
+        self.assertEqual(findings[0].metadata["candidate_rank"], "1")
+        self.assertEqual(findings[0].metadata["candidate_score"], "91")
+        self.assertIn("github", findings[0].metadata["platform_hints"])
         self.assertIn("ivanpetrenko", usernames)
         self.assertIn("ivan.petrenko", usernames)
         self.assertIn("vanyapetrenko", usernames)
@@ -519,12 +523,16 @@ class EngineTests(unittest.TestCase):
         candidates = generate_username_candidates("olena ivanenko")
         usernames = [candidate.username for candidate in candidates]
         strategies = {candidate.strategy for candidate in candidates}
+        by_username = {candidate.username: candidate for candidate in candidates}
 
-        self.assertEqual(usernames[:4], ["olena", "olenaivanenko", "olena.ivanenko", "olena_ivanenko"])
+        self.assertEqual(usernames[:4], ["olenaivanenko", "olena.ivanenko", "olena_ivanenko", "oivanenko"])
         self.assertIn("elenaivanenko", usernames)
         self.assertIn("lena.ivanenko", usernames)
         self.assertIn("olenaivanenkoofficial", usernames)
         self.assertIn("handle_suffix", strategies)
+        self.assertEqual(by_username["olenaivanenko"].score, 91)
+        self.assertIn("linkedin", by_username["olena.ivanenko"].platform_hints)
+        self.assertIn("low-specificity", by_username["olena"].platform_hints)
 
     def test_person_name_helpers_include_operator_aliases(self):
         candidates = generate_username_candidates(
@@ -532,11 +540,14 @@ class EngineTests(unittest.TestCase):
             extra_aliases=("@ze-team", "служу народу"),
         )
         by_username = {candidate.username: candidate.strategy for candidate in candidates}
+        by_candidate = {candidate.username: candidate for candidate in candidates}
 
         self.assertEqual(by_username["ze-team"], "operator_alias")
         self.assertEqual(by_username["zeteamzelenskyy"], "operator_alias_last_joined")
         self.assertEqual(by_username["sluzhunarodu"], "operator_alias")
         self.assertEqual(by_username["sluzhunarodu.zelenskyy"], "operator_alias_dot_last")
+        self.assertEqual(by_candidate["ze-team"].score, 98)
+        self.assertIn("known-alias", by_candidate["ze-team"].platform_hints)
 
     def test_person_scan_uses_operator_aliases_from_run_config(self):
         engine = Engine([PersonNameScanModule()])

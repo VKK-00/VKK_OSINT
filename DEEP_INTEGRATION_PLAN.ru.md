@@ -604,6 +604,7 @@ Notes:
 51. Done: add `cases-export` bulk handoff packages and served toolbox `Export list`, applying workflow/profile/scope filters and writing per-case folders, `bulk_manifest.json` and optional zip.
 52. Done: add opt-in `--adapter-workers` parallel fan-out for ready adapters in `search --execute-adapters`, `investigate --execute-adapters`, image-derived execution and served toolbox jobs, while preserving default sequential mode and stable finding order.
 53. Done: add BBOT passive `email-enum` adapter/profile with Docker fallback/parser reuse, search/toolbox exposure and tests for command rendering, readiness, parsing and execution.
+54. Done: add deterministic person-derived username ranking with `candidate_score`, `candidate_rank` and `platform_hints` so person search fan-out prioritizes specific handles and operator aliases over low-specificity first-name candidates.
 
 ## Definition of done
 

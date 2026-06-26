@@ -100,7 +100,7 @@ Gap до полного 1:1:
 - Sherlock GET/POST site dataset, WhatsMyName GET/POST dataset и sanitized Maigret site rules импортированы в native username layer;
 - Maigret engine templates, activation flows, recursive policy tuning, report generation, proxies/Tor/I2P and AI mode пока остаются adapter-only;
 - per-site rules покрывают username syntax/length, часть title/body content markers и Sherlock response-url `errorUrl`; есть базовый retry/backoff, но ещё не вся WAF/error-handling логика и site-specific rate-limit tuning;
-- username permutation/alias strategy уже покрывает common given-name aliases, handle suffixes и operator-provided alias dictionaries, но пока нет bundled historical alias datasets и platform-specific alias scoring;
+- username permutation/alias strategy уже покрывает common given-name aliases, handle suffixes, operator-provided alias dictionaries и deterministic platform-aware scoring/hints; bundled historical alias datasets пока не добавлены;
 - content-based confidence пока частичный: нет полного набора marker rules из upstream datasets;
 - Maigret подключён hybrid: sanitized site rules импортированы native, NDJSON/simple JSON/CSV dossier parser покрывает site metadata и основные `ids` profile/contact fields, а web UI, PDF/HTML/XMind reports, recursive policy tuning, proxies/Tor/I2P и AI mode пока не перенесены в native UI;
 - Snoop подключён adapter-first; Windows release binary может быть установлен user-local, но обновление остаётся upstream/operator-managed действием;
